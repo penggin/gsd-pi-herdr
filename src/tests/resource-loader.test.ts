@@ -290,7 +290,6 @@ test("buildResourceLoader loads extensions installed by the slash command", asyn
     "slash-command-installed extension should be part of the runtime extension set",
   );
 });
-
 test("initResources manifest tracks all bundled extension subdirectories including remote-questions (#2367)", async () => {
   const { initResources } = await import("../resource-loader.ts");
   const tmp = mkdtempSync(join(tmpdir(), "gsd-resource-loader-manifest-"));
