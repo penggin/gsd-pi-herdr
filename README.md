@@ -17,11 +17,12 @@ It combines a terminal agent, project workflow tools, worktree-aware Git automat
 
 > This repository is the `penggin/gsd-pi-herdr` managed downstream distribution. It tracks `open-gsd/gsd-pi` while developing a first-class Herdr runtime for persistent, observable subagents.
 
-The Herdr work is currently in planning and feasibility validation; it is not yet a production installation. All integration planning, architecture records, migration evidence, and progress tracking live under [`integrations/herdr/`](./integrations/herdr/README.md).
+The Herdr architecture and feasibility milestone is complete, and implementation is ready to begin. No production Herdr-enabled build is available yet. All integration planning, architecture records, migration evidence, technical spikes, and progress tracking live under [`integrations/herdr/`](./integrations/herdr/README.md).
 
 - [Herdr integration overview](./integrations/herdr/README.md)
 - [Canonical living plan](./integrations/herdr/PLANNING.md)
 - [Architecture decisions](./integrations/herdr/docs/DECISIONS.md)
+- [Consolidated technical plan](./integrations/herdr/docs/spikes/M0.10-CONSOLIDATED-TECHNICAL-PLAN.md)
 - [Planning migration and fork baseline](./integrations/herdr/docs/MIGRATION.md)
 
 The exact upstream mirror is maintained on `upstream-main`; downstream release work is maintained on `main` through reviewed feature and synchronization branches.
