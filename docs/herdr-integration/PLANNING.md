@@ -1,8 +1,8 @@
 # GSD–Herdr Living Plan
 
-> **Status:** M0–M2 complete; M3 internal Herdr worker runner ready
+> **Status:** M0–M3 complete; M4 Herdr backend/pane pool ready
 > **Last updated:** 2026-08-30
-> **Current milestone:** M3 — Internal Herdr worker runner
+> **Current milestone:** M4 — Herdr backend and persistent worker pane pool
 > **Canonical rule:** Every Herdr-integration development session starts by reading this file and ends by updating it.
 
 ## 1. Mission
@@ -178,23 +178,23 @@ Deferred existing behavior: chain-mode `isolated` handling is tracked separately
 
 ### M3 — Internal Herdr worker runner
 
-**Status:** `READY`
+**Status:** `COMPLETE`
 
-- [ ] M3.1 Define versioned launch/state/heartbeat/exit artifacts.
-- [ ] M3.2 Add private/internal GSD Herdr-worker entrypoint receiving a validated spec path.
-- [ ] M3.3 Spawn the existing JSON-mode child with argv arrays and `shell:false`.
-- [ ] M3.4 Persist raw JSONL/stderr with restrictive permissions.
-- [ ] M3.5 Parse chunked JSONL safely and relay complete lines.
-- [ ] M3.6 Render bounded lifecycle/tool activity and suppress token deltas.
-- [ ] M3.7 Strip root Herdr identity from child launch env and apply worker-pane identity.
-- [ ] M3.8 Report worker semantic state/metadata to its own pane.
-- [ ] M3.9 Add heartbeat and atomic final exit evidence.
-- [ ] M3.10 Add SIGINT → SIGTERM → SIGKILL process-group escalation.
-- [ ] M3.11 Add security/redaction/path/process tests.
+- [x] M3.1 Define versioned launch/state/heartbeat/exit artifacts.
+- [x] M3.2 Add private/internal GSD Herdr-worker entrypoint receiving a validated spec path.
+- [x] M3.3 Spawn the existing JSON-mode child with argv arrays and `shell:false`.
+- [x] M3.4 Persist raw JSONL/stderr with restrictive permissions.
+- [x] M3.5 Parse chunked JSONL safely and relay complete lines.
+- [x] M3.6 Render bounded lifecycle/tool activity and suppress token deltas.
+- [x] M3.7 Strip root Herdr identity from child launch env and apply worker-pane identity.
+- [x] M3.8 Report worker semantic state/metadata to its own pane.
+- [x] M3.9 Add heartbeat and atomic final exit evidence.
+- [x] M3.10 Add SIGINT → SIGTERM → SIGKILL process-group escalation.
+- [x] M3.11 Add security/redaction/path/process tests.
 
 ### M4 — Herdr backend and persistent worker pane pool
 
-**Status:** `NOT STARTED`
+**Status:** `READY`
 
 - [ ] M4.1 Create/reuse one worker tab per root GSD session.
 - [ ] M4.2 Create deterministic one/two/four-slot layouts.
@@ -285,9 +285,10 @@ Structural gaps discovered:
 
 ## 9. Current execution queue
 
-1. **M3.1:** define the versioned launch/state/heartbeat/exit artifact contract for one Herdr worker execution.
-2. **M3.2:** add the private/internal worker entrypoint that receives only a validated spec path and owns artifact lifecycle.
-3. Keep pane creation/backend policy out of M3.1–M3.2; M4 remains responsible for Herdr pane pooling and `herdr pane run` submission.
+1. **M4.1:** create/reuse one worker tab per root GSD session without stealing root-pane focus.
+2. **M4.2/M4.3:** introduce deterministic 1/2/4-slot topology plus bounded reservation/queue/reuse policy.
+3. **M4.4/M4.5:** connect `HerdrBackend` to the M3 launch bundle, submit the private runner with CLI `pane run`, and relay artifact JSONL into the common semantic runner.
+4. Keep retry/chain topology and retention policy additive; do not move GSD orchestration authority into Herdr.
 
 ## 10. Progress log
 
@@ -411,6 +412,33 @@ Structural gaps discovered:
 - This Linux DevSpace does not provide a real `cmux` binary. M2 cmux mechanics are therefore validated with the current CLI contract fake plus a real bash execution fixture; real macOS cmux surface behavior remains a canary/E2E concern rather than an unverified claim here.
 - Existing chain-mode `isolated` behavior remains intentionally deferred; M2 did not mix that unrelated behavior fix into backend parity extraction.
 - **M2 is complete. M3.1 worker artifact contract is the next task.**
+
+### 2026-08-30 — M3.1 worker artifact contract
+
+- Added `execution/herdr-worker/artifacts.ts` with schema-v1 launch, one-time environment, mutable state, heartbeat, and immutable final-exit contracts.
+- Runtime paths are derived only from generated safe IDs under `~/.gsd/runtime/herdr/v1/<root>/<dispatch>/<child>/`; relative roots, traversal IDs, substituted artifact paths, and symlinked generated directories are rejected.
+- Worker directories/files are created owner-only (`0700` / `0600` on POSIX). Launch/env readers reject group/world-readable or symlinked inputs.
+- `env.json` is versioned, parsed as a string-only map, and deleted immediately after successful read.
+- State and heartbeat use same-directory temp + rename publication. `exit.json` uses an exclusive hard-link publication step so a second final outcome cannot overwrite the first immutable exit evidence.
+- Launch validation rejects incompatible future schema versions and verifies every declared stdout/stderr/state/heartbeat/exit/env path against the worker's canonical artifact directory.
+- M3.1 focused security/contract tests **6/6 pass** and `typecheck:extensions` passes. The nested worker tests are included in normal compiled unit and coverage globs.
+
+### 2026-08-30 — M3 internal worker implementation and closeout
+
+- Added the private `__herdr-worker <launch.json>` loader fast-path before normal GSD TUI/onboarding/provider initialization. The entry accepts exactly one owner-only launch spec under the active `GSD_HOME/runtime/herdr/v1` root and emits only bounded diagnostics on invalid input.
+- The internal runner consumes/deletes one-time `env.json`, strips copied root `HERDR_*` identity, reapplies the actual worker pane's Herdr identity, forces `GSD_SUBAGENT_CHILD=1`, and launches the existing JSON-mode child with argv arrays and `shell:false`.
+- Raw stdout JSONL and stderr are written verbatim to owner-only `stdout.jsonl` / `stderr.log`. UTF-8-aware line framing handles split multibyte characters, CRLF, malformed lines, and a final unterminated record without mutating the raw evidence.
+- Pane presentation is deliberately lossy: only bounded agent/tool/retry/error activity is printed. `message_update`, tool update payloads, token deltas, tool result bodies, and raw JSON are suppressed. Authorization headers, credential-shaped assignments, and URL query secrets are redacted before display or Herdr status reporting.
+- Worker lifecycle/metadata uses an ordered Herdr report queue with a unique worker source. Real activity drives `working` / `retrying`; final failed state maps to `blocked`; completion maps to reported `idle` (Herdr may render effective `done`). Final metadata persists an `outcome` token after all queued activity reports.
+- Mutable state/heartbeat records include runner PID, child PID, pane identity, and last redacted activity. Heartbeats refresh continuously at the configured interval; `exit.json` remains immutable first-final-outcome evidence.
+- POSIX child execution uses a detached process group and cancellation escalates `SIGINT → SIGTERM → SIGKILL`; a real descendant-process test verifies the whole group is reaped. Windows uses the existing platform-equivalent behavior of `taskkill /F /T` for the entire child tree because hidden console children cannot reliably receive graceful signals.
+- Security tests cover generated-ID traversal, runtime-root substitution, symlinked path components, group/world-readable specs, incompatible schemas, substituted artifact paths, one-time env deletion, shell metacharacters as literal argv, secret redaction, and process-tree cleanup.
+- Worker/loader focused suite: **28/28 compiled changed-source tests pass**. `typecheck:extensions` and `verify:extension-coverage` pass.
+- `pnpm run build:core` passes and produces all six worker modules under `dist/resources/extensions/subagent/execution/herdr-worker/` plus the private fast-path in `dist/loader.js`. A built-JS private-worker smoke passes without the source TypeScript resolver.
+- Real official Herdr v0.8.2 headless smoke: a private worker launched in a real Herdr pane reported `agent=gsd-worker`, active `working`, final effective `done`, title/display-agent metadata, model/thinking tokens, and `outcome=completed`. Pane text contained only bounded `working/tool/retry/recovered` activity with secrets redacted; raw JSON remained only in the private artifact.
+- `pnpm run validate-pack` passes isolated install and global-install verification with final result **`Package is installable. Safe to publish.`**
+- Detailed implementation/evidence: [`spikes/M3-INTERNAL-WORKER.md`](spikes/M3-INTERNAL-WORKER.md).
+- **M3 is complete. M4.1 worker-tab ownership is the next task.**
 
 ## 11. Working-session protocol
 
