@@ -1,6 +1,6 @@
 # GSD–Herdr Living Plan
 
-> **Status:** M0 complete; M1 implementation locally validated, real Herdr smoke pending
+> **Status:** M0–M1 complete; M2 subagent backend parity/refactor in progress
 > **Last updated:** 2026-08-30
 > **Current milestone:** M1 — Root GSD ↔ Herdr integration  
 > **Canonical rule:** Every Herdr-integration development session starts by reading this file and ends by updating it.
@@ -127,7 +127,7 @@ Exit assessment: all M0 criteria satisfied. No Herdr core fork is required for t
 
 ### M1 — Root GSD ↔ Herdr integration
 
-**Status:** `IN PROGRESS`
+**Status:** `COMPLETE`
 
 **Goal:** Make the root GSD TUI a correctly reported Herdr agent and establish reusable Herdr client/capability infrastructure without yet moving subagents into Herdr panes.
 
@@ -143,7 +143,7 @@ Exit assessment: all M0 criteria satisfied. No Herdr core fork is required for t
 - [x] M1.10 Release/replace root lifecycle authority safely on shutdown/reload.
 - [x] M1.11 Add GSD-native Herdr status/doctor diagnostics.
 - [x] M1.12 Add unit/integration tests for detection, protocol requests, state ownership, ordering, and non-Herdr regression.
-- [ ] M1.13 Validate the root reporter against real Herdr v0.8.2 in an isolated session.
+- [x] M1.13 Validate the root reporter against real Herdr v0.8.2 in an isolated session.
 
 Exit criteria:
 
@@ -155,7 +155,7 @@ Exit criteria:
 
 ### M2 — Subagent execution backend abstraction
 
-**Status:** `NOT STARTED`
+**Status:** `IN PROGRESS`
 
 **Goal:** Replace duplicated local/cmux execution semantics with one common child runner and runtime backends before Herdr worker execution is introduced.
 
@@ -285,9 +285,9 @@ Structural gaps discovered:
 
 ## 9. Current execution queue
 
-1. **M1.13:** run the bundled downstream build inside a real Herdr v0.8.2 macOS session and verify root idle → working → idle, blocked/retry behavior, session identity, reload, and shutdown release.
-2. Verify `/herdr-status` and `/herdr-doctor` against the real pane/socket/CLI environment and record any v0.8.2 request-shape corrections.
-3. Close M1 only after the real Herdr smoke passes; do not start M2 structural refactor before that evidence exists.
+1. **M2.1:** add deterministic characterization tests around current local `runSingleAgent()` semantic output before extracting any backend mechanics.
+2. Record local result/event/abort/process-registry semantics that the common runner must preserve.
+3. Only after M2.1 characterization is green, define M2.2 backend request/callback/evidence types; do not extract `LocalBackend` first.
 
 ## 10. Progress log
 
@@ -346,7 +346,23 @@ Structural gaps discovered:
   - `pnpm run validate-pack` — pass through isolated tarball install/global-install checks with final result `Package is installable. Safe to publish.`;
   - `git diff --check` — pass.
 - `copy-resources` produced the expected compiled Herdr extension and `extension-manifest.json` under `dist/resources/extensions/herdr/`.
-- This Linux DevSpace does not currently provide a `herdr` executable and cannot satisfy the target macOS real-session requirement. **M1.13 remains the only open M1 task.**
+- The base Linux DevSpace image did not ship Herdr, so the official v0.8.2 Linux x86_64 release binary was downloaded to an isolated `/tmp` path for the real-session smoke; no Herdr installation was added to the repository or persistent runtime configuration.
+
+### 2026-08-30 — M1.13 real Herdr v0.8.2 smoke and M1 closeout
+
+- Ran the official `herdr 0.8.2` Linux x86_64 release as an isolated headless server with separate XDG config/state roots and socket path.
+- Created a real Herdr-managed workspace/pane and verified Herdr injected the authoritative `HERDR_ENV`, `HERDR_SOCKET_PATH`, `HERDR_BIN_PATH`, `HERDR_WORKSPACE_ID`, `HERDR_TAB_ID`, and `HERDR_PANE_ID` values into pane processes.
+- Connected the compiled downstream `HerdrClient` + `HerdrRootReporter` directly to the real v0.8.2 socket and observed the complete lifecycle contract: `idle → working → idle`, terminal provider error → `blocked`, retry error → `working`, retry restart → `working`, and shutdown release → `unknown`.
+- The first 30 ms observation window was intentionally too aggressive for fire-and-forget event reporting; with a 300 ms observation bound every semantic transition was stable. No request-shape correction was required.
+- Launched the actual bundled downstream `dist/loader.js` TUI inside a Herdr-managed pane with Herdr enabled. `pane.get` reported `agent=gsd` and `agent_status=idle` without test-only reporter calls.
+- Verified real TUI diagnostics:
+  - `/herdr-status` → configured enabled, environment detected, root reporter active, child session no, correct pane identity;
+  - `/herdr-doctor` → root authority eligible, socket `pane.get` ok, CLI `herdr 0.8.2` detected.
+- Verified `/new` preserves active root reporting and `idle` state, `/reload` replaces/reloads extension authority without a stale sequence regression, and `/quit` releases authority while leaving the shell/pane alive with `agent_status=unknown`.
+- A temporary DevSpace-global `~/.gsd/PREFERENCES.md` used only to enable the live smoke was created only after confirming no file existed and was removed immediately after the test.
+- Detailed evidence: [`spikes/M1.13-REAL-HERDR-SMOKE.md`](spikes/M1.13-REAL-HERDR-SMOKE.md).
+- **M1 is complete. M2.1 characterization tests are now the active work item.**
+- macOS-specific focus preservation, foreground process-group cancellation, detach/reattach, manual pane closure, and Herdr restart remain later backend/durability E2E concerns in M4–M6; they are not required to prove the M1 root socket/lifecycle contract.
 
 ## 11. Working-session protocol
 
