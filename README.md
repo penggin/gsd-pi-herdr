@@ -13,6 +13,27 @@ GSD Pi is a local-first coding agent for planning, implementing, verifying, and 
 
 It combines a terminal agent, project workflow tools, worktree-aware Git automation, and optional UI integrations so a project can move from idea to reviewed implementation with less manual coordination.
 
+## About this downstream fork
+
+This repository, `penggin/gsd-pi-herdr`, is a **managed downstream fork** of [`open-gsd/gsd-pi`](https://github.com/open-gsd/gsd-pi). It tracks upstream GSD-Pi while adding first-class [Herdr](https://github.com/herdrdev/herdr) integration for persistent, observable subagent execution and may carry other deliberate downstream fixes or experiments.
+
+The Herdr work is developed as part of the GSD runtime rather than as a patch to an installed upstream package. The current design keeps official Herdr unmodified and refactors GSD subagent execution behind shared Local/Cmux/Herdr runtime backends.
+
+Herdr integration documentation is grouped under [`docs/herdr-integration/`](./docs/herdr-integration/):
+
+- **Living plan:** [`docs/herdr-integration/PLANNING.md`](./docs/herdr-integration/PLANNING.md)
+- **Architecture:** [`docs/herdr-integration/ARCHITECTURE.md`](./docs/herdr-integration/ARCHITECTURE.md)
+- **Integration contract:** [`docs/herdr-integration/INTEGRATION_CONTRACT.md`](./docs/herdr-integration/INTEGRATION_CONTRACT.md)
+- **Decisions:** [`docs/herdr-integration/DECISIONS.md`](./docs/herdr-integration/DECISIONS.md)
+
+Branch policy for the fork:
+
+- `upstream-main` tracks the pristine upstream integration point;
+- `main` is the downstream integration/release line;
+- focused Herdr work is developed on `feature/*` branches and merged only after relevant regression/parity checks.
+
+The Herdr integration is under active development; the upstream installation instructions below still describe official `@opengsd/gsd-pi` until a downstream release process is explicitly documented.
+
 ## Feature Roll-Up
 
 - **Guided terminal agent** — Start with `gsd`, configure providers, and run planned or quick coding sessions from your shell.
@@ -204,6 +225,7 @@ gsd quick --output-format json "Describe the task"
 | `native/` | Native engine packaging and platform binaries |
 | `web/` | Web UI and API surface |
 | `docs/` | User and developer documentation |
+| `docs/herdr-integration/` | Downstream Herdr living plan, architecture, contracts, decisions, and spike reports |
 | `scripts/` | Build, release, migration, and maintenance scripts |
 
 ## Development
@@ -230,7 +252,7 @@ Historical tags and archived refs may exist for traceability, but active release
 
 ## Community
 
-Join the [GSD Discord community](https://discord.gg/vY2bv3FrzX).
+Join the GSD Discord community: https://discord.gg/vY2bv3FrzX
 
 ## Star History
 
