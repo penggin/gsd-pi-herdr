@@ -19,8 +19,8 @@ test("classifies upstream changes into deterministic Herdr risk and gates", () =
 
 test("renders a reviewable upstream impact summary", () => {
   const markdown = renderImpactMarkdown({
-    base: { ref: "origin/upstream-main", commit: "a".repeat(40) },
-    head: { ref: "upstream/main", commit: "b".repeat(40) },
+    base: { ref: "origin/main", commit: "a".repeat(40) },
+    head: { ref: "HEAD", commit: "b".repeat(40) },
     lineageVerified: true,
     commitCount: 2,
     fileCount: 1,

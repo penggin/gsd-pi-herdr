@@ -48,6 +48,15 @@ test("gsd --version outputs a semver version string and exits 0", async () => {
   );
 });
 
+test("gsd --build-info exposes downstream package and Herdr integration identity", async () => {
+  const result = await runGsd(["--build-info"]);
+  assert.equal(result.exitCode, 0);
+  const info = JSON.parse(result.stdout);
+  assert.equal(info.package, "@penggin/gsd-pi-herdr");
+  assert.equal(info.herdrIntegration, true);
+  assert.match(info.version, /^\d+\.\d+\.\d+/);
+});
+
 // ---------------------------------------------------------------------------
 // 2. gsd --help outputs usage information and exits 0
 // ---------------------------------------------------------------------------

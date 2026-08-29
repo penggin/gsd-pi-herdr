@@ -32,6 +32,10 @@ import { buildClaudeRuntimeFloorAdvisory } from "../../shared/claude-runtime-flo
 import { reconcileGsdBrowserPathAfterInstall } from "../../shared/gsd-browser-path-sync.js";
 import { isPnpmInstall } from "../../shared/package-manager-detection.js";
 import {
+  GSD_DISTRIBUTION_PACKAGE,
+  GSD_DISTRIBUTION_REGISTRY_URL,
+} from "../../shared/distribution.js";
+import {
   buildDoctorHealIssuePayload,
   buildDoctorHealSummary,
   buildWorkflowDispatchContent,
@@ -41,9 +45,9 @@ import {
   scopeGsdWorkflowToolsForDispatch,
 } from "./bootstrap/register-hooks.js";
 
-const GSD_PI_PACKAGE = "@opengsd/gsd-pi";
+const GSD_PI_PACKAGE = GSD_DISTRIBUTION_PACKAGE;
 const GSD_BROWSER_PACKAGE = "@opengsd/gsd-browser";
-const UPDATE_REGISTRY_URL = "https://registry.npmjs.org/@opengsd%2fgsd-pi/latest";
+const UPDATE_REGISTRY_URL = GSD_DISTRIBUTION_REGISTRY_URL;
 const BROWSER_UPDATE_REGISTRY_URL = "https://registry.npmjs.org/@opengsd%2fgsd-browser/latest";
 const UPDATE_FETCH_TIMEOUT_MS = 5000;
 

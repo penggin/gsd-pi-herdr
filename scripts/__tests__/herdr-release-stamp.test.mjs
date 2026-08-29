@@ -25,18 +25,18 @@ test("stamps exact upstream/downstream identity and embeds a prior rollback targ
   execFileSync("git", ["add", "."], { cwd });
   execFileSync("git", ["commit", "-qm", "downstream"], { cwd });
 
-  const metadata = buildReleaseMetadata({ cwd, upstreamRef: "upstream-main", knownGoodPath, now: new Date("2026-08-30T00:00:00.000Z") });
+  const metadata = buildReleaseMetadata({ cwd, baseRef: "upstream-main", knownGoodPath, now: new Date("2026-08-30T00:00:00.000Z") });
   assert.equal(metadata.createdAt, "2026-08-30T00:00:00.000Z");
   assert.equal(metadata.downstream.version, "9.9.9");
-  assert.equal(metadata.upstream.commit.length, 40);
-  assert.notEqual(metadata.downstream.commit, metadata.upstream.commit);
+  assert.equal(metadata.sourceBase.commit.length, 40);
+  assert.notEqual(metadata.downstream.commit, metadata.sourceBase.commit);
   assert.equal(metadata.rollback.previousKnownGood.downstreamCommit, "1".repeat(40));
   assert.equal(metadata.rollback.preservesRuntimeArtifacts, true);
   assert.equal(readFileSync(knownGoodPath, "utf8").includes("1".repeat(40)), true);
 
   writeFileSync(join(cwd, "uncommitted.txt"), "dirty\n");
   assert.throws(
-    () => buildReleaseMetadata({ cwd, upstreamRef: "upstream-main", knownGoodPath }),
+    () => buildReleaseMetadata({ cwd, baseRef: "upstream-main", knownGoodPath }),
     /dirty worktree/,
   );
 });

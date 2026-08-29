@@ -13,13 +13,28 @@ const firstArg = args[0]
 
 // Read package.json once — reused for version, banner, and GSD_VERSION below
 let gsdVersion = '0.0.0'
+let gsdPackageName = '@penggin/gsd-pi-herdr'
 try {
   const pkg = JSON.parse(readFileSync(join(gsdRoot, 'package.json'), 'utf-8'))
   gsdVersion = pkg.version || '0.0.0'
+  gsdPackageName = pkg.name || gsdPackageName
 } catch { /* ignore */ }
 
 if (firstArg === '--version' || firstArg === '-v') {
   process.stdout.write(gsdVersion + '\n')
+  process.exit(0)
+}
+
+if (firstArg === '--build-info') {
+  const metadataPath = join(gsdRoot, 'dist', 'herdr-release.json')
+  let releaseMetadata: unknown = null
+  try { releaseMetadata = JSON.parse(readFileSync(metadataPath, 'utf-8')) } catch { /* source/dev build */ }
+  process.stdout.write(`${JSON.stringify({
+    package: gsdPackageName,
+    version: gsdVersion,
+    herdrIntegration: true,
+    releaseMetadata,
+  }, null, 2)}\n`)
   process.exit(0)
 }
 
@@ -86,6 +101,7 @@ import { discoverExtensionEntryPaths } from './extension-discovery.js'
 import { loadRegistry, readManifestFromEntryPath, isExtensionEnabled } from './extension-registry.js'
 import { applyLoaderCliEntrypointEnv } from './loader-entrypoint.js'
 import { renderGsdPiLogo, GSD_PI_BRAND, GSD_WEBSITE } from './logo.js'
+import { GSD_DISTRIBUTION_ISSUES_URL, GSD_DISTRIBUTION_PACKAGE } from './distribution.js'
 
 // pkg/ is a shim directory: contains gsd's piConfig (package.json) and pi's
 // theme assets (dist/modes/interactive/theme/) without a src/ directory.
@@ -123,7 +139,7 @@ if (!existsSync(appRoot) && process.env.GSD_SUPPRESS_LOGO !== '1') {
 // GSD_CODING_AGENT_DIR — tells pi's getAgentDir() to return ~/.gsd/agent/ instead of ~/.gsd/agent/
 process.env.GSD_CODING_AGENT_DIR = agentDir
 
-// GSD_PKG_ROOT — absolute path to @opengsd/gsd-pi package root. Used by deployed extensions
+// GSD_PKG_ROOT — absolute path to the downstream package root. Used by deployed extensions
 // (e.g. auto.ts resume path) to import modules like resource-loader.js that live
 // in the package tree, not in the deployed ~/.gsd/agent/ tree.
 process.env.GSD_PKG_ROOT = gsdRoot
@@ -247,13 +263,13 @@ if (missingPackages.length > 0) {
   process.stderr.write(
     `\nError: GSD installation is broken — missing packages: ${missing}\n\n` +
     `This is usually caused by one of:\n` +
-    `  • An outdated version installed from npm (run: npm install -g @opengsd/gsd-pi@latest)\n` +
+    `  • An outdated version installed from npm (run: npm install -g ${GSD_DISTRIBUTION_PACKAGE}@latest)\n` +
     `  • The packages/ directory was excluded from the installed tarball\n` +
     `  • A filesystem error prevented linking or copying the workspace packages\n\n` +
     `Fix it by reinstalling:\n\n` +
-    `  npm install -g @opengsd/gsd-pi@latest\n\n` +
+    `  npm install -g ${GSD_DISTRIBUTION_PACKAGE}@latest\n\n` +
     `If the issue persists, please open an issue at:\n` +
-    `  https://github.com/open-gsd/gsd-pi/issues\n`
+    `  ${GSD_DISTRIBUTION_ISSUES_URL}\n`
   )
   process.exit(1)
 }

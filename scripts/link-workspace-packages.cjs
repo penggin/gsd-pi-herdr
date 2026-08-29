@@ -117,5 +117,5 @@ if (failures.length > 0) {
   for (const f of failures) {
     process.stderr.write(`    - ${f.pkg}: ${f.reason}\n`)
   }
-  process.stderr.write(`  gsd will fail to start until these resolve. On Windows, enable Developer Mode or run with admin rights. See https://github.com/open-gsd/gsd-pi\n`)
+  process.stderr.write(`  gsd will fail to start until these resolve. On Windows, enable Developer Mode or run with admin rights. See https://github.com/penggin/gsd-pi-herdr\n`)
 }

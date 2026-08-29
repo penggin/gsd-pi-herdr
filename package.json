@@ -1,15 +1,15 @@
 {
-  "name": "@opengsd/gsd-pi",
+  "name": "@penggin/gsd-pi-herdr",
   "version": "1.16.2",
   "description": "GSD Pi local-first coding agent",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/open-gsd/gsd-pi.git"
+    "url": "git+https://github.com/penggin/gsd-pi-herdr.git"
   },
-  "homepage": "https://github.com/open-gsd/gsd-pi#readme",
+  "homepage": "https://github.com/penggin/gsd-pi-herdr#readme",
   "bugs": {
-    "url": "https://github.com/open-gsd/gsd-pi/issues"
+    "url": "https://github.com/penggin/gsd-pi-herdr/issues"
   },
   "type": "module",
   "bin": {
@@ -85,7 +85,7 @@
     "test:unit": "pnpm run test:compile && pnpm run test:unit:compiled && pnpm run test:live-workflow:unit",
     "test:changed:src": "node scripts/verify-changed-src-tests.mjs",
     "test:herdr-integration": "node --test integrations/herdr/plugin/tests/*.test.mjs scripts/__tests__/herdr-*.test.mjs",
-    "herdr:upstream-impact": "node scripts/herdr-integration/upstream-impact.mjs",
+    "herdr:repository-impact": "node scripts/herdr-integration/upstream-impact.mjs",
     "herdr:capability-check": "node scripts/herdr-integration/capability-check.mjs",
     "herdr:release-stamp": "node scripts/herdr-integration/release-stamp.mjs",
     "test:packages": "pnpm run test:compile && pnpm run test:packages:compiled",
@@ -151,8 +151,8 @@
     "release:bump": "node scripts/bump-version.mjs",
     "release:update-readme-highlights": "node scripts/update-readme-release-highlights.mjs",
     "release:update-changelog": "node scripts/update-changelog.mjs",
-    "docker:build-runtime": "docker build --target runtime -t ghcr.io/open-gsd/gsd-pi .",
-    "docker:build-builder": "docker build --target builder -t ghcr.io/open-gsd/gsd-ci-builder .",
+    "docker:build-runtime": "docker build --target runtime -t ghcr.io/penggin/gsd-pi-herdr .",
+    "docker:build-builder": "docker build --target builder -t ghcr.io/penggin/gsd-pi-herdr-ci .",
     "prepublishOnly": "pnpm run sync-pkg-version && pnpm run sync-platform-versions && pnpm run verify:version-sync && pnpm run verify:native-platform-packages && node scripts/prepublish-check.mjs && pnpm run build && pnpm run typecheck:extensions && pnpm run validate-pack",
     "test:live-regression": "node --experimental-strip-types tests/live-regression/run.ts",
     "test:auto-acceptance": "node tests/acceptance-bed/auto-milestone-bed.mjs",

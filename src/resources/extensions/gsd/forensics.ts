@@ -223,17 +223,17 @@ If \`bash\` is unavailable in the Filing Tool Availability section, do not attem
 
 1. **Search closed issues** for similar keywords:
    \`\`\`
-   gh issue list --repo open-gsd/gsd-pi --state closed --search "<keywords from root cause>" --limit 20
+   gh issue list --repo penggin/gsd-pi-herdr --state closed --search "<keywords from root cause>" --limit 20
    \`\`\`
 
 2. **Search open PRs** that might contain the fix:
    \`\`\`
-   gh pr list --repo open-gsd/gsd-pi --state open --search "<keywords>" --limit 10
+   gh pr list --repo penggin/gsd-pi-herdr --state open --search "<keywords>" --limit 10
    \`\`\`
 
 3. **Search merged PRs** that may have already fixed this:
    \`\`\`
-   gh pr list --repo open-gsd/gsd-pi --state merged --search "<keywords>" --limit 10
+   gh pr list --repo penggin/gsd-pi-herdr --state merged --search "<keywords>" --limit 10
    \`\`\`
 
 ### Analysis

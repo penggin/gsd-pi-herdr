@@ -9,7 +9,7 @@
 // forgotten by an out-of-date list.
 //
 // The required npm set for a release is:
-//   1. the root package (@opengsd/gsd-pi)
+//   1. the root package (@penggin/gsd-pi-herdr)
 //   2. the native platform packages (@opengsd/engine-*), one per platform
 //   3. every pnpm workspace package that opts in via "publishConfig"
 //      (the @gsd/* packages have no publishConfig — they ship bundled inside the
@@ -89,7 +89,7 @@ function getWorkspaceManifestPaths(repoRoot) {
   )].map((directory) => path.join(directory, 'package.json'));
 }
 
-/** Root package name (@opengsd/gsd-pi). */
+/** Root package name (@penggin/gsd-pi-herdr). */
 function getRootPackageName() {
   return readJson(path.join(REPO_ROOT, 'package.json')).name;
 }

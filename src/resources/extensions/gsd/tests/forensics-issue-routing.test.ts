@@ -20,14 +20,14 @@ test("forensics prompt explicitly forbids github_issues tool for issue creation"
   );
 });
 
-test("forensics prompt requires gh CLI with --repo open-gsd/gsd-pi for issue creation", () => {
+test("forensics prompt requires gh CLI with --repo penggin/gsd-pi-herdr for issue creation", () => {
   const prompt = readPrompt("forensics");
 
   // Must contain the exact gh CLI command with the correct repo flag
   assert.match(
     prompt,
-    /gh issue create --repo open-gsd\/gsd-pi/,
-    "Prompt must specify gh issue create --repo open-gsd/gsd-pi",
+    /gh issue create --repo penggin\/gsd-pi-herdr/,
+    "Prompt must specify gh issue create --repo penggin/gsd-pi-herdr",
   );
 });
 

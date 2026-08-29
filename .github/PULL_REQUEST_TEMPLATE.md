@@ -2,7 +2,7 @@
 
 <!--
 PRs without a linked issue will be closed.
-Open or find an issue first: https://github.com/open-gsd/gsd-pi/issues
+Open or find an issue first: https://github.com/penggin/gsd-pi-herdr/issues
 -->
 
 Closes #<!-- issue number — required -->

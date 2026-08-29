@@ -245,7 +245,7 @@ test("gsd update and upgrade bypass the managed-resource-mismatch gate; other co
   const currentVersion = "1.0.0";
   writeFileSync(
     join(fakeAgentDir, "managed-resources.json"),
-    JSON.stringify({ gsdVersion: futureVersion, packageName: "@opengsd/gsd-pi", syncedAt: Date.now() }),
+    JSON.stringify({ gsdVersion: futureVersion, packageName: "@penggin/gsd-pi-herdr", syncedAt: Date.now() }),
   );
 
   // Gate is armed: returns the newer version (cli.ts would print mismatch + exit 1)
@@ -291,7 +291,7 @@ test("managed resource skew ignores legacy manifests from the old npm package", 
   assert.strictEqual(
     getNewerManagedResourceVersion(fakeAgentDir, "1.0.1"),
     null,
-    "old unscoped gsd-pi resource stamps must not block @opengsd/gsd-pi startup",
+    "old unscoped gsd-pi resource stamps must not block @penggin/gsd-pi-herdr startup",
   );
 });
 
@@ -327,7 +327,7 @@ test("managed resource skew ignores dev/build suffixes on the same release line"
 
   writeFileSync(
     join(fakeAgentDir, "managed-resources.json"),
-    JSON.stringify({ gsdVersion: "2.78.1", packageName: "@opengsd/gsd-pi", syncedAt: Date.now() }),
+    JSON.stringify({ gsdVersion: "2.78.1", packageName: "@penggin/gsd-pi-herdr", syncedAt: Date.now() }),
   );
 
   assert.strictEqual(

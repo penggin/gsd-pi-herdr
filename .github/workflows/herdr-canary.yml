@@ -22,8 +22,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  upstream-impact:
-    name: upstream impact
+  repository-impact:
+    name: downstream repository impact
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -31,26 +31,20 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Fetch comparison refs without modifying branches
-        run: |
-          git remote add upstream-watch https://github.com/open-gsd/gsd-pi.git
-          git fetch --no-tags upstream-watch main:refs/remotes/upstream-watch/main
-          git fetch --no-tags origin upstream-main:refs/remotes/origin/upstream-main
-
       - name: Generate semantic impact report
         run: |
           mkdir -p build/herdr-canary
           node scripts/herdr-integration/upstream-impact.mjs \
-            --base origin/upstream-main \
-            --head upstream-watch/main \
-            --output build/herdr-canary/upstream-impact.json \
-            --markdown > build/herdr-canary/upstream-impact.md
-          cat build/herdr-canary/upstream-impact.md >> "$GITHUB_STEP_SUMMARY"
+            --base origin/main \
+            --head HEAD \
+            --output build/herdr-canary/repository-impact.json \
+            --markdown > build/herdr-canary/repository-impact.md
+          cat build/herdr-canary/repository-impact.md >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v7
         with:
-          name: herdr-upstream-impact
-          path: build/herdr-canary/upstream-impact.*
+          name: herdr-repository-impact
+          path: build/herdr-canary/repository-impact.*
           if-no-files-found: error
           retention-days: 14
 
@@ -79,9 +73,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-
-      - name: Fetch immutable upstream-base tracking ref
-        run: git fetch --no-tags origin upstream-main:refs/remotes/origin/upstream-main
 
       - name: Resolve official Herdr release asset
         id: herdr
@@ -143,7 +134,7 @@ jobs:
       - name: Stamp exact canary release identity
         run: |
           node scripts/herdr-integration/release-stamp.mjs \
-            --upstream-ref origin/upstream-main \
+            --base-ref origin/main \
             --capability "build/herdr-canary/capability-${{ matrix.channel }}.json" \
             --output "build/herdr-canary/release-${{ matrix.channel }}.json"
 
@@ -151,6 +142,7 @@ jobs:
         if: matrix.channel == 'supported'
         env:
           NPM_CONFIG_USERCONFIG: /dev/null
+          HERDR_CAPABILITY_REPORT: build/herdr-canary/capability-supported.json
         run: |
           pnpm run build:web-host
           pnpm run validate-pack

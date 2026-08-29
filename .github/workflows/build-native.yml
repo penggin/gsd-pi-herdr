@@ -26,7 +26,7 @@ on:
           - "trusted"
           - "token"
       platform_packages_only:
-        description: "Publish @opengsd/engine-* only (skip @opengsd/gsd-pi; use to bootstrap missing platform packages)"
+        description: "Publish @opengsd/engine-* only (skip @penggin/gsd-pi-herdr; use to bootstrap missing platform packages)"
         required: false
         default: "false"
         type: choice
@@ -363,16 +363,16 @@ jobs:
           npm init -y > /dev/null 2>&1
 
           # Wait for npm registry with exponential backoff (5s, 10s, 20s, 30s, 30s, 30s, 30s — max ~155s vs fixed 5min)
-          echo "Waiting for @opengsd/gsd-pi@${VERSION} to appear on npm..."
+          echo "Waiting for @penggin/gsd-pi-herdr@${VERSION} to appear on npm..."
           DELAY=5
           for attempt in $(seq 1 8); do
-            PUBLISHED=$(npm view "@opengsd/gsd-pi@${VERSION}" version 2>/dev/null || echo "")
+            PUBLISHED=$(npm view "@penggin/gsd-pi-herdr@${VERSION}" version 2>/dev/null || echo "")
             if [ "${PUBLISHED}" = "${VERSION}" ]; then
               echo "  ✓ Version ${VERSION} visible on npm (attempt ${attempt})"
               break
             fi
             if [ "$attempt" = "8" ]; then
-              echo "::warning::@opengsd/gsd-pi@${VERSION} not visible on npm after 8 attempts — skipping smoke test"
+              echo "::warning::@penggin/gsd-pi-herdr@${VERSION} not visible on npm after 8 attempts — skipping smoke test"
               exit 0
             fi
             echo "  Attempt ${attempt}: not yet visible, retrying in ${DELAY}s..."
@@ -382,12 +382,12 @@ jobs:
           done
 
           # Install and verify with backoff (5s, 10s, 20s)
-          echo "Installing @opengsd/gsd-pi@${VERSION}..."
+          echo "Installing @penggin/gsd-pi-herdr@${VERSION}..."
           DELAY=5
           for attempt in 1 2 3; do
-            if npm install "@opengsd/gsd-pi@${VERSION}" 2>&1 | tee /tmp/install-output.txt; then
+            if npm install "@penggin/gsd-pi-herdr@${VERSION}" 2>&1 | tee /tmp/install-output.txt; then
               echo "  ✓ Install succeeded"
-              RAW=$(node node_modules/@opengsd/gsd-pi/dist/loader.js --version 2>&1 || echo "FAILED")
+              RAW=$(node node_modules/@penggin/gsd-pi-herdr/dist/loader.js --version 2>&1 || echo "FAILED")
               ACTUAL=$(echo "$RAW" | sed 's/\x1b\[[0-9;]*m//g' | grep -oE "^${VERSION}$" | head -1)
               if [ "$ACTUAL" = "$VERSION" ]; then
                 echo "  ✓ gsd --version = ${VERSION}"
@@ -404,7 +404,7 @@ jobs:
             sleep "$DELAY"
             DELAY=$((DELAY * 2))
           done
-          echo "::error::Smoke test failed — @opengsd/gsd-pi@${VERSION} not installable"
+          echo "::error::Smoke test failed — @penggin/gsd-pi-herdr@${VERSION} not installable"
           exit 1
 
       - name: Post-publish MCP server smoke test
@@ -440,7 +440,7 @@ jobs:
           echo "Verifying npm dist-tag 'latest' points to ${VERSION}..."
           DELAY=5
           for attempt in $(seq 1 6); do
-            LATEST=$(npm view @opengsd/gsd-pi dist-tags.latest 2>/dev/null || echo "")
+            LATEST=$(npm view @penggin/gsd-pi-herdr dist-tags.latest 2>/dev/null || echo "")
             if [ "${LATEST}" = "${VERSION}" ]; then
               echo "  ✓ npm dist-tags.latest = ${VERSION}"
               exit 0
@@ -450,5 +450,5 @@ jobs:
             DELAY=$((DELAY * 2))
             if [ "$DELAY" -gt 30 ]; then DELAY=30; fi
           done
-          echo "::error::dist-tags.latest is '${LATEST}' but expected '${VERSION}' — run: npm dist-tag add @opengsd/gsd-pi@${VERSION} latest"
+          echo "::error::dist-tags.latest is '${LATEST}' but expected '${VERSION}' — run: npm dist-tag add @penggin/gsd-pi-herdr@${VERSION} latest"
           exit 1

@@ -1,5 +1,5 @@
 /**
- * Parse @opengsd/gsd-pi version from `npm list -g --json` output.
+ * Parse @penggin/gsd-pi-herdr version from `npm list -g --json` output.
  */
 
 import { createRequire } from 'module'
@@ -21,15 +21,15 @@ export function parseInstalledVersion(npmListJson) {
 
   if (!npmListJson || typeof npmListJson !== 'object') return null
 
-  const direct = npmListJson.dependencies?.['@opengsd/gsd-pi']?.version
+  const direct = npmListJson.dependencies?.['@penggin/gsd-pi-herdr']?.version
   if (direct) return direct
 
   function walk(node) {
     if (!node || typeof node !== 'object') return null
-    if (node.name === '@opengsd/gsd-pi' && node.version) return node.version
+    if (node.name === '@penggin/gsd-pi-herdr' && node.version) return node.version
 
     for (const [depName, dep] of Object.entries(node.dependencies || {})) {
-      if (depName === '@opengsd/gsd-pi' && dep?.version) return dep.version
+      if (depName === '@penggin/gsd-pi-herdr' && dep?.version) return dep.version
       const found = walk(dep)
       if (found) return found
     }
@@ -57,7 +57,7 @@ export async function detectInstalledVersion(options = {}) {
   const packageManager = options.packageManager ?? detectPackageManager()
   const bin = getPackageManagerBin(packageManager)
   try {
-    const raw = execFileSync(bin, ['list', '-g', '@opengsd/gsd-pi', '--json'], {
+    const raw = execFileSync(bin, ['list', '-g', '@penggin/gsd-pi-herdr', '--json'], {
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: 30_000,

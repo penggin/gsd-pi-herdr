@@ -70,9 +70,9 @@ if (HAS_HELP) {
   ${colors.dim}https://opengsd.net${colors.reset}
 
   ${colors.yellow}Usage:${colors.reset}
-    npx @opengsd/gsd-pi@latest              Install GSD-Pi globally (recommended)
-    pnpm dlx @opengsd/gsd-pi@latest         Install GSD-Pi globally with pnpm
-    npx @opengsd/gsd-pi@latest --local      Install to current project (advanced)
+    npx @penggin/gsd-pi-herdr@latest        Install GSD-Pi Herdr globally
+    pnpm dlx @penggin/gsd-pi-herdr@latest   Install GSD-Pi Herdr with pnpm
+    npx @penggin/gsd-pi-herdr@latest --local Install to current project (advanced)
 
   ${colors.yellow}Options:${colors.reset}
     ${colors.cyan}--yes, -y${colors.reset}           Non-interactive install (required without TTY)
@@ -140,8 +140,8 @@ async function runNpxInstaller() {
     try {
       spinner.start(
         isLocal
-          ? 'Installing @opengsd/gsd-pi locally...'
-          : 'Installing @opengsd/gsd-pi globally...',
+          ? 'Installing @penggin/gsd-pi-herdr locally...'
+          : 'Installing @penggin/gsd-pi-herdr globally...',
       )
       targetPackageRoot = isLocal
         ? await installLocalPackage(gsdVersion)

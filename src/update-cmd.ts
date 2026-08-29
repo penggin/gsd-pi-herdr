@@ -7,6 +7,7 @@ import { resolveModelsCatalogPath } from './models-resolver.js'
 import { initResources } from './resource-loader.js'
 import { buildClaudeRuntimeFloorAdvisory } from './resources/shared/claude-runtime-floor.js'
 import { reconcileGsdBrowserPathAfterInstall } from './resources/shared/gsd-browser-path-sync.js'
+import { GSD_DISTRIBUTION_MODELS_CATALOG_URL } from './distribution.js'
 import {
   compareSemver,
   fetchLatestVersionFromRegistry,
@@ -21,8 +22,7 @@ import {
 
 const NPM_PACKAGE = GSD_PI_PACKAGE_NAME
 
-export const MODELS_CATALOG_URL =
-  'https://raw.githubusercontent.com/open-gsd/gsd-pi/main/packages/pi-ai/src/models.generated.json'
+export const MODELS_CATALOG_URL = GSD_DISTRIBUTION_MODELS_CATALOG_URL
 const MODELS_CATALOG_FETCH_TIMEOUT_MS = 15000
 
 interface RunUpdateOptions {

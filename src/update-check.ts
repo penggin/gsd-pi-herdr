@@ -6,10 +6,11 @@ import { createRequire } from 'node:module'
 import chalk from 'chalk'
 import { appRoot } from './app-paths.js'
 import { isPnpmInstall } from './resources/shared/package-manager-detection.js'
+import { GSD_DISTRIBUTION_PACKAGE, GSD_DISTRIBUTION_REGISTRY_URL } from './distribution.js'
 
 export { isPnpmInstall }
 
-export const GSD_PI_PACKAGE_NAME = '@opengsd/gsd-pi'
+export const GSD_PI_PACKAGE_NAME = GSD_DISTRIBUTION_PACKAGE
 export const GSD_BROWSER_PACKAGE_NAME = '@opengsd/gsd-browser'
 
 const CACHE_FILE = join(appRoot, '.update-check')
@@ -17,7 +18,7 @@ const GSD_BROWSER_CACHE_FILE = join(appRoot, '.update-check-gsd-browser')
 const NPM_PACKAGE_NAME = GSD_PI_PACKAGE_NAME
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000 // 24 hours
 const FETCH_TIMEOUT_MS = 5000
-const DEFAULT_REGISTRY_URL = `https://registry.npmjs.org/@opengsd%2fgsd-pi/latest`
+const DEFAULT_REGISTRY_URL = GSD_DISTRIBUTION_REGISTRY_URL
 export const GSD_BROWSER_REGISTRY_URL = `https://registry.npmjs.org/@opengsd%2fgsd-browser/latest`
 
 interface UpdateCheckCache {

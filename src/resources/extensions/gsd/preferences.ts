@@ -27,6 +27,7 @@ import {
   resolveDisabledModelProvidersFromPreferences,
 } from "./preferences-models.js";
 import { nativeHasCommittedHead, nativeIsRepo } from "./native-git-bridge.js";
+import { GSD_DISTRIBUTION_ISSUES_URL } from "../../shared/distribution.js";
 
 import {
   KNOWN_PREFERENCE_KEYS,
@@ -673,7 +674,7 @@ function parsePreferencesMarkdownWithDiagnostics(content: string): PreferencePar
     _warnedUnrecognizedFormat = true;
     console.warn(
       "[GSD] Warning: preferences file has unrecognized format — content does not use YAML frontmatter delimiters (---). " +
-      "Wrap your preferences in --- fences. See https://github.com/open-gsd/gsd-pi/issues/2036",
+      `Wrap your preferences in --- fences. See ${GSD_DISTRIBUTION_ISSUES_URL}`,
     );
   }
   return {

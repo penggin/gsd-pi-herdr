@@ -78,7 +78,7 @@ function createGeneratorPreload(tempRoot) {
 }
 
 test("workflow runs only upstream and requires RELEASE_PAT", () => {
-	assert.equal(workflow.jobs.refresh.if, "github.repository == 'open-gsd/gsd-pi'");
+	assert.equal(workflow.jobs.refresh.if, "github.repository == 'penggin/gsd-pi-herdr'");
 	assert.equal(
 		steps.find((step) => step.name === "Checkout main").with.token,
 		"${{ secrets.RELEASE_PAT }}",

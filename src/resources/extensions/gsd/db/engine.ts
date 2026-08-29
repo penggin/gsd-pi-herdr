@@ -184,7 +184,7 @@ export class SchemaTooNewError extends Error {
   constructor(currentVersion: number, supportedVersion: number) {
     super(
       `gsd.db schema is v${currentVersion}, newer than the v${supportedVersion} this gsd-pi supports. ` +
-      `Update gsd-pi (npm i -g @opengsd/gsd-pi) before opening this project.`,
+      `Update gsd-pi-herdr (npm i -g @penggin/gsd-pi-herdr) before opening this project.`,
     );
     this.currentVersion = currentVersion;
     this.supportedVersion = supportedVersion;

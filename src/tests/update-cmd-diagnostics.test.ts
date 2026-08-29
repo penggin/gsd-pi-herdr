@@ -129,7 +129,7 @@ test("update-cmd refreshes managed resources when already up to date (#52)", asy
 
   const manifest = JSON.parse(readFileSync(join(fakeAgentDir, "managed-resources.json"), "utf-8"));
   assert.equal(manifest.gsdVersion, "1.0.1");
-  assert.equal(manifest.packageName, "@opengsd/gsd-pi");
+  assert.equal(manifest.packageName, "@penggin/gsd-pi-herdr");
 });
 
 test("update-cmd prints Claude Code Runtime floor advisory after normal update result", async (t) => {
@@ -385,7 +385,7 @@ test("/gsd update handler fetches latest version through the registry endpoint (
     }
   }
 
-  assert.deepEqual(fetchUrls, ["https://registry.npmjs.org/@opengsd%2fgsd-pi/latest"]);
+  assert.deepEqual(fetchUrls, ["https://registry.npmjs.org/@penggin%2fgsd-pi-herdr/latest"]);
   assert.ok(notifications.some((notification) => notification.message.includes("Already up to date")));
 });
 
@@ -544,7 +544,7 @@ test("/gsd update handler suggests pnpm when installed via pnpm", async () => {
 
   assert.ok(
     notifications.some((notification) =>
-      notification.message.includes("Try manually: pnpm add -g @opengsd/gsd-pi@latest")
+      notification.message.includes("Try manually: pnpm add -g @penggin/gsd-pi-herdr@latest")
     ),
   );
 });
@@ -621,7 +621,7 @@ test("/gsd update handler ignores unrelated pnpm directory names", async () => {
 
   assert.ok(
     notifications.some((notification) =>
-      notification.message.includes("Try manually: npm install -g @opengsd/gsd-pi@latest")
+      notification.message.includes("Try manually: npm install -g @penggin/gsd-pi-herdr@latest")
     ),
   );
 });

@@ -1,7 +1,7 @@
 /**
  * GSD Changelog — Fetch and display categorized release notes from GitHub
  *
- * Fetches releases from the open-gsd/gsd-pi GitHub repository,
+ * Fetches releases from the managed downstream GitHub repository,
  * prompts the user for a version filter, and sends raw release notes
  * into the conversation for the LLM to summarize.
  *
@@ -9,6 +9,7 @@
  */
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@gsd/pi-coding-agent";
+import { GSD_DISTRIBUTION_RELEASES_API } from "../../shared/distribution.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -103,7 +104,7 @@ function formatRelease(release: GitHubRelease): string {
 
 // ─── Entry Point ──────────────────────────────────────────────────────────────
 
-const RELEASES_URL = "https://api.github.com/repos/open-gsd/gsd-pi/releases?per_page=100";
+const RELEASES_URL = GSD_DISTRIBUTION_RELEASES_API;
 
 export async function handleChangelog(
   args: string,

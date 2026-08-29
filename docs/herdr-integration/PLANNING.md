@@ -2,12 +2,12 @@
 
 > **Status:** M0–M7 complete
 > **Last updated:** 2026-08-30
-> **Current milestone:** M7 complete — downstream promotion review ready
+> **Current milestone:** M7 complete — downstream distribution hardening and install validation
 > **Canonical rule:** Every Herdr-integration development session starts by reading this file and ends by updating it.
 
 ## 1. Mission
 
-`penggin/gsd-pi-herdr` is a managed downstream fork of `open-gsd/gsd-pi` that adds first-class Herdr support and may carry other deliberate fork-specific fixes, refactors, and experiments.
+`penggin/gsd-pi-herdr` is the canonical, self-contained downstream distribution. It adds first-class Herdr support and carries its own package identity, runtime endpoints, automation, release evidence, and operational documentation.
 
 The Herdr integration must provide observable, persistent subagent execution without changing GSD's authority over orchestration semantics.
 
@@ -18,21 +18,19 @@ Target UX:
 - worker panes show concise lifecycle/tool activity rather than raw JSON/token deltas;
 - Herdr detach/reattach does not stop work;
 - retries, cancellation, pane loss, failures, and orphan states are explicit;
-- upstream GSD-Pi can be synchronized routinely while downstream behavior remains testable.
+- source lineage remains recorded without runtime, CI, or release automation contacting or modifying the original project.
 
 ## 2. Repository/branch model
 
 ```text
-open-gsd/gsd-pi:main
-        │
-        ▼
-upstream-main              # pristine upstream mirror target
-        │
-        ▼
 main                       # downstream integration/release line
-        │
-        └── feature/*      # focused work branches
+  │
+  └── feature/*            # focused work branches
 ```
+
+The recorded source-base SHA is historical provenance. Normal development,
+canary, package, and release workflows compare only refs already present in this
+repository and must not fetch or mutate the original project.
 
 Current GSD upstream base for this planning cycle:
 
@@ -58,7 +56,7 @@ fix/cmux-split-cli
 7. **Required observability is correctness:** once required Herdr execution is selected, launch failure does not silently become invisible local execution.
 8. **Official Herdr first:** no Herdr core fork unless a reproduced public-API gap blocks correctness.
 9. **Capability-based compatibility:** test actual Herdr API/CLI behavior, not only version strings.
-10. **Tests protect upstream sync:** AI-assisted merge/conflict work is acceptable, but semantic parity is evidence-driven.
+10. **Tests protect repository evolution:** semantic parity is evidence-driven and active automation remains downstream-only.
 
 ## 4. Current target architecture
 
@@ -236,13 +234,13 @@ M4 exit = first practically usable monitored Herdr-subagent runtime proven in a 
 - [x] M6.7 Add root-crash, worker-crash, Herdr restart, detach/reattach E2E.
 - [x] M6.8 Finalize retention and cleanup policy.
 
-### M7 — Downstream release/upstream maintenance automation
+### M7 — Downstream release and repository maintenance automation
 
 **Status:** `COMPLETE`
 
-- [x] M7.1 Automate upstream-main change detection and impact reports.
+- [x] M7.1 Automate downstream base-to-head change detection and impact reports.
 - [x] M7.2 Automate supported/canary Herdr capability checks.
-- [x] M7.3 Stamp downstream releases with exact upstream base metadata.
+- [x] M7.3 Stamp downstream releases with exact repository baseline and historical lineage metadata.
 - [x] M7.4 Add canary builds before major upstream/Herdr adoption.
 - [x] M7.5 Preserve prior known-good downstream release for rollback.
 - [x] M7.6 Document downstream install/update/release identity.
@@ -277,19 +275,19 @@ Structural gaps discovered:
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| upstream subagent semantic changes | clean merge but broken downstream runtime | common backend abstraction + mode/parity/E2E tests |
+| downstream subagent semantic changes | clean merge but broken runtime | common backend abstraction + mode/parity/E2E tests |
 | Herdr API changes | launch/state/recovery failure | schema/capability tests against exact supported releases |
 | root Herdr IDs leak to worker child | worker overwrites root pane authority | strip/reapply worker-pane managed env |
 | high-frequency output | unreadable panes/render cost | filter/dedupe/throttle; no raw token events |
 | root dies while workers continue | unobserved/orphaned edits | durable state + heartbeat + explicit orphan reconciliation |
 | pane closes mid-run | parent waits forever | pane/process/artifact monitoring and bounded failure |
-| AI resolves upstream conflicts incorrectly | semantic regression | mandatory focused/parity tests and recorded evidence |
+| compatibility edits change orchestration semantics | semantic regression | mandatory focused/parity tests and recorded evidence |
 
 ## 9. Current execution queue
 
-1. **Promotion review:** inspect the generated upstream/capability/release evidence and decide whether to promote this feature branch through the normal reviewed downstream release workflow.
-2. Before any upstream sync, review the currently reported 9-commit/35-file `origin/upstream-main..upstream/main` high-risk delta; do not auto-merge it.
-3. Before public distribution, choose the public downstream package/version identity and run the credentialed real-Herdr E2E again on the exact release candidate. No merge, push, tag, or publish is authorized by this plan closeout.
+1. Complete the exact downstream tarball install and isolated Herdr v0.8.2 smoke from this feature-branch checkout.
+2. Run focused/parity regressions plus `typecheck:extensions`, `test:changed:src`, `build:core`, `build:web-host`, `validate-pack`, and `git diff --check`.
+3. Record the exact tarball identity, capability evidence, failures/risks, and next task. No merge, push, tag, publish, or original-project request is authorized.
 
 ## 10. Progress log
 
@@ -499,7 +497,7 @@ Structural gaps discovered:
 - Focused validation after these fixes: Herdr/plugin/subagent compiled regression **154/154 pass**, plugin operations **7/7 pass**, and `typecheck:extensions` passes. `build:core` also passes with the durable runner changes.
 - **M6 is complete. M7 is ready. Exact next task: M7.1 — automate upstream-main change detection and semantic impact reports.**
 
-### 2026-08-30 — M7 downstream compatibility and release automation closeout
+### 2026-08-30 — M7 downstream compatibility and release automation closeout (historical implementation record)
 
 - Added `scripts/herdr-integration/upstream-impact.mjs`. It resolves immutable comparison refs without fetching or moving branches, verifies ancestry, emits exact commits/name-status files in JSON/Markdown, classifies subagent/lifecycle/process/packaging/preferences impact, and selects the corresponding downstream gates. Non-linear refs fail visibly rather than being treated as a safe sync.
 - The current real report compares `origin/upstream-main` `4b26a642c0121ae6161abbb6f2dc6937c78874dd` with `upstream/main` `9555a0dc652e5942ba2f2185d7fe27ffdee9c893`: lineage is valid, the delta is 9 commits/35 files, risk is `high`, and Herdr parity is required. This is a review signal only; no upstream branch was changed or integrated.
@@ -516,8 +514,19 @@ Structural gaps discovered:
   - `pnpm run build:web-host`: pass with the existing non-fatal Next.js `module.createRequire` trace warning;
   - `NPM_CONFIG_USERCONFIG=/dev/null pnpm run validate-pack`: pass with **`Package is installable. Safe to publish.`**;
   - workflow YAML parse and `git diff --check`: pass.
-- Remaining risk: the upstream 9-commit delta is detected but intentionally not integrated, GitHub-hosted stable/preview jobs still need their first remote run after review, and public downstream package naming/version syntax remains a release decision rather than an implementation default.
-- **M7 is complete. Exact next task: review this feature branch and its generated evidence, run the remote canary plus one final credentialed live E2E on the exact release candidate, then authorize or reject downstream promotion. Do not merge, push, tag, or publish implicitly.**
+- The original closeout still treated public package identity and remote compatibility comparison as later decisions. The post-M7 hardening entry below supersedes those operational assumptions.
+
+### 2026-08-30 — Post-M7 downstream distribution isolation and usability hardening
+
+- Selected the concrete public package identity `@penggin/gsd-pi-herdr` and applied it to the root manifest, installer, updater, web updater, managed-resource stamps, Docker image paths, workflow registry operations, diagnostics, and shipped package metadata.
+- Added `src/distribution.ts` as the runtime source of truth for downstream package/repository/issues/releases/model-catalog/registry endpoints. Active forensics and bundled GitHub workflow instructions now target `penggin/gsd-pi-herdr` only.
+- Removed the original-project remote/fetch path from the Herdr canary. Repository impact compares `origin/main..HEAD`; release stamping records `sourceBase`, rejects dirty promotion by default, and development packs are explicitly marked dirty.
+- Every `npm pack` now generates `dist/herdr-release.json`. `gsd --build-info` exposes installed package/version/Herdr identity and the release metadata; `validate-pack` requires and verifies all of it from an isolated installation.
+- Added a downstream-network-boundary regression that scans active workflows, installer/update paths, distribution metadata, and runtime issue/release/catalog routes for inherited original-project targets.
+- A development tarball of `@penggin/gsd-pi-herdr@1.16.2` was installed offline into an isolated prefix. Its `gsd --build-info` returned the downstream identity plus the expected `dirty=true`, `buildKind=development` provenance stamp. The official Herdr v0.8.2 capability check passed protocol 20, schema v1 SHA-256 `c48f1f54ee0150ca27e11fd44455fe94aeadb20fdf4e4a62393ed822a4e5b150`, all 13 required methods, pane-run, plugin-link, and plugin-manifest checks.
+- The installed plugin and installed GSD were then exercised in isolated XDG/GSD state through a fresh real `herdr --no-session` TTY. `/herdr-status` and `/herdr-doctor` confirmed root pane `w1:p1`; a public single `subagent` dispatch created `GSD Workers · dd7d233c` and worker pane `w1:p2`, returned exact final `HERDR_TARBALL_E2E_OK` to the parent with input/output usage `33291/13`, deleted `env.json`, published all final artifacts with `exitCode=0` and `aborted=false`, and showed only bounded `working` / `turn settled` activity in the worker pane. Full evidence is in `spikes/M7-DOWNSTREAM-TARBALL-SMOKE.md`.
+- Validation before final clean-commit packaging: `typecheck:extensions` pass; Herdr integration/automation **16/16 pass**; update/resource/installer/forensics focused suite **135/135 pass**; `test:changed:src` **119/119 pass**; `build:core` pass; `build:web-host` pass with the pre-existing non-fatal Next.js trace warning; isolated `validate-pack` pass with **`Package is installable. Safe to publish.`**; `git diff --check` pass.
+- Exact remaining task: commit this downstream-isolation checkpoint, generate a clean-commit release-candidate stamp with the recorded Herdr capability report, rerun the complete final gates and isolated installed `--build-info` check, then leave the feature branch clean for review. No merge, push, tag, publish, or original-project request is authorized.
 
 ## 11. Working-session protocol
 
@@ -525,7 +534,7 @@ For every Herdr session:
 
 1. read this file;
 2. identify exact current task IDs;
-3. inspect relevant current upstream/downstream code;
+3. inspect relevant current downstream code;
 4. make the smallest coherent change;
 5. run required focused/contract/parity/security tests;
 6. update this plan before stopping;

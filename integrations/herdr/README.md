@@ -11,7 +11,7 @@ pnpm run herdr:capability-check -- --mode supported --output build/herdr-capabil
 pnpm run herdr:release-stamp -- --capability build/herdr-capability.json --output dist/herdr-release.json
 ```
 
-The stamp records the downstream commit/version, exact pristine upstream-base commit, tested Herdr capability report, artifact schema, required gates, and the previous known-good rollback target. A version string alone is not sufficient identity.
+The stamp records the downstream package/commit/version, repository source base, historical lineage commit, tested Herdr capability report, artifact schema, required gates, and the previous known-good rollback target. A version string alone is not sufficient identity.
 
 The currently promised production contract is in `compatibility.json`. New stable or preview Herdr builds are canaries until their required socket methods, CLI helpers, plugin contract, focused tests, packaging gate, and real credentialed E2E have passed.
 
@@ -22,12 +22,12 @@ Build/install the downstream checkout through the repository's normal pnpm relea
 Before an update:
 
 ```bash
-pnpm run herdr:upstream-impact -- --base origin/upstream-main --head upstream/main --markdown
+pnpm run herdr:repository-impact -- --base origin/main --head HEAD --markdown
 pnpm run test:herdr-integration
 pnpm run herdr:capability-check -- --mode supported
 ```
 
-The updater must not move `upstream-main`, merge `main`, publish, or delete runtime evidence automatically.
+The updater must not fetch or modify the original project, merge `main`, publish, or delete runtime evidence automatically.
 
 ## Rollback
 

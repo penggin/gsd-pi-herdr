@@ -36,10 +36,6 @@ Raw Pi/GSD JSONL remains available to the parent for result processing, but work
 ## Downstream architecture
 
 ```text
-open-gsd/gsd-pi:main
-        │
-        │ regular upstream synchronization
-        ▼
 penggin/gsd-pi-herdr
         │
         ├── first-class Herdr integration extension/client
@@ -74,8 +70,10 @@ Herdr itself remains unmodified unless a proven public API limitation requires a
 
 ## Current state
 
-The repository has been synchronized to upstream commit `4b26a642c0121ae6161abbb6f2dc6937c78874dd` before beginning the integrated Herdr work. The fork keeps `upstream-main` as a pristine synchronization target and `main` as the downstream integration line.
+M0–M7 are complete. The concrete distribution is `@penggin/gsd-pi-herdr`,
+Herdr v0.8.2/protocol 20 is the supported baseline, and every tarball must carry
+inspectable Herdr release metadata. See `PLANNING.md` for exact live and package
+evidence.
 
-The separate `fix/cmux-split-cli` branch from the earlier investigation is retained independently and can be replayed or incorporated when the subagent backend refactor reaches cmux.
-
-No Herdr production implementation is claimed complete yet. See `PLANNING.md` for the exact milestone state.
+The historical source-base commit is retained as provenance. Active runtime,
+CI, install, update, issue, and release paths use downstream-owned targets only.

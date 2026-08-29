@@ -68,8 +68,8 @@ export function parseNameStatus(output) {
 }
 
 export function buildImpactReport({ cwd = repositoryRoot, baseRef, headRef } = {}) {
-  const base = resolveGitRef([baseRef, process.env.HERDR_UPSTREAM_BASE_REF, "upstream-main", "origin/upstream-main", "main"], { cwd });
-  const head = resolveGitRef([headRef, process.env.HERDR_UPSTREAM_HEAD_REF, "upstream/main"], { cwd });
+  const base = resolveGitRef([baseRef, process.env.HERDR_BASE_REF, "origin/main", "main"], { cwd });
+  const head = resolveGitRef([headRef, process.env.HERDR_HEAD_REF, "HEAD"], { cwd });
   const lineageVerified = run("git", ["merge-base", "--is-ancestor", base.commit, head.commit], { cwd, allowFailure: true }).status === 0;
   const changes = parseNameStatus(git(["diff", "--name-status", "--find-renames", base.commit, head.commit], { cwd }));
   const commits = git(["log", "--format=%H%x09%cI%x09%s", `${base.commit}..${head.commit}`], { cwd })
@@ -96,7 +96,7 @@ export function buildImpactReport({ cwd = repositoryRoot, baseRef, headRef } = {
 
 export function renderImpactMarkdown(report) {
   const lines = [
-    "# GSD upstream impact report",
+    "# GSD downstream repository impact report",
     "",
     `- Base: \`${report.base.ref}\` (\`${report.base.commit}\`)`,
     `- Head: \`${report.head.ref}\` (\`${report.head.commit}\`)`,
@@ -129,7 +129,7 @@ if (isMain(import.meta.url)) {
     else process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
     if (!report.lineageVerified) process.exitCode = 2;
   } catch (error) {
-    process.stderr.write(`[herdr-upstream-impact] ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(`[herdr-repository-impact] ${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;
   }
 }

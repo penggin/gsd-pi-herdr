@@ -315,6 +315,7 @@ try {
 
   const requiredFiles = [
     'dist/loader.js',
+    'dist/herdr-release.json',
     'packages/pi-coding-agent/dist/index.js',
     'packages/pi-ai/bin/pi-ai.js',
     'packages/pi-ai/dist/cli.js',
@@ -326,6 +327,8 @@ try {
     'packages/mcp-server/dist/cli.js',
     'scripts/link-workspace-packages.cjs',
     'integrations/hermes/plugin.yaml',
+    'integrations/herdr/compatibility.json',
+    'integrations/herdr/plugin/herdr-plugin.toml',
     'dist/web/standalone/server.js',
   ];
 
@@ -386,7 +389,7 @@ try {
   // Checks every package with `gsd.linkable: true` — not just a hand-picked subset —
   // so any future addition is automatically covered.
   console.log('==> Verifying workspace package resolution (every linkable package)...');
-  const installedRoot = join(installDir, 'node_modules', '@opengsd', 'gsd-pi');
+  const installedRoot = join(installDir, 'node_modules', ...rootPkg.name.split('/'));
   let resolutionFailed = false;
   for (const pkg of getLinkablePackages()) {
     const pkgPath = join(installedRoot, 'node_modules', pkg.scope, pkg.name);
@@ -431,6 +434,28 @@ try {
     process.exit(1);
   }
 
+  const loaderPath = join(installedRoot, 'dist', 'loader.js');
+  console.log('==> Verifying installed downstream/Herdr build identity...');
+  try {
+    const buildInfo = JSON.parse(execFileSync(process.execPath, [loaderPath, '--build-info'], {
+      cwd: installDir,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: 15000,
+      maxBuffer: DEFAULT_MAX_BUFFER,
+    }));
+    if (buildInfo.package !== rootPkg.name || buildInfo.herdrIntegration !== true || !buildInfo.releaseMetadata) {
+      throw new Error(`unexpected build info: ${JSON.stringify(buildInfo)}`);
+    }
+    console.log(`    ${buildInfo.package} carries Herdr release metadata (${buildInfo.releaseMetadata.downstream.buildKind}).`);
+  } catch (err) {
+    console.log('ERROR: Installed tarball lacks valid downstream/Herdr build identity.');
+    if (err.stdout) console.log(err.stdout);
+    if (err.stderr) console.log(err.stderr);
+    console.log(err.message ?? err);
+    process.exit(1);
+  }
+
   // --- Verify the packaged standalone web host resolves its runtime deps ---
   // pnpm lays top-level deps down as symlinks into a `.pnpm/` store, and
   // `npm pack` silently drops symlinks — so the published standalone host can
@@ -464,7 +489,6 @@ try {
 
   // --- Run the binary to confirm end-to-end resolution ---
   console.log('==> Running installed binary (gsd -v)...');
-  const loaderPath = join(installedRoot, 'dist', 'loader.js');
   const bundledWorkflowMcpCliPath = join(installedRoot, 'packages', 'mcp-server', 'dist', 'cli.js');
   if (!existsSync(bundledWorkflowMcpCliPath)) {
     console.log('ERROR: Bundled workflow MCP CLI missing after install.');
@@ -637,7 +661,7 @@ try {
         npm_config_cache: npmCacheDir,
       }),
     }).trim();
-    const globalRoot = join(globalNodeModules, '@opengsd', 'gsd-pi');
+    const globalRoot = join(globalNodeModules, ...rootPkg.name.split('/'));
 
     // Workspace packages ship under packages/*/dist and are symlinked into
     // node_modules by the postinstall script, which `--ignore-scripts` skipped.

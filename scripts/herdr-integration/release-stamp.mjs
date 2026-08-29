@@ -5,8 +5,8 @@ import { git, isMain, parseArgs, parseJsonFileText, repositoryRoot, resolveGitRe
 
 export function buildReleaseMetadata({
   cwd = repositoryRoot,
-  upstreamRef,
-  capabilityPath,
+  baseRef,
+  capabilityPath = process.env.HERDR_CAPABILITY_REPORT,
   knownGoodPath = resolve(repositoryRoot, "integrations/herdr/release/known-good.json"),
   now = new Date(),
   allowDirty = false,
@@ -14,11 +14,12 @@ export function buildReleaseMetadata({
   const packageManifest = parseJsonFileText(readFileSync(resolve(cwd, "package.json"), "utf8"), "package.json");
   const compatibility = parseJsonFileText(readFileSync(resolve(cwd, "integrations/herdr/compatibility.json"), "utf8"), "Herdr compatibility matrix");
   const knownGood = parseJsonFileText(readFileSync(knownGoodPath, "utf8"), "Herdr known-good release");
-  const upstream = resolveGitRef([upstreamRef, process.env.HERDR_UPSTREAM_BASE_REF, "upstream-main", "origin/upstream-main", "main"], { cwd });
+  const sourceBase = resolveGitRef([baseRef, process.env.HERDR_BASE_REF, "origin/main", "main"], { cwd });
   const downstream = resolveGitRef(["HEAD"], { cwd });
-  if (!allowDirty && git(["status", "--porcelain"], { cwd })) throw new Error("Refusing to stamp release metadata from a dirty worktree");
-  if (run("git", ["merge-base", "--is-ancestor", upstream.commit, downstream.commit], { cwd, allowFailure: true }).status !== 0) {
-    throw new Error(`Recorded upstream base ${upstream.commit} is not an ancestor of downstream ${downstream.commit}`);
+  const dirty = Boolean(git(["status", "--porcelain"], { cwd }));
+  if (!allowDirty && dirty) throw new Error("Refusing to stamp release metadata from a dirty worktree");
+  if (run("git", ["merge-base", "--is-ancestor", sourceBase.commit, downstream.commit], { cwd, allowFailure: true }).status !== 0) {
+    throw new Error(`Recorded repository base ${sourceBase.commit} is not an ancestor of downstream ${downstream.commit}`);
   }
   const capability = capabilityPath
     ? parseJsonFileText(readFileSync(capabilityPath, "utf8"), "Herdr capability report")
@@ -33,15 +34,18 @@ export function buildReleaseMetadata({
       version: packageManifest.version,
       commit: downstream.commit,
       ref: git(["symbolic-ref", "--short", "-q", "HEAD"], { cwd, allowFailure: true }) || "detached",
+      dirty,
+      buildKind: dirty ? "development" : "release-candidate",
     },
-    upstream: {
-      repository: "open-gsd/gsd-pi",
-      ref: upstream.ref,
-      commit: upstream.commit,
+    sourceBase: {
+      repository: "penggin/gsd-pi-herdr",
+      ref: sourceBase.ref,
+      commit: sourceBase.commit,
     },
     herdr: {
       integrationSchemaVersion: 1,
       compatibility,
+      capabilityVerified: capability?.compatible === true,
       ...(capability ? { capability } : {}),
     },
     rollback: {
@@ -66,7 +70,7 @@ if (isMain(import.meta.url)) {
     const args = parseArgs(process.argv.slice(2));
     const output = args.output ?? resolve(repositoryRoot, "dist/herdr-release.json");
     const metadata = buildReleaseMetadata({
-      upstreamRef: args["upstream-ref"],
+      baseRef: args["base-ref"],
       capabilityPath: args.capability,
       knownGoodPath: args["known-good"],
       allowDirty: args["allow-dirty"] === true,

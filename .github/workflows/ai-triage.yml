@@ -262,7 +262,7 @@ jobs:
               };
 
               const securityNote = result.violation_type === 'security-in-public'
-                ? `\n\n**If this is a security vulnerability, please delete this ${type} and use [GitHub\'s private vulnerability reporting](https://github.com/open-gsd/gsd-pi/security/advisories/new) instead.** See [CONTRIBUTING.md](https://github.com/open-gsd/gsd-pi/blob/main/CONTRIBUTING.md#security) for details.`
+                ? `\n\n**If this is a security vulnerability, please delete this ${type} and use [GitHub\'s private vulnerability reporting](https://github.com/penggin/gsd-pi-herdr/security/advisories/new) instead.** See [CONTRIBUTING.md](https://github.com/penggin/gsd-pi-herdr/blob/main/CONTRIBUTING.md#security) for details.`
                 : '';
 
               const marker = '<!-- gsd-triage-bot:misalignment -->';
@@ -275,7 +275,7 @@ jobs:
 
             ${result.explanation}
 
-            Please review our [VISION.md](https://github.com/open-gsd/gsd-pi/blob/main/VISION.md) and [CONTRIBUTING.md](https://github.com/open-gsd/gsd-pi/blob/main/CONTRIBUTING.md) for project guidelines.${securityNote}
+            Please review our [VISION.md](https://github.com/penggin/gsd-pi-herdr/blob/main/VISION.md) and [CONTRIBUTING.md](https://github.com/penggin/gsd-pi-herdr/blob/main/CONTRIBUTING.md) for project guidelines.${securityNote}
 
             A maintainer will review this shortly. If you believe this was flagged in error, no action is needed — we'll take a look.
 

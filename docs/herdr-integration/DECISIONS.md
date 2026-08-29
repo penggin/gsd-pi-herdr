@@ -13,9 +13,9 @@ The first plan attempted to keep official GSD-Pi untouched and maintain a small 
 
 ### Decision
 
-`penggin/gsd-pi-herdr` is the canonical downstream distribution. It may contain deliberate Herdr integration, fixes, refactors, and experimental functionality while regularly synchronizing `open-gsd/gsd-pi`.
+`penggin/gsd-pi-herdr` is the canonical downstream distribution. It may contain deliberate Herdr integration, fixes, refactors, and experimental functionality. Source lineage is historical provenance; active runtime and automation use downstream endpoints and refs only.
 
-Keep `upstream-main` pristine and use `main` for downstream integration.
+Use `main` for downstream integration and `feature/*` for focused work.
 
 ### Supersedes
 
@@ -142,11 +142,14 @@ Long-running work needs evidence across detach/reattach and process crashes. Lau
 
 ## ADR-H012 — Capability-check Herdr, synchronize GSD by upstream lineage
 
-**Status:** Accepted
+**Status:** Superseded in part by ADR-H018
 
 Herdr compatibility is checked against actual API/CLI capability behavior and the schema bundled with the supported Herdr binary.
 
-GSD compatibility is managed differently now that this is a full downstream fork: record the upstream base commit, synchronize through `upstream-main`, inspect semantic conflicts, and run downstream parity/E2E tests. Version/fingerprint-only patch application is no longer the production model.
+The historical source-base commit remains recorded. The earlier routine
+`upstream-main` synchronization policy is no longer active; ADR-H018 requires
+downstream-only automation unless the user explicitly authorizes a new source
+import. Version/fingerprint-only patch application is not a production model.
 
 ---
 
@@ -204,14 +207,32 @@ work across process and Herdr restart boundaries.
 **Status:** Accepted
 **Date:** 2026-08-30
 
-Upstream impact checks operate on remote-tracking refs and produce review
-artifacts; they never advance `upstream-main`, merge, rebase, or push. Herdr
-canaries resolve exact official release assets, capability-check their bundled
-schema/CLI/plugin contract, and build/test the downstream checkout without
-promoting it.
+Repository impact checks operate on downstream refs already present in the
+checkout and produce review artifacts; they never fetch, merge, rebase, or push.
+Herdr canaries resolve exact official Herdr release assets, capability-check
+their bundled schema/CLI/plugin contract, and build/test the downstream checkout
+without promoting it.
 
 Release stamping is likewise observational except for its explicit output file.
-It refuses dirty worktrees and upstream bases outside downstream ancestry, embeds
+It refuses dirty promotion worktrees and source bases outside downstream ancestry, embeds
 the prior known-good tuple, and never rewrites that rollback target. A human or a
 separately authorized release workflow promotes a candidate only after the live
 E2E and package gates are recorded.
+
+---
+
+## ADR-H018 — Isolate downstream package and network identity
+
+**Status:** Accepted
+**Date:** 2026-08-30
+
+The distributable package is `@penggin/gsd-pi-herdr`. Runtime update checks,
+release notes, model-catalog refreshes, issue guidance, Docker images, npm
+automation, and Herdr canaries must use downstream-owned endpoints and refs.
+They may not fetch, publish to, modify, or create issues against the original
+project without a new explicit user authorization and decision record.
+
+Every tarball carries `dist/herdr-release.json`; `gsd --build-info` exposes that
+identity after installation; and the package gate verifies both from an isolated
+prefix. The source-base commit remains recorded as lineage only, not as an
+instruction to contact the source repository.

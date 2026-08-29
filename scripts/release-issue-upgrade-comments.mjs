@@ -40,7 +40,7 @@ export function buildReleaseUpgradeComment(releaseTag, releaseUrl = "") {
     "Please upgrade to the latest version and re-run your reproduction steps:",
     "",
     "```bash",
-    "npm install -g @opengsd/gsd-pi@latest",
+    "npm install -g @penggin/gsd-pi-herdr@latest",
     "gsd --version",
     "```",
     "",

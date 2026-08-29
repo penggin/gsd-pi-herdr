@@ -1,4 +1,4 @@
-# @opengsd/gsd-pi + CI: manual npm publish with approval gates
+# @penggin/gsd-pi-herdr + CI: manual npm publish with approval gates
 name: NPM Publish
 
 # Manual npm publish. npm trusted publishing accepts one configured workflow
@@ -107,7 +107,7 @@ jobs:
       - name: Build core
         run: pnpm run build:core
 
-      # The main @opengsd/gsd-pi tarball bundles packages/*/dist via its `files`
+      # The main @penggin/gsd-pi-herdr tarball bundles packages/*/dist via its `files`
       # globs, so an unbuilt workspace package ships broken
       # inside this dev tarball too — guard the built dist before publishing.
       - name: Verify workspace packages are built
@@ -153,15 +153,15 @@ jobs:
           CHANNEL: ${{ github.event.inputs.channel == 'latest' && 'dev' || github.event.inputs.channel }}
         run: |
           VERSION=$(node -e 'process.stdout.write(require("./package.json").version)')
-          EXISTING=$(npm view "@opengsd/gsd-pi@${VERSION}" version 2>/dev/null || true)
+          EXISTING=$(npm view "@penggin/gsd-pi-herdr@${VERSION}" version 2>/dev/null || true)
           if [ -n "${EXISTING}" ]; then
-            TAGGED=$(npm view "@opengsd/gsd-pi" "dist-tags.${CHANNEL}" 2>/dev/null || true)
+            TAGGED=$(npm view "@penggin/gsd-pi-herdr" "dist-tags.${CHANNEL}" 2>/dev/null || true)
             if [ "${TAGGED}" = "${VERSION}" ]; then
               echo "Version ${VERSION} is already published and @${CHANNEL} points to it — skipping publish."
               exit 0
             fi
             echo "::error::Version ${VERSION} already exists but @${CHANNEL} points to '${TAGGED:-<unset>}'. Trusted publishing only authenticates npm publish, not dist-tag mutation."
-            echo "::error::Move the tag manually if intended: npm dist-tag add @opengsd/gsd-pi@${VERSION} ${CHANNEL}"
+            echo "::error::Move the tag manually if intended: npm dist-tag add @penggin/gsd-pi-herdr@${VERSION} ${CHANNEL}"
             exit 1
           fi
           trap 'node scripts/postpack-restore-workspace.cjs' EXIT
@@ -175,10 +175,10 @@ jobs:
           else
             if echo "$OUTPUT" | grep -q "cannot publish over the previously published\|You cannot publish over"; then
               echo "Version ${VERSION} was published concurrently — verifying @${CHANNEL} tag."
-              TAGGED=$(npm view "@opengsd/gsd-pi" "dist-tags.${CHANNEL}" 2>/dev/null || true)
+              TAGGED=$(npm view "@penggin/gsd-pi-herdr" "dist-tags.${CHANNEL}" 2>/dev/null || true)
               if [ "${TAGGED}" != "${VERSION}" ]; then
                 echo "::error::@${CHANNEL} points to '${TAGGED:-<unset>}' not ${VERSION} after concurrent publish."
-                echo "::error::Move the tag manually if intended: npm dist-tag add @opengsd/gsd-pi@${VERSION} ${CHANNEL}"
+                echo "::error::Move the tag manually if intended: npm dist-tag add @penggin/gsd-pi-herdr@${VERSION} ${CHANNEL}"
                 exit 1
               fi
               echo "Confirmed: @${CHANNEL} → ${VERSION} (from concurrent publish)."
@@ -187,14 +187,14 @@ jobs:
               exit 1
             fi
           fi
-          echo "Verifying @opengsd/gsd-pi@${VERSION} can be installed from npm..."
+          echo "Verifying @penggin/gsd-pi-herdr@${VERSION} can be installed from npm..."
           DELAY=10
           for attempt in $(seq 1 12); do
             PREFIX=$(mktemp -d "${RUNNER_TEMP:-/tmp}/gsd-npm-install-XXXXXX")
             CACHE=$(mktemp -d "${RUNNER_TEMP:-/tmp}/gsd-npm-cache-XXXXXX")
-            if npm install -g "@opengsd/gsd-pi@${VERSION}" --ignore-scripts --prefer-online --prefix "${PREFIX}" --cache "${CACHE}"; then
+            if npm install -g "@penggin/gsd-pi-herdr@${VERSION}" --ignore-scripts --prefer-online --prefix "${PREFIX}" --cache "${CACHE}"; then
               rm -rf "${PREFIX}" "${CACHE}"
-              echo "Confirmed: @opengsd/gsd-pi@${VERSION} installs from npm."
+              echo "Confirmed: @penggin/gsd-pi-herdr@${VERSION} installs from npm."
               exit 0
             fi
             rm -rf "${PREFIX}" "${CACHE}"
@@ -206,7 +206,7 @@ jobs:
             DELAY=$((DELAY * 2))
             if [ "${DELAY}" -gt 60 ]; then DELAY=60; fi
           done
-          echo "::error::Publish step succeeded but @opengsd/gsd-pi@${VERSION} was not installable from npm after retries. Check registry tarball propagation before continuing."
+          echo "::error::Publish step succeeded but @penggin/gsd-pi-herdr@${VERSION} was not installable from npm after retries. Check registry tarball propagation before continuing."
           exit 1
 
   prerelease-verify:
@@ -229,18 +229,18 @@ jobs:
           registry-url: https://registry.npmjs.org
           cache: pnpm
 
-      - name: Install published @opengsd/gsd-pi@${{ github.event.inputs.channel == 'latest' && 'dev' || github.event.inputs.channel }} globally (with registry propagation retry)
+      - name: Install published @penggin/gsd-pi-herdr@${{ github.event.inputs.channel == 'latest' && 'dev' || github.event.inputs.channel }} globally (with registry propagation retry)
         env:
           PUBLISH_VERSION: ${{ needs.prerelease-publish.outputs.version }}
           CHANNEL: ${{ github.event.inputs.channel == 'latest' && 'dev' || github.event.inputs.channel }}
         run: |
           for i in 1 2 3 4 5 6; do
-            npm install -g "@opengsd/gsd-pi@${PUBLISH_VERSION}" && exit 0
+            npm install -g "@penggin/gsd-pi-herdr@${PUBLISH_VERSION}" && exit 0
             echo "Attempt $i failed - waiting 10s for npm registry propagation..."
             sleep 10
           done
-          echo "::error::Failed to install @opengsd/gsd-pi@${PUBLISH_VERSION} after 6 attempts."
-          echo "::error::Recommended actions: (1) investigate the failing step above, (2) if the version exists on npm, deprecate it with 'npm deprecate @opengsd/gsd-pi@${PUBLISH_VERSION} \"broken ${CHANNEL} build; see Actions run\"', (3) cut a fix and re-run NPM Publish."
+          echo "::error::Failed to install @penggin/gsd-pi-herdr@${PUBLISH_VERSION} after 6 attempts."
+          echo "::error::Recommended actions: (1) investigate the failing step above, (2) if the version exists on npm, deprecate it with 'npm deprecate @penggin/gsd-pi-herdr@${PUBLISH_VERSION} \"broken ${CHANNEL} build; see Actions run\"', (3) cut a fix and re-run NPM Publish."
           exit 1
 
       - name: Run smoke tests (against installed binary)
@@ -273,8 +273,8 @@ jobs:
           PUBLISH_VERSION: ${{ needs.prerelease-publish.outputs.version }}
           CHANNEL: ${{ github.event.inputs.channel == 'latest' && 'dev' || github.event.inputs.channel }}
         run: |
-          echo "::error::Post-publish verification failed for @opengsd/gsd-pi@${PUBLISH_VERSION}."
-          echo "::error::Recommended actions: (1) investigate the failing step above, (2) if the version exists on npm, deprecate it with 'npm deprecate @opengsd/gsd-pi@${PUBLISH_VERSION} \"broken ${CHANNEL} build; see Actions run\"', (3) cut a fix and re-run NPM Publish."
+          echo "::error::Post-publish verification failed for @penggin/gsd-pi-herdr@${PUBLISH_VERSION}."
+          echo "::error::Recommended actions: (1) investigate the failing step above, (2) if the version exists on npm, deprecate it with 'npm deprecate @penggin/gsd-pi-herdr@${PUBLISH_VERSION} \"broken ${CHANNEL} build; see Actions run\"', (3) cut a fix and re-run NPM Publish."
           exit 1
 
   prod-release-plan:
@@ -686,12 +686,12 @@ jobs:
           else
             if echo "$OUTPUT" | grep -q "cannot publish over the previously published\|You cannot publish over"; then
               echo "::warning::${RELEASE_VERSION} concurrent publish detected — verifying @latest dist-tag."
-              ACTUAL=$(npm view "@opengsd/gsd-pi" dist-tags.latest 2>/dev/null || true)
+              ACTUAL=$(npm view "@penggin/gsd-pi-herdr" dist-tags.latest 2>/dev/null || true)
               if [ "${ACTUAL}" = "${RELEASE_VERSION}" ]; then
                 echo "Confirmed: @latest already points to ${RELEASE_VERSION}; treating as success."
               else
                 echo "::error::@latest dist-tag is '${ACTUAL}', not '${RELEASE_VERSION}'. Trusted publishing only authenticates npm publish, not dist-tag mutation."
-                echo "::error::Promote manually if intended: npm dist-tag add @opengsd/gsd-pi@${RELEASE_VERSION} latest"
+                echo "::error::Promote manually if intended: npm dist-tag add @penggin/gsd-pi-herdr@${RELEASE_VERSION} latest"
                 exit 1
               fi
             else
@@ -699,14 +699,14 @@ jobs:
               exit 1
             fi
           fi
-          echo "Verifying @opengsd/gsd-pi@${RELEASE_VERSION} can be installed from npm..."
+          echo "Verifying @penggin/gsd-pi-herdr@${RELEASE_VERSION} can be installed from npm..."
           DELAY=10
           for attempt in $(seq 1 12); do
             PREFIX=$(mktemp -d "${RUNNER_TEMP:-/tmp}/gsd-npm-install-XXXXXX")
             CACHE=$(mktemp -d "${RUNNER_TEMP:-/tmp}/gsd-npm-cache-XXXXXX")
-            if npm install -g "@opengsd/gsd-pi@${RELEASE_VERSION}" --ignore-scripts --prefer-online --prefix "${PREFIX}" --cache "${CACHE}"; then
+            if npm install -g "@penggin/gsd-pi-herdr@${RELEASE_VERSION}" --ignore-scripts --prefer-online --prefix "${PREFIX}" --cache "${CACHE}"; then
               rm -rf "${PREFIX}" "${CACHE}"
-              echo "Confirmed: @opengsd/gsd-pi@${RELEASE_VERSION} installs from npm."
+              echo "Confirmed: @penggin/gsd-pi-herdr@${RELEASE_VERSION} installs from npm."
               exit 0
             fi
             rm -rf "${PREFIX}" "${CACHE}"
@@ -718,7 +718,7 @@ jobs:
             DELAY=$((DELAY * 2))
             if [ "${DELAY}" -gt 60 ]; then DELAY=60; fi
           done
-          echo "::error::Publish step succeeded but @opengsd/gsd-pi@${RELEASE_VERSION} was not installable from npm after retries. Check registry tarball propagation before continuing."
+          echo "::error::Publish step succeeded but @penggin/gsd-pi-herdr@${RELEASE_VERSION} was not installable from npm after retries. Check registry tarball propagation before continuing."
           exit 1
 
       # Final gate: confirm EVERY required package (main + engines + workspace) is
@@ -801,11 +801,11 @@ jobs:
         run: |
           docker build --target runtime \
             --build-arg "GSD_VERSION=${RELEASE_VERSION}" \
-            -t ghcr.io/open-gsd/gsd-pi:latest \
-            -t "ghcr.io/open-gsd/gsd-pi:${RELEASE_VERSION}" \
+            -t ghcr.io/penggin/gsd-pi-herdr:latest \
+            -t "ghcr.io/penggin/gsd-pi-herdr:${RELEASE_VERSION}" \
             .
-          docker push "ghcr.io/open-gsd/gsd-pi:${RELEASE_VERSION}"
-          docker push ghcr.io/open-gsd/gsd-pi:latest
+          docker push "ghcr.io/penggin/gsd-pi-herdr:${RELEASE_VERSION}"
+          docker push ghcr.io/penggin/gsd-pi-herdr:latest
 
       - name: Open back-merge PR main to next if behind
         env:

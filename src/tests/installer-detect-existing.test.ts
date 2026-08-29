@@ -12,7 +12,7 @@ import {
 test('parseInstalledVersion reads direct dependency entry', () => {
   const version = parseInstalledVersion({
     dependencies: {
-      '@opengsd/gsd-pi': { version: '2.14.0' },
+      '@penggin/gsd-pi-herdr': { version: '2.14.0' },
     },
   })
   assert.equal(version, '2.14.0')
@@ -23,7 +23,7 @@ test('parseInstalledVersion walks nested dependency tree', () => {
     dependencies: {
       foo: {
         dependencies: {
-          '@opengsd/gsd-pi': { version: '2.10.1' },
+          '@penggin/gsd-pi-herdr': { version: '2.10.1' },
         },
       },
     },
@@ -35,7 +35,7 @@ test('parseInstalledVersion reads pnpm list array output', () => {
   const version = parseInstalledVersion([
     {
       dependencies: {
-        '@opengsd/gsd-pi': { version: '2.15.0' },
+        '@penggin/gsd-pi-herdr': { version: '2.15.0' },
       },
     },
   ])
@@ -67,7 +67,7 @@ test('detectInstalledVersion parses npm list wrapper output', async () => {
   const binDir = await mkdtemp(join(tmpdir(), 'gsd-npm-'))
   const npmBin = process.platform === 'win32' ? 'npm.cmd' : 'npm'
   const npmPath = join(binDir, npmBin)
-  const npmListJson = '{"dependencies":{"@opengsd/gsd-pi":{"version":"2.14.0"}}}'
+  const npmListJson = '{"dependencies":{"@penggin/gsd-pi-herdr":{"version":"2.14.0"}}}'
   const script = process.platform === 'win32'
     ? `@echo off\r\necho ${npmListJson}\r\n`
     : `#!/usr/bin/env sh\nprintf '%s\\n' '${npmListJson}'\n`
@@ -93,7 +93,7 @@ test('detectInstalledVersion parses pnpm list wrapper output', async () => {
   const binDir = await mkdtemp(join(tmpdir(), 'gsd-pnpm-'))
   const pnpmBin = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
   const pnpmPath = join(binDir, pnpmBin)
-  const pnpmListJson = '[{"dependencies":{"@opengsd/gsd-pi":{"version":"2.15.0"}}}]'
+  const pnpmListJson = '[{"dependencies":{"@penggin/gsd-pi-herdr":{"version":"2.15.0"}}}]'
   const script = process.platform === 'win32'
     ? `@echo off\r\necho ${pnpmListJson}\r\n`
     : `#!/usr/bin/env sh\nprintf '%s\\n' '${pnpmListJson}'\n`

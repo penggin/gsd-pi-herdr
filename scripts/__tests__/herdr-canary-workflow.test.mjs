@@ -13,8 +13,9 @@ test("canary workflow checks supported, latest stable, and preview Herdr release
   assert.match(workflow, /validate-pack/);
 });
 
-test("upstream watcher reports remote refs without merging or pushing branches", () => {
+test("repository impact job uses only this checkout and never contacts the original repository", () => {
   assert.match(workflow, /upstream-impact\.mjs/);
-  assert.match(workflow, /refs\/remotes\/upstream-watch\/main/);
-  assert.doesNotMatch(workflow, /git\s+(?:merge|rebase|push|reset)/);
+  assert.match(workflow, /--base origin\/main/);
+  assert.match(workflow, /--head HEAD/);
+  assert.doesNotMatch(workflow, /open-gsd\/gsd-pi|git\s+(?:fetch|merge|rebase|push|reset|remote)/);
 });

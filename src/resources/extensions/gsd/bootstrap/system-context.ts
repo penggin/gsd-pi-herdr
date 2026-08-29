@@ -24,6 +24,7 @@ import { toPosixPath } from "../../shared/mod.js";
 import { autoEnableCmuxPreferences } from "../commands-cmux.js";
 import { gsdHome } from "../gsd-home.js";
 import { GSD_CONTEXT_MESSAGE_SENTINEL } from "../constants.js";
+import { GSD_DISTRIBUTION_ISSUES_URL } from "../../../shared/distribution.js";
 
 // Single source of truth lives in ../constants.js; re-exported here because
 // buildContextMessage() stamps this marker on every context injection and the
@@ -115,7 +116,7 @@ function warnDeprecatedAgentInstructions(basePath: string): void {
       console.warn(
         `[GSD] DEPRECATED: ${path} is no longer loaded. ` +
         `Migrate your instructions to AGENTS.md (or CLAUDE.md) in the same directory. ` +
-        `See https://github.com/open-gsd/gsd-pi/issues/1492`,
+        `See ${GSD_DISTRIBUTION_ISSUES_URL}`,
       );
     }
   }

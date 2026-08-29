@@ -88,9 +88,9 @@ function getBundledGsdVersion(): string {
 function getBundledPackageName(): string {
   try {
     const pkg = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf-8'))
-    return typeof pkg?.name === 'string' ? pkg.name : '@opengsd/gsd-pi'
+    return typeof pkg?.name === 'string' ? pkg.name : '@penggin/gsd-pi-herdr'
   } catch {
-    return '@opengsd/gsd-pi'
+    return '@penggin/gsd-pi-herdr'
   }
 }
 
@@ -708,7 +708,7 @@ function pruneRemovedBundledExtensions(
  * Skips the full copy when the managed-resources.json version and content
  * fingerprint match the current install, avoiding ~128ms of synchronous cpSync
  * on steady-state startup.
- * After `npm update -g @opengsd/gsd-pi`, versions will differ and the copy
+ * After `npm update -g @penggin/gsd-pi-herdr`, versions will differ and the copy
  * runs once to land the new resources.
  *
  * Inspectable: `ls ~/.gsd/agent/extensions/`

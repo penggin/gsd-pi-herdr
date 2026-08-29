@@ -2,22 +2,25 @@
 
 ## Development branches
 
-- `upstream-main`: pristine mirror target for `open-gsd/gsd-pi:main`.
 - `main`: downstream integration/release line.
 - `feature/*`: focused work.
 - `compat/herdr-*`: temporary Herdr compatibility adaptation.
 
-The existing `fix/cmux-split-cli` branch is preserved until M2 revalidates and incorporates it through the backend abstraction.
+## Repository impact workflow
 
-## Upstream sync workflow
+Normal work uses this repository only. Do not add or fetch an original-project
+remote. Compare the downstream integration base to the candidate checkout:
 
-1. Fetch/identify the latest `open-gsd/gsd-pi:main` commit.
-2. Move `upstream-main` to that exact upstream commit only after verifying lineage.
-3. Integrate `upstream-main` into a temporary downstream sync branch or `main` through a normal reviewed merge/rebase workflow.
-4. Resolve conflicts semantically, not mechanically.
-5. Run upstream-focused tests for touched code.
-6. Run downstream Herdr parity/E2E tests when subagent, extension loading, CLI, resources, packaging, or preferences changed.
-7. Record the new upstream base in downstream release metadata and the living plan.
+```bash
+pnpm run herdr:repository-impact -- \
+  --base origin/main \
+  --head HEAD \
+  --output build/herdr-repository-impact.json \
+  --markdown
+```
+
+The report selects focused semantic gates. It never fetches, advances branches,
+merges, rebases, pushes, publishes, or opens issues.
 
 ## Development environment
 
@@ -69,10 +72,11 @@ Expected normal usage after implementation:
 
 ## Diagnostics
 
-The fork should eventually expose a GSD-native status command, for example:
+The runtime exposes GSD-native diagnostics:
 
 ```text
-/gsd herdr status
+/herdr-status
+/herdr-doctor
 ```
 
 or equivalent CLI/slash syntax consistent with existing GSD command architecture.
@@ -133,21 +137,22 @@ If a user closes a worker pane before final exit evidence:
 Each downstream release should record:
 
 ```text
-downstream version/tag
-upstream base commit
+downstream package/version/tag
+downstream source-base commit and historical lineage commit
 Herdr versions/capability sets tested
 Herdr integration schema version
 known downstream-only features/fixes
 verification commands/results
 ```
 
-A later release process may use a downstream-specific version suffix or separate package identity. That packaging decision is independent from the integration architecture and should be made before public distribution.
+The package identity is `@penggin/gsd-pi-herdr`. Every packed artifact includes
+`dist/herdr-release.json` and exposes it through `gsd --build-info`.
 
 Generate the machine-readable identity with:
 
 ```bash
 pnpm run herdr:release-stamp -- \
-  --upstream-ref origin/upstream-main \
+  --base-ref origin/main \
   --capability build/herdr-capability.json \
   --output dist/herdr-release.json
 ```
@@ -157,7 +162,7 @@ branches, fetches, merges, publishes, or promotes the known-good rollback file.
 
 ## Canary policy
 
-Before adopting substantial upstream changes or a new Herdr stable release:
+Before adopting substantial downstream changes or a new Herdr stable release:
 
 1. build a canary downstream binary;
 2. run automated unit/parity/E2E tests;

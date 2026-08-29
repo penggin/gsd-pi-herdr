@@ -3,9 +3,9 @@ export function assertInteractiveOrYes({ isTTY, yesFlag }) {
   process.stderr.write(
     'Error: Interactive installer requires a terminal.\n\n' +
     'For automated installs:\n' +
-    '  npx @opengsd/gsd-pi@latest --yes\n\n' +
+    '  npx @penggin/gsd-pi-herdr@latest --yes\n\n' +
     'Or install directly:\n' +
-    '  npm install -g @opengsd/gsd-pi\n\n',
+    '  npm install -g @penggin/gsd-pi-herdr\n\n',
   )
   process.exit(1)
 }

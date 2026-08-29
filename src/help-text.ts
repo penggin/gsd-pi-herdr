@@ -269,6 +269,7 @@ export function printHelp(version: string): void {
   process.stdout.write('  --tools <a,b,c>          Restrict available tools\n')
   process.stdout.write('  --list-models [search]   List available models and exit\n')
   process.stdout.write('  --version, -v            Print version and exit\n')
+  process.stdout.write('  --build-info             Print downstream/Herdr release identity as JSON\n')
   process.stdout.write('  --help, -h               Print this help and exit\n')
   process.stdout.write('\nSubcommands:\n')
   process.stdout.write('  config                   Re-run the setup wizard\n')

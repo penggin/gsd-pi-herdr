@@ -39,6 +39,7 @@ import {
 } from './extension-registry.js'
 import type { EnsureRtkResult } from './rtk.js'
 import { registerInstalledExtensionPackage } from './extension-registry.js'
+import { GSD_DISTRIBUTION_PACKAGE } from './distribution.js'
 
 type PiCodingAgentModule = typeof import('@gsd/pi-coding-agent')
 type AgentCoreModule = typeof import('@gsd/agent-core')
@@ -91,7 +92,7 @@ function exitIfManagedResourcesAreNewer(currentAgentDir: string): void {
   process.stderr.write(
     `[gsd] ${chalk.yellow('Version mismatch detected')}\n` +
     `[gsd] Synced resources are from ${chalk.bold(`v${managedVersion}`)}, but this \`gsd\` binary is ${chalk.dim(`v${currentVersion}`)}.\n` +
-    `[gsd] Run ${chalk.bold('npm install -g @opengsd/gsd-pi@latest')} or ${chalk.bold('gsd upgrade')}, then try again.\n`,
+    `[gsd] Run ${chalk.bold(`npm install -g ${GSD_DISTRIBUTION_PACKAGE}@latest`)} or ${chalk.bold('gsd upgrade')}, then try again.\n`,
   )
   process.exit(1)
 }

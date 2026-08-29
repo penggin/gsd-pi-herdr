@@ -1,13 +1,11 @@
 <!-- GSD Pi - Project overview and setup guide -->
 
-# GSD Pi
+# GSD Pi Herdr
 
-[![npm version](https://img.shields.io/npm/v/@opengsd/gsd-pi?label=npm&logo=npm)](https://www.npmjs.com/package/@opengsd/gsd-pi)
-[![npm downloads](https://img.shields.io/npm/dm/@opengsd/gsd-pi?label=downloads&logo=npm&color=red)](https://www.npmjs.com/package/@opengsd/gsd-pi)
-[![CI](https://img.shields.io/github/actions/workflow/status/open-gsd/gsd-pi/ci.yml?branch=main&label=tests&logo=github)](https://github.com/open-gsd/gsd-pi/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/penggin/gsd-pi-herdr/ci.yml?branch=main&label=tests&logo=github)](https://github.com/penggin/gsd-pi-herdr/actions/workflows/ci.yml)
 [![Discord](https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/vY2bv3FrzX)
-[![GitHub stars](https://img.shields.io/github/stars/open-gsd/gsd-pi?label=stars&logo=github)](https://github.com/open-gsd/gsd-pi/stargazers)
-[![License: MIT](https://img.shields.io/github/license/open-gsd/gsd-pi?label=license)](https://github.com/open-gsd/gsd-pi/blob/main/LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/penggin/gsd-pi-herdr?label=stars&logo=github)](https://github.com/penggin/gsd-pi-herdr/stargazers)
+[![License: MIT](https://img.shields.io/github/license/penggin/gsd-pi-herdr?label=license)](https://github.com/penggin/gsd-pi-herdr/blob/main/LICENSE)
 
 GSD Pi is a local-first coding agent for planning, implementing, verifying, and tracking project work from the command line.
 
@@ -15,7 +13,7 @@ It combines a terminal agent, project workflow tools, worktree-aware Git automat
 
 ## About this downstream fork
 
-This repository, `penggin/gsd-pi-herdr`, is a **managed downstream fork** of [`open-gsd/gsd-pi`](https://github.com/open-gsd/gsd-pi). It tracks upstream GSD-Pi while adding first-class [Herdr](https://github.com/herdrdev/herdr) integration for persistent, observable subagent execution and may carry other deliberate downstream fixes or experiments.
+This repository, `penggin/gsd-pi-herdr`, is a self-contained downstream distribution derived from GSD-Pi. It adds first-class [Herdr](https://github.com/herdrdev/herdr) integration for persistent, observable subagent execution and carries its own package, runtime endpoints, automation, and release evidence.
 
 The Herdr work is developed as part of the GSD runtime rather than as a patch to an installed upstream package. The current design keeps official Herdr unmodified and refactors GSD subagent execution behind shared Local/Cmux/Herdr runtime backends.
 
@@ -26,13 +24,13 @@ Herdr integration documentation is grouped under [`docs/herdr-integration/`](./d
 - **Integration contract:** [`docs/herdr-integration/INTEGRATION_CONTRACT.md`](./docs/herdr-integration/INTEGRATION_CONTRACT.md)
 - **Decisions:** [`docs/herdr-integration/DECISIONS.md`](./docs/herdr-integration/DECISIONS.md)
 
-Branch policy for the fork:
+Branch policy for this distribution:
 
-- `upstream-main` tracks the pristine upstream integration point;
 - `main` is the downstream integration/release line;
-- focused Herdr work is developed on `feature/*` branches and merged only after relevant regression/parity checks.
+- focused work is developed on `feature/*` branches and merged only after relevant regression/parity checks;
+- automation compares downstream refs only and does not fetch, modify, publish to, or open issues against the source project.
 
-The Herdr integration is under active development; the upstream installation instructions below still describe official `@opengsd/gsd-pi` until a downstream release process is explicitly documented.
+The public package identity is `@penggin/gsd-pi-herdr`. Until a registry release exists, install the verified tarball built from this repository as described below.
 
 ## Feature Roll-Up
 
@@ -44,7 +42,7 @@ The Herdr integration is under active development; the upstream installation ins
 - **Extension surface** — Add project-specific commands, tools, skills, and UI integrations through bundled or community extensions.
 - **Terminal and web surfaces** — Use the TUI by default, or launch `gsd --web` when a visual control plane fits the work better than a terminal.
 
-See [CHANGELOG.md](./CHANGELOG.md) for release-by-release fixes and [Legacy Release History](./docs/archive/legacy-release-history.md) for archived history before the `open-gsd/gsd-pi` baseline.
+See [CHANGELOG.md](./CHANGELOG.md) for release-by-release fixes and [Legacy Release History](./docs/archive/legacy-release-history.md) for inherited history.
 
 ## Latest Release Highlights
 
@@ -64,86 +62,69 @@ Latest release: **v1.16.2**
 
 ## Status
 
-This repository is starting a new development baseline at version `1.0.0` under the `open-gsd/gsd-pi` project.
-
-Older release history has been archived outside the active changelog so new work can be reviewed from a clean project surface.
+Milestones M0–M7 of the Herdr integration are complete. The supported runtime baseline is Herdr v0.8.2, protocol 20, with a maximum of four persistent worker panes per root GSD session and queued overflow.
 
 ## Install
 
-Recommended — guided installer:
+Build a self-identifying tarball from this checkout:
 
 ```bash
-npx @opengsd/gsd-pi@latest
+pnpm install --frozen-lockfile
+pnpm run build:core
+pnpm run build:web-host
+NPM_CONFIG_USERCONFIG=/dev/null pnpm run validate-pack
+npm pack
 ```
 
-For CI or scripted installs:
+Install the resulting tarball globally and verify its identity:
 
 ```bash
-npx @opengsd/gsd-pi@latest --yes
+npm install -g ./penggin-gsd-pi-herdr-1.16.2.tgz
+gsd --build-info
 ```
 
-Alternative — direct npm global install:
+The build-info JSON must report `@penggin/gsd-pi-herdr`, `herdrIntegration: true`, and a non-null `releaseMetadata` object. It records the exact downstream commit, source baseline, Herdr compatibility contract, required gates, and whether the tarball was built from a dirty checkout.
+
+Install Herdr v0.8.2 separately, then link the optional operations plugin from the installed package:
 
 ```bash
-npm install -g @opengsd/gsd-pi@latest
+herdr plugin link "$(npm root -g)/@penggin/gsd-pi-herdr/integrations/herdr/plugin"
+herdr plugin action list --plugin opengsd.gsd-workers
 ```
 
-If you want pnpm to own the global install, use pnpm's runner:
+Enable the runtime in GSD preferences:
 
-```bash
-pnpm setup
-exec $SHELL -l
-pnpm dlx @opengsd/gsd-pi@latest
+```yaml
+herdr:
+  enabled: true
+  required: true
 ```
 
-Source: [`open-gsd/gsd-pi`](https://github.com/open-gsd/gsd-pi).
+Start GSD from a Herdr pane. `/herdr-doctor` verifies the environment and `/herdr-status` shows root and worker runtime state.
 
 ## Migrate From Older Installs
 
-GSD Pi now installs from the scoped package `@opengsd/gsd-pi`. If you previously installed the older unscoped `gsd-pi` package, remove it first so the old global binary does not shadow the new package.
-
-Recommended migration with the guided `npx` installer:
-
-```bash
-npm uninstall -g gsd-pi @opengsd/gsd-pi
-rm -f ~/.gsd/.update-check ~/.gsd/agent/managed-resources.json
-npx @opengsd/gsd-pi@latest
-command -v gsd
-gsd --version
-```
-
-If the old package was installed with `sudo npm install -g`, use `sudo npm uninstall -g gsd-pi` for the old package removal.
-
-To migrate from old npm globals to a pnpm-owned global install:
+Install the tarball and make sure its global bin directory precedes any older
+`gsd` binary on `PATH`:
 
 ```bash
-npm uninstall -g gsd-pi @opengsd/gsd-pi
 rm -f ~/.gsd/.update-check ~/.gsd/agent/managed-resources.json
-pnpm setup
-exec $SHELL -l
-pnpm dlx @opengsd/gsd-pi@latest
+npm install -g ./penggin-gsd-pi-herdr-1.16.2.tgz
 command -v gsd
-gsd --version
+gsd --build-info
 ```
 
-Windows PowerShell with the guided `npx` installer:
+Windows PowerShell:
 
 ```powershell
-npm uninstall -g gsd-pi @opengsd/gsd-pi
 Remove-Item "$env:USERPROFILE\.gsd\.update-check" -Force -ErrorAction SilentlyContinue
 Remove-Item "$env:USERPROFILE\.gsd\agent\managed-resources.json" -Force -ErrorAction SilentlyContinue
-npx @opengsd/gsd-pi@latest
+npm install -g .\penggin-gsd-pi-herdr-1.16.2.tgz
 where.exe gsd
-gsd --version
+gsd --build-info
 ```
 
-After migration, routine upgrades use:
-
-```bash
-gsd upgrade
-```
-
-You can also run `npx @opengsd/gsd-pi@latest` to launch the guided installer (recommended for new installs). For deeper recovery steps, see [Upgrade GSD Pi](./docs/user-docs/getting-started.md#upgrade-gsd-pi) and [Upgrade from older gsd-pi installs](./docs/user-docs/troubleshooting.md#upgrade-from-older-gsd-pi-installs).
+Existing `~/.gsd` provider credentials and project state remain compatible. The downstream managed-resource stamp prevents inherited package resources from being mistaken for this build.
 
 ## Uninstall
 
@@ -152,28 +133,25 @@ Remove the global package and optional local GSD state files.
 macOS / Linux:
 
 ```bash
-npm uninstall -g @opengsd/gsd-pi gsd-pi
+npm uninstall -g @penggin/gsd-pi-herdr
 rm -rf ~/.gsd
 ```
 
 If you installed GSD with pnpm, use pnpm for the pnpm-owned package. If pnpm reports that its global bin directory is not on `PATH`, run `pnpm setup`, restart your shell, then retry.
 
 ```bash
-pnpm remove -g @opengsd/gsd-pi
-npm uninstall -g gsd-pi
+pnpm remove -g @penggin/gsd-pi-herdr
 rm -rf ~/.gsd
 ```
 
 Windows PowerShell:
 
 ```powershell
-npm uninstall -g @opengsd/gsd-pi gsd-pi
+npm uninstall -g @penggin/gsd-pi-herdr
 Remove-Item "$env:USERPROFILE\.gsd" -Recurse -Force -ErrorAction SilentlyContinue
 ```
 
 ## Quick Start
-
-Need help choosing settings? Use the [GSD Pi web configurator](https://pi.opengsd.net/) to build a configuration in your browser.
 
 ```bash
 gsd
@@ -253,16 +231,6 @@ Historical tags and archived refs may exist for traceability, but active release
 ## Community
 
 Join the GSD Discord community: https://discord.gg/vY2bv3FrzX
-
-## Star History
-
-<a href="https://star-history.dera.page/#open-gsd/gsd-pi&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://star-history.dera.page/svg?repos=open-gsd/gsd-pi&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://star-history.dera.page/svg?repos=open-gsd/gsd-pi&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://star-history.dera.page/svg?repos=open-gsd/gsd-pi&type=date&legend=top-left" />
- </picture>
-</a>
 
 ## License
 

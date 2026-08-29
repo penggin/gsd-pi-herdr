@@ -185,7 +185,7 @@ export function getLocalPackageRoot(cwd = process.cwd()) {
 
 export async function installGlobalPackage(version, options = {}) {
   const packageManager = normalizePackageManager(options.packageManager ?? detectPackageManager())
-  const packageSpec = `@opengsd/gsd-pi@${version}`
+  const packageSpec = `@penggin/gsd-pi-herdr@${version}`
   const installArgs = packageManager === 'pnpm'
     ? ['add', '-g', '--ignore-scripts', packageSpec]
     : ['install', '-g', '--ignore-scripts', packageSpec]
@@ -206,7 +206,7 @@ export async function installGlobalPackage(version, options = {}) {
 
 export async function installLocalPackage(version, cwd = process.cwd(), options = {}) {
   const packageManager = normalizePackageManager(options.packageManager ?? detectPackageManager())
-  const packageSpec = `@opengsd/gsd-pi@${version}`
+  const packageSpec = `@penggin/gsd-pi-herdr@${version}`
   const installArgs = packageManager === 'pnpm'
     ? ['add', '--ignore-scripts', packageSpec]
     : ['install', '--ignore-scripts', packageSpec]

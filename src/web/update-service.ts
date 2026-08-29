@@ -1,8 +1,13 @@
 import { spawn } from "node:child_process"
 import { compareSemver } from "../update-check.ts"
 
-const NPM_PACKAGE_NAME = "@opengsd/gsd-pi"
-const REGISTRY_URL = `https://registry.npmjs.org/@opengsd%2fgsd-pi/latest`
+import {
+  GSD_DISTRIBUTION_PACKAGE,
+  GSD_DISTRIBUTION_REGISTRY_URL,
+} from "../distribution.js"
+
+const NPM_PACKAGE_NAME = GSD_DISTRIBUTION_PACKAGE
+const REGISTRY_URL = GSD_DISTRIBUTION_REGISTRY_URL
 const FETCH_TIMEOUT_MS = 5000
 const NPM_COMMAND = process.platform === "win32" ? "npm.cmd" : "npm"
 
@@ -59,7 +64,7 @@ export function getUpdateStatus(): UpdateState {
 }
 
 /**
- * Triggers an async global npm install of @opengsd/gsd-pi@latest.
+ * Triggers an async global npm install of the downstream package.
  * Returns `true` if the update was started, `false` if one is already running.
  * The child process runs in the background; poll `getUpdateStatus()` for progress.
  */
@@ -70,7 +75,7 @@ export function triggerUpdate(targetVersion?: string): boolean {
 
   updateState = { status: "running", targetVersion }
 
-  const child = spawn(NPM_COMMAND, ["install", "-g", "@opengsd/gsd-pi@latest"], {
+  const child = spawn(NPM_COMMAND, ["install", "-g", `${NPM_PACKAGE_NAME}@latest`], {
     stdio: ["ignore", "ignore", "pipe"],
     // Detach so the child process is not killed if the parent exits
     detached: false,

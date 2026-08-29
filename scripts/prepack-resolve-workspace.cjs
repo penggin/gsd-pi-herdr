@@ -3,6 +3,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const BACKUP_DIR = path.join(ROOT, '.prepack-backup');
@@ -124,6 +125,16 @@ function resolvePackageJson(filePath) {
 }
 
 recoverStaleBackup();
+
+// Every tarball carries inspectable downstream/Herdr provenance. --allow-dirty
+// permits development packs while the stamp still distinguishes a clean
+// release candidate; promotion policy remains a separate, explicit gate.
+execFileSync(process.execPath, [
+  path.join(ROOT, 'scripts', 'herdr-integration', 'release-stamp.mjs'),
+  '--allow-dirty',
+  '--output',
+  path.join(ROOT, 'dist', 'herdr-release.json'),
+], { cwd: ROOT, stdio: 'inherit' });
 
 let resolvedAny = false;
 for (const filePath of TARGET_PACKAGE_JSONS) {

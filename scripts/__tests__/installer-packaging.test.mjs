@@ -29,7 +29,7 @@ test("installer deps module exposes postinstall orchestration", async () => {
 test("installer package manager detection ignores unrelated pnpm directory names", async () => {
   const { detectPackageManager } = await import("../install/npm-global.js");
   assert.equal(
-    detectPackageManager({}, "/home/user/projects/pnpm/app/node_modules/@opengsd/gsd-pi/dist/loader.js"),
+    detectPackageManager({}, "/home/user/projects/pnpm/app/node_modules/@penggin/gsd-pi-herdr/dist/loader.js"),
     "npm",
   );
   assert.equal(

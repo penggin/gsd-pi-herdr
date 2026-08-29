@@ -1074,7 +1074,7 @@ async function verifyRestoreBackupCandidate(
     if (version > SCHEMA_VERSION) {
       throw new Error(
         `backup schema is v${version}, newer than the v${SCHEMA_VERSION} this gsd-pi supports — ` +
-        "upgrade gsd-pi (npm i -g @opengsd/gsd-pi) before restoring this backup",
+        "upgrade gsd-pi-herdr (npm i -g @penggin/gsd-pi-herdr) before restoring this backup",
       );
     }
     const receipts = db.prepare(
@@ -1490,7 +1490,7 @@ export async function handleDbRestoreBackup(
     if (nameVersion > engine.SCHEMA_VERSION) {
       ctx.ui.notify(
         `gsd db restore-backup: backup schema is v${nameVersion}, newer than the v${engine.SCHEMA_VERSION} this gsd-pi supports. ` +
-        "Upgrade gsd-pi (npm i -g @opengsd/gsd-pi) before restoring this backup.",
+        "Upgrade gsd-pi-herdr (npm i -g @penggin/gsd-pi-herdr) before restoring this backup.",
         "error",
       );
       return;
