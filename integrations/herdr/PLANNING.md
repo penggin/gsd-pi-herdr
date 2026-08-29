@@ -1,6 +1,6 @@
 # GSD-Pi Herdr Living Plan
 
-> **Status:** repository consolidation complete; managed-fork architecture rebaseline in progress  
+> **Status:** M0.6 complete; current GSD execution-path audit next  
 > **Last updated:** 2026-08-29  
 > **Current milestone:** M0 — downstream baseline and feasibility validation  
 > **Canonical rule:** every Herdr implementation session begins by reading this file and ends by updating it.
@@ -58,6 +58,7 @@ Current repository state:
 - fork `main` was at `c2e61def5d6d3d8c516d115a53654b229f658915`;
 - upstream `main` was at `4b26a642c0121ae6161abbb6f2dc6937c78874dd`, 29 commits ahead;
 - downstream `main` and `upstream-main` were fast-forwarded to `4b26a642c0121ae6161abbb6f2dc6937c78874dd` before migration;
+- migration and M0 work are on `integration/herdr-foundation`;
 - `fix/cmux-split-cli` remains at `5b74d301b6d1599df5fe0a385b90a28b48492b9a` and will be re-evaluated against the unified backend architecture.
 
 ## 4. Core design principles
@@ -115,7 +116,7 @@ The worker runner may move into a workspace package if build and reuse requireme
 - [x] M0.3 Create `upstream-main` and fast-forward the fork baseline to current upstream `main`.
 - [x] M0.4 Migrate and re-home the `penggin/gsd-herdr` planning corpus under `integrations/herdr/`.
 - [x] M0.5 Add root-level repository guidance and README visibility for the downstream integration.
-- [ ] M0.6 Verify required Herdr methods and request/response shapes against `v0.8.2` and current `master` API schemas.
+- [x] M0.6 Verify required Herdr methods and request/response shapes against `v0.8.2` and current `master` API schemas. See [`docs/spikes/M0.6-HERDR-API-CAPABILITIES.md`](docs/spikes/M0.6-HERDR-API-CAPABILITIES.md).
 - [ ] M0.7 Audit the latest GSD subagent, cmux, extension-loading, packaging, and test paths against the proposed unified backend model.
 - [ ] M0.8 Decide final source/package locations for the Herdr client, backend, worker runner, plugin, configuration, and E2E tests.
 - [ ] M0.9 Re-evaluate `fix/cmux-split-cli`: upstream status, correctness, and whether to reimplement it as part of the backend refactor.
@@ -168,7 +169,7 @@ Exit criteria:
 
 - [ ] M3.1 Define versioned launch/state/heartbeat/exit artifacts.
 - [ ] M3.2 Spawn with argv arrays and `shell: false`.
-- [ ] M3.3 replace inherited main-pane Herdr variables with worker-pane values.
+- [ ] M3.3 Replace inherited main-pane Herdr variables with worker-pane values.
 - [ ] M3.4 Capture complete stdout JSONL and stderr.
 - [ ] M3.5 Render bounded lifecycle/tool/retry activity and suppress token deltas.
 - [ ] M3.6 Report worker state to its own pane.
@@ -217,12 +218,11 @@ Exit criteria:
 
 ## 7. Current execution queue
 
-1. Complete M0.6: verify Herdr API schemas and record a capability matrix.
-2. Complete M0.7: audit all current subagent execution paths and tests at upstream commit `4b26a642...`.
-3. Decide M0.8 code/package placement.
-4. Resolve M0.9 cmux branch migration.
-5. Write M0.10 consolidated technical-spike report.
-6. Begin M1 only after those decisions are recorded.
+1. Complete M0.7: audit all current subagent execution paths and tests at upstream commit `4b26a642c0121ae6161abbb6f2dc6937c78874dd`.
+2. Decide M0.8 code/package placement from that audit.
+3. Resolve M0.9 cmux branch migration.
+4. Write M0.10 consolidated technical-spike report.
+5. Begin M1 only after those decisions are recorded.
 
 ## 8. Accepted decisions
 
@@ -238,6 +238,9 @@ Exit criteria:
 | D008 | Default production behavior forbids silent unmonitored fallback. |
 | D009 | Synchronize upstream through a dedicated `upstream-main` mirror and semantic test gates. |
 | D010 | Target macOS arm64 first. |
+| D011 | Support Herdr by required capability sets; `v0.8.2` protocol 20 is sufficient for the initial runtime, while protocol 21 is canary coverage. |
+| D012 | Prefer schema-backed `layout.apply` command arrays for fresh worker layouts; retain `pane.split` for incremental repair and do not treat CLI `pane run` as a raw socket method. |
+| D013 | Schema validation is feasibility evidence; real-binary tests remain mandatory before promoting runtime support. |
 
 See [`docs/DECISIONS.md`](docs/DECISIONS.md) for rationale and superseded decisions.
 
@@ -250,7 +253,9 @@ See [`docs/DECISIONS.md`](docs/DECISIONS.md) for rationale and superseded decisi
 | Child inherits main pane identity | worker corrupts parent state | strip/reapply Herdr-managed variables |
 | Raw JSON floods panes | unusable monitoring and render load | dedicated filtered runner |
 | Parent/pane failure creates invisible work | unsafe code changes | required monitoring, heartbeats, reconciliation, no success guesses |
-| Herdr API changes | runtime failures | schema-based capability checks and canary tests |
+| Herdr API changes | runtime failures | named capability sets, schema checks, tolerant additive parsing, canary tests |
+| Schema says an operation exists but runtime behavior differs | false confidence in feasibility | mandatory real `v0.8.2` binary/socket smoke and failure-injection tests |
+| CLI helper is confused with a socket method | fictitious requests or fragile shell coupling | keep CLI and socket adapters distinct; validate `layout.apply`/split-and-input paths |
 | Existing cmux branch is stale | duplicate or conflicting fixes | audit and reimplement under shared backend contract |
 | Downstream customization grows without structure | merge cost and unclear ownership | ADRs, component boundaries, tests, upstream-change ledger |
 
@@ -271,4 +276,17 @@ See [`docs/DECISIONS.md`](docs/DECISIONS.md) for rationale and superseded decisi
 - Created `upstream-main` and fast-forwarded downstream `main` to the same upstream commit.
 - Created `integration/herdr-foundation` for the migration.
 - Migrated the planning corpus under `integrations/herdr/` and changed the architecture from minimal external patching to a managed in-tree backend design.
-- Next: M0.6 Herdr API capability validation.
+
+### 2026-08-29 — M0.6 Herdr API capability validation
+
+- Inspected Herdr `v0.8.2` at commit `9eb521456ac0d19d3ab3d9d7cea3cca10baa8a4c`, schema blob `f9642ffa...`, protocol `20`.
+- Inspected current Herdr `master` at commit `c2637dc182ddc5425108824d5ed15d24ce38c4e3`, schema blob `aa0a8c22...`, protocol `21`.
+- Confirmed protocol 20 already includes the required session snapshot, tab, pane, layout, process, input, state-authority, event, and plugin operations.
+- Established `gsd-herdr-runtime-v1` and `gsd-herdr-plugin-v1` capability sets.
+- Selected `layout.apply` with pane command arrays as the preferred fresh worker-grid strategy and `pane.split` plus validated command delivery as the incremental fallback.
+- Corrected the design assumption that `pane.run` is a raw socket method; it is a CLI convenience and must be isolated behind a CLI adapter if used.
+- Recorded request/response shape findings and the remaining real-binary verification gap in [`docs/spikes/M0.6-HERDR-API-CAPABILITIES.md`](docs/spikes/M0.6-HERDR-API-CAPABILITIES.md).
+- Updated the integration contract and ADRs H016–H018.
+- No Herdr process was started in this session; this was schema/source validation only. Runtime smoke, signal, detach/reattach, and plugin tests remain mandatory in later milestones.
+- Completed M0.6.
+- Next: M0.7 audit of all current GSD subagent, cmux, loading, packaging, and test paths.
