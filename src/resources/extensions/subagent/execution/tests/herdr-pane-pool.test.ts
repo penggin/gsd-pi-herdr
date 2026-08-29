@@ -79,11 +79,12 @@ function response(result: Record<string, unknown>): HerdrResponse {
 	return { id: "fake", result };
 }
 
-function pool(client: FakeHerdrPoolClient, rootSessionId = "root-session") {
+function pool(client: FakeHerdrPoolClient, rootSessionId = "root-session", consumeCleanupRequests?: () => readonly string[]) {
 	return new HerdrWorkerPanePool(client, {
 		rootSessionId,
 		cwd: "/repo",
 		paneEnv: { GSD_HOME: "/custom/gsd-home" },
+		consumeCleanupRequests,
 	});
 }
 
@@ -151,6 +152,17 @@ describe("Herdr worker pane pool", () => {
 		);
 		workers.clearRetained(firstFour[1].paneId);
 		assert.equal((await workers.reserve()).paneId, firstFour[1].paneId);
+	});
+
+	it("applies plugin cleanup requests only through the owning pool", async () => {
+		const client = new FakeHerdrPoolClient();
+		let requested: string[] = [];
+		const workers = pool(client, "root-session", () => requested.splice(0));
+		const first = await workers.reserve();
+		first.release("failed");
+		requested = [first.paneId];
+		const reused = await workers.reserve();
+		assert.equal(reused.paneId, first.paneId);
 	});
 
 	it("prefers affinity reuse for retry/chain continuity", async () => {

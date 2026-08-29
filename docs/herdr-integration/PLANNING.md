@@ -1,8 +1,8 @@
 # GSD–Herdr Living Plan
 
-> **Status:** M0–M4 complete; M5 ready
+> **Status:** M0–M5 complete; M6 ready
 > **Last updated:** 2026-08-30
-> **Current milestone:** M5 — Herdr operations plugin and diagnostics
+> **Current milestone:** M6 — Durability and recovery
 > **Canonical rule:** Every Herdr-integration development session starts by reading this file and ends by updating it.
 
 ## 1. Mission
@@ -213,19 +213,19 @@ M4 exit = first practically usable monitored Herdr-subagent runtime proven in a 
 
 ### M5 — Herdr operations plugin and diagnostics
 
-**Status:** `READY`
+**Status:** `COMPLETE`
 
-- [ ] M5.1 Add `integrations/herdr/plugin/` manifest.
-- [ ] M5.2 Add status/dashboard action.
-- [ ] M5.3 Add focus-workers/focus-failed-worker actions.
-- [ ] M5.4 Add retained-worker cleanup controls.
-- [ ] M5.5 Add startup reconciliation using `session.snapshot`.
-- [ ] M5.6 Release stale lifecycle authority safely.
-- [ ] M5.7 Expose orphan/missing-pane state clearly.
+- [x] M5.1 Add `integrations/herdr/plugin/` manifest.
+- [x] M5.2 Add status/dashboard action.
+- [x] M5.3 Add focus-workers/focus-failed-worker actions.
+- [x] M5.4 Add retained-worker cleanup controls.
+- [x] M5.5 Add startup reconciliation using `session.snapshot`.
+- [x] M5.6 Release stale lifecycle authority safely.
+- [x] M5.7 Expose orphan/missing-pane state clearly.
 
 ### M6 — Durability and recovery
 
-**Status:** `NOT STARTED`
+**Status:** `READY`
 
 - [ ] M6.1 Persist versioned run/worker runtime records.
 - [ ] M6.2 Add root/worker heartbeats.
@@ -287,9 +287,9 @@ Structural gaps discovered:
 
 ## 9. Current execution queue
 
-1. **M5.1:** inspect the official Herdr v0.8.2 plugin manifest/schema plus existing repository integration packaging, then add the minimal `integrations/herdr/plugin/` manifest without moving worker execution or orchestration authority into the plugin.
-2. M5.2–M5.4: expose status/dashboard, focus-worker/focus-failed-worker, and explicit retained-worker cleanup actions over the existing backend/runtime state.
-3. M5.5–M5.7: add bounded `session.snapshot` reconciliation, stale-authority release, and explicit orphan/missing-pane presentation before beginning M6 durability work.
+1. **M6.1–M6.3:** add versioned root/run ownership records and root heartbeat, then reconcile them with worker heartbeats and `session.snapshot`.
+2. M6.4–M6.6: make pane/process loss, orphan classification, and reload/reconnect duplicate prevention durable rather than only in-memory.
+3. M6.7–M6.8: run crash/restart/detach recovery E2E and finalize bounded retention/cleanup policy before M7 automation.
 
 ## 10. Progress log
 
@@ -475,6 +475,16 @@ Structural gaps discovered:
   - `git diff --check`: pass after the final documentation update.
 - Remaining unrelated behavior is unchanged: chain top-level `isolated` handling stays outside M4. No Herdr core fork or orchestration-authority transfer was introduced.
 - **M4 is complete. M5 is ready. Exact next task: M5.1 — validate the official v0.8.2 plugin manifest/schema and add the minimal `integrations/herdr/plugin/` manifest.**
+
+### 2026-08-30 — M5 operations plugin and diagnostics
+
+- Added the official v0.8.2 `herdr-plugin.toml` package under `integrations/herdr/plugin/` with status, focus-workers, focus-failed-worker, retained cleanup, startup reconciliation, and popup dashboard entrypoints. Commands are argv arrays and the package has no remote runtime loading or additional dependencies.
+- The plugin scans only owner-only `${GSD_HOME}/runtime/herdr/v1` records, requests live topology through `session.snapshot`, shows explicit missing-pane/orphan state, and uses bounded raw-socket requests through Herdr-injected context.
+- Retained cleanup does not mutate GSD orchestration state or delete artifacts. It clears terminal pane authority and writes an identity-bound owner-only `cleanup.json`; only the matching root pane pool consumes the request and makes a non-busy retained slot reusable (ADR-H015).
+- Startup reconciliation marks active records orphaned when their pane/process is missing and clears only cleanup-requested or stale terminal lifecycle authority. Focus actions use exact IDs returned by the live snapshot.
+- Official Herdr v0.8.2 validation passed in an isolated config/state/data/cache environment: local link accepted all four actions, startup hook, and dashboard pane; startup reconciliation exited 0; the status action reported `Herdr: 0.8.2 · protocol 20`; plugin logs recorded both commands as succeeded. The isolated server and temporary plugin registry were removed afterward.
+- Focused validation: plugin operations **4/4 pass**; pane-pool/runtime control **11/11 pass**; `typecheck:extensions` passes.
+- **M5 is complete. M6 is ready. Exact next task: M6.1 — persist versioned root/run ownership and root heartbeat records alongside existing worker state.**
 
 ## 11. Working-session protocol
 

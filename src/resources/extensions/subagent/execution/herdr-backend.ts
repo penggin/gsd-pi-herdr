@@ -379,6 +379,7 @@ function resolveSharedPool(client: HerdrBackendClientLike, options: HerdrBackend
 		rootSessionId: options.rootSessionId,
 		cwd: options.cwd,
 		paneEnv: { GSD_HOME: options.gsdHome },
+		runtimeRoot: herdrWorkerRuntimeRoot(options.gsdHome),
 	});
 	sharedPools.set(key, created);
 	return created;

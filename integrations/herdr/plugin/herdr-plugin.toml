@@ -1,0 +1,42 @@
+id = "opengsd.gsd-workers"
+name = "GSD Workers"
+version = "0.1.0"
+min_herdr_version = "0.8.2"
+description = "Inspect and operate GSD-owned Herdr worker panes without taking orchestration authority"
+platforms = ["linux", "macos", "windows"]
+
+[[startup]]
+command = ["node", "operations.mjs", "reconcile"]
+
+[[actions]]
+id = "status"
+title = "GSD worker status"
+contexts = ["global", "workspace", "tab", "pane"]
+command = ["node", "operations.mjs", "status"]
+
+[[actions]]
+id = "focus-workers"
+title = "Focus GSD workers"
+contexts = ["workspace", "tab", "pane"]
+command = ["node", "operations.mjs", "focus-workers"]
+
+[[actions]]
+id = "focus-failed-worker"
+title = "Focus failed GSD worker"
+contexts = ["global", "workspace", "tab", "pane"]
+command = ["node", "operations.mjs", "focus-failed-worker"]
+
+[[actions]]
+id = "cleanup-retained"
+title = "Release retained GSD workers"
+contexts = ["global", "workspace", "tab", "pane"]
+command = ["node", "operations.mjs", "cleanup-retained"]
+
+[[panes]]
+id = "dashboard"
+title = "GSD worker dashboard"
+placement = "popup"
+width = "80%"
+height = "70%"
+command = ["node", "dashboard.mjs"]
+

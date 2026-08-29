@@ -4,7 +4,7 @@ This file records decisions that materially constrain the downstream Herdr imple
 
 ## ADR-H001 — Manage `penggin/gsd-pi-herdr` as the downstream distribution
 
-**Status:** Accepted  
+**Status:** Accepted
 **Date:** 2026-08-29
 
 ### Context
@@ -122,11 +122,13 @@ This decision may be revisited if a future Herdr raw command-launch method is ad
 
 ## ADR-H010 — Use a persistent worker-pane pool
 
-**Status:** Proposed
+**Status:** Accepted
 
 Associate a worker tab with the root GSD session and default to four reusable slots. Parallel workers reserve slots; chain steps/retries should reuse a stable pane where practical.
 
 M4 must validate usability, queueing behavior, retention, and multi-session separation before this becomes Accepted.
+
+M4 validated the four-slot queue, successful affinity reuse, failed-pane retention, pane-loss recovery, and root-focus preservation against real Herdr v0.8.2.
 
 ---
 
@@ -163,3 +165,14 @@ The initial production target is macOS arm64. Keep process/filesystem abstractio
 The previous investigation proved that a published GSD package prefers built `dist/resources`, synchronizes them into the managed agent directory, and can skip resource refresh based on its content fingerprint. Therefore a `src/resources`-only overlay was unsafe.
 
 The downstream fork no longer needs that overlay approach, but the finding is retained under `spikes/M0.6-GSD-PACKAGE-LOADING.md` because it documents GSD's packaging behavior and explains why source-built downstream releases are the cleaner path.
+
+---
+
+## ADR-H015 — Keep the operations plugin observational and use owner-consumed cleanup requests
+
+**Status:** Accepted
+**Date:** 2026-08-30
+
+Herdr plugin commands run in separate processes and cannot safely mutate the root GSD process's in-memory pane leases. The plugin may inspect GSD-owned artifacts plus `session.snapshot`, focus live resources, clear stale Herdr presentation authority, and write an owner-only `cleanup.json` request into a terminal worker directory.
+
+Only the matching root GSD pane pool consumes that identity-bound request and changes a retained slot back to reusable. The plugin never launches workers, chooses retry/chain/parallel behavior, deletes live or ambiguous evidence, or treats a pane state as the GSD semantic result.

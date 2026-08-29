@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import type { HerdrEnvironment, HerdrResponse } from "../../herdr/client.js";
+import { consumeHerdrWorkerCleanupRequests } from "./herdr-runtime.js";
 
 const DEFAULT_MAX_PANES = 4;
 
@@ -18,6 +19,8 @@ export interface HerdrWorkerPanePoolOptions {
 	maxPanes?: number;
 	tabLabelPrefix?: string;
 	paneEnv?: Readonly<Record<string, string>>;
+	runtimeRoot?: string;
+	consumeCleanupRequests?: () => readonly string[];
 }
 
 export interface HerdrWorkerPaneSlotSnapshot {
@@ -71,6 +74,7 @@ export class HerdrWorkerPanePool {
 	private readonly maxPanes: number;
 	private readonly tabLabel: string;
 	private readonly paneEnv: Readonly<Record<string, string>>;
+	private readonly consumeCleanupRequests: () => readonly string[];
 	private workspaceId: string | undefined;
 	private tabId: string | undefined;
 	private slots: MutableSlot[] = [];
@@ -83,6 +87,10 @@ export class HerdrWorkerPanePool {
 		this.cwd = requireNonEmpty(options.cwd, "cwd");
 		this.maxPanes = normalizeMaxPanes(options.maxPanes ?? DEFAULT_MAX_PANES);
 		this.paneEnv = { ...(options.paneEnv ?? {}) };
+		this.consumeCleanupRequests = options.consumeCleanupRequests
+			?? (options.runtimeRoot
+				? () => consumeHerdrWorkerCleanupRequests(options.runtimeRoot!, this.rootSessionId)
+				: () => []);
 		const prefix = options.tabLabelPrefix?.trim() || "GSD Workers";
 		this.tabLabel = `${prefix} · ${rootSessionHash(this.rootSessionId)}`;
 	}
@@ -129,6 +137,7 @@ export class HerdrWorkerPanePool {
 	private async drain(): Promise<void> {
 		if (this.waiters.length === 0) return;
 		await this.ensureTab();
+		this.applyCleanupRequests();
 
 		while (this.waiters.length > 0) {
 			let slot = this.pickImmediatelyReusableSlot(this.waiters[0].request);
@@ -157,6 +166,16 @@ export class HerdrWorkerPanePool {
 			slot.retainedAt = undefined;
 			if (waiter.request.affinityKey) slot.affinityKey = waiter.request.affinityKey;
 			waiter.resolve(this.createReservation(slot, leaseId));
+		}
+	}
+
+	private applyCleanupRequests(): void {
+		const requested = new Set(this.consumeCleanupRequests());
+		if (requested.size === 0) return;
+		for (const slot of this.slots) {
+			if (!requested.has(slot.paneId) || slot.state === "busy") continue;
+			slot.state = "idle";
+			slot.retainedAt = undefined;
 		}
 	}
 
