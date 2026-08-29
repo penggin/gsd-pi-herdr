@@ -88,4 +88,4 @@ The M0.6 package-loading investigation is retained as historical build evidence,
 
 ## Follow-up
 
-The next work is not implementation. M0 first verifies Herdr's exact API contract, audits the current subagent/cالمux code after the upstream synchronization, and finalizes code/package placement.
+The next work is not implementation. M0 first verifies Herdr's exact API contract, audits the current subagent/cmux code after the upstream synchronization, and finalizes code/package placement.
