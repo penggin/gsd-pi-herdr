@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,9 +10,12 @@ import {
   focusFailedWorker,
   focusWorkers,
   formatStatus,
+  pruneTerminalArtifacts,
   reconcileWorkers,
   resolveRuntimeRoot,
   scanWorkers,
+  scanRoots,
+  statusWorkers,
 } from "../operations.mjs";
 
 function fixture(t, state = {}) {
@@ -81,6 +84,35 @@ function snapshot(panes = []) {
   };
 }
 
+function writeRoot(runtimeRoot, overrides = {}) {
+  const rootDir = join(runtimeRoot, "root-1");
+  const record = {
+    schemaVersion: 1,
+    rootRuntimeId: "root-1",
+    rootSessionId: "session-1",
+    instanceId: "instance-1",
+    source: "custom:gsd:test",
+    pid: 999_999,
+    paneId: "w1:p1",
+    workspaceId: "w1",
+    tabId: "w1:t1",
+    cwd: "/tmp/project",
+    status: "active",
+    startedAt: "2026-08-30T00:00:00.000Z",
+    updatedAt: "2026-08-30T00:00:00.000Z",
+    ...overrides,
+  };
+  writeFileSync(join(rootDir, "root.json"), `${JSON.stringify(record)}\n`, { mode: 0o600 });
+  writeFileSync(join(rootDir, "root-heartbeat.json"), `${JSON.stringify({
+    schemaVersion: 1,
+    rootRuntimeId: "root-1",
+    instanceId: record.instanceId,
+    pid: record.pid,
+    status: record.status,
+    updatedAt: record.updatedAt,
+  })}\n`, { mode: 0o600 });
+}
+
 test("scans private worker artifacts and formats bounded diagnostics", (t) => {
   const { runtimeRoot } = fixture(t);
   const records = scanWorkers(runtimeRoot);
@@ -98,6 +130,44 @@ test("startup reconciliation marks an active worker orphaned when its pane vanis
   const state = JSON.parse(readFileSync(join(workerDir, "state.json"), "utf8"));
   assert.equal(state.status, "orphaned");
   assert.match(state.lastActivity.label, /pane missing/);
+});
+
+test("stale root ownership is marked crashed and its active workers become orphaned", async (t) => {
+  const { home, runtimeRoot, workerDir } = fixture(t, { status: "working", childPid: process.pid });
+  writeRoot(runtimeRoot);
+  const live = snapshot([
+    { pane_id: "w1:p1", tab_id: "w1:t1", workspace_id: "w1", agent_status: "working" },
+    { pane_id: "w1:p2", tab_id: "w1:t2", workspace_id: "w1", agent_status: "working" },
+  ]);
+  const herdr = await fakeHerdr(t, live);
+  const result = await reconcileWorkers({ env: { ...herdr.env, GSD_HOME: home }, runtimeRoot, now: Date.parse("2026-08-30T00:01:00.000Z") });
+  assert.equal(result.crashedRoots, 1);
+  assert.equal(result.orphaned, 1);
+  assert.equal(scanRoots(runtimeRoot)[0].record.status, "crashed");
+  assert.equal(JSON.parse(readFileSync(join(workerDir, "state.json"), "utf8")).status, "orphaned");
+  assert.equal(JSON.parse(readFileSync(join(workerDir, "orphan.json"), "utf8")).action, "orphan");
+  const clear = herdr.requests.find((item) => item.method === "pane.clear_agent_authority");
+  assert.equal(clear.params.source, "custom:gsd:test");
+});
+
+test("status reconciles stale root ownership before formatting its snapshot", async (t) => {
+  const { home, runtimeRoot, workerDir } = fixture(t, { status: "working", childPid: process.pid });
+  writeRoot(runtimeRoot);
+  const live = snapshot([
+    { pane_id: "w1:p1", tab_id: "w1:t1", workspace_id: "w1", agent_status: "working" },
+    { pane_id: "w1:p2", tab_id: "w1:t2", workspace_id: "w1", agent_status: "working" },
+  ]);
+  const herdr = await fakeHerdr(t, live);
+  const result = await statusWorkers({
+    env: { ...herdr.env, GSD_HOME: home },
+    runtimeRoot,
+    now: Date.parse("2026-08-30T00:01:00.000Z"),
+  });
+  assert.equal(result.crashedRoots, 1);
+  assert.equal(result.orphaned, 1);
+  assert.match(result.output, /crashed=1/);
+  assert.match(result.output, /orphaned=1/);
+  assert.equal(JSON.parse(readFileSync(join(workerDir, "orphan.json"), "utf8")).action, "orphan");
 });
 
 test("focus actions target the live worker tab and newest failed pane", async (t) => {
@@ -126,3 +196,15 @@ test("cleanup requests release only terminal non-live retained workers", async (
   assert.equal(herdr.requests.at(-1).method, "pane.clear_agent_authority");
 });
 
+test("retention pruning removes only expired success/abort evidence and rejects symlinks", (t) => {
+  const { home, runtimeRoot, workerDir } = fixture(t, { status: "completed" });
+  const outside = join(home, "outside");
+  writeFileSync(outside, "keep");
+  symlinkSync(outside, join(workerDir, "unsafe-link"));
+  assert.throws(() => pruneTerminalArtifacts({ runtimeRoot, now: Date.parse("2026-08-30T00:02:00.000Z"), retentionMs: 60_000 }), /symlinked evidence/);
+  rmSync(join(workerDir, "unsafe-link"));
+  const removed = pruneTerminalArtifacts({ runtimeRoot, now: Date.parse("2026-08-30T00:02:00.000Z"), retentionMs: 60_000 });
+  assert.deepEqual(removed, [workerDir]);
+  assert.equal(existsSync(workerDir), false);
+  assert.equal(readFileSync(outside, "utf8"), "keep");
+});

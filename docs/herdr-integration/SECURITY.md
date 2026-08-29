@@ -34,6 +34,7 @@ Requirements:
 - no path derived directly from agent names, task text, repository branch names, or model output;
 - every resolved artifact path must remain inside the expected runtime root;
 - do not follow attacker-controlled symlinks during cleanup or overwrite operations.
+- root and worker ownership transitions must be instance/identity-bound so stale processes cannot overwrite a replacement runtime's lease.
 
 ## 3. Environment handling
 
@@ -139,6 +140,11 @@ Cleanup code must:
 - avoid deleting live/ambiguous worker artifacts;
 - not follow symlinks outside the root;
 - use worker ownership/state records rather than broad filename patterns.
+
+Completed/aborted artifacts may be pruned after the bounded retention period.
+Failed/orphaned evidence is retained indefinitely by default. A plugin never
+directly reuses an in-memory slot: it writes an owner-only request that the
+matching root pool or worker runner validates and consumes.
 
 ## 11. Plugin trust
 

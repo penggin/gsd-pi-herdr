@@ -13,7 +13,7 @@ class FakeHerdrPoolClient {
 	readonly requests: RecordedRequest[] = [];
 	private readonly environment: HerdrEnvironment;
 	private tabs: Array<{ tab_id: string; workspace_id: string; label: string }> = [];
-	private panes: Array<{ pane_id: string; workspace_id: string; tab_id: string }> = [];
+	private panes: Array<{ pane_id: string; workspace_id: string; tab_id: string; agent_status?: string }> = [];
 	private nextTab = 2;
 	private nextPane = 2;
 
@@ -27,10 +27,10 @@ class FakeHerdrPoolClient {
 		this.environment = environment;
 	}
 
-	seedTab(label: string, paneIds: string[]): void {
+	seedTab(label: string, paneIds: string[], agentStatus?: string): void {
 		const tabId = "w1:t9";
 		this.tabs.push({ tab_id: tabId, workspace_id: "w1", label });
-		for (const paneId of paneIds) this.panes.push({ pane_id: paneId, workspace_id: "w1", tab_id: tabId });
+		for (const paneId of paneIds) this.panes.push({ pane_id: paneId, workspace_id: "w1", tab_id: tabId, ...(agentStatus ? { agent_status: agentStatus } : {}) });
 	}
 
 	closePane(paneId: string): void {
@@ -79,12 +79,18 @@ function response(result: Record<string, unknown>): HerdrResponse {
 	return { id: "fake", result };
 }
 
-function pool(client: FakeHerdrPoolClient, rootSessionId = "root-session", consumeCleanupRequests?: () => readonly string[]) {
+function pool(
+	client: FakeHerdrPoolClient,
+	rootSessionId = "root-session",
+	consumeCleanupRequests?: () => readonly string[],
+	recoverSlots?: () => ReadonlyMap<string, { state: "busy" | "retained-success" | "retained-failure"; affinityKey: string }>,
+) {
 	return new HerdrWorkerPanePool(client, {
 		rootSessionId,
 		cwd: "/repo",
 		paneEnv: { GSD_HOME: "/custom/gsd-home" },
 		consumeCleanupRequests,
+		recoverSlots,
 	});
 }
 
@@ -165,6 +171,16 @@ describe("Herdr worker pane pool", () => {
 		assert.equal(reused.paneId, first.paneId);
 	});
 
+	it("expands around a retained failure instead of leaving the next waiter stuck", async () => {
+		const client = new FakeHerdrPoolClient();
+		const workers = pool(client);
+		const failed = await workers.reserve();
+		failed.release("failed");
+		const next = await workers.reserve();
+		assert.notEqual(next.paneId, failed.paneId);
+		assert.equal(client.requests.filter((request) => request.method === "pane.split").length, 1);
+	});
+
 	it("prefers affinity reuse for retry/chain continuity", async () => {
 		const client = new FakeHerdrPoolClient();
 		const workers = pool(client);
@@ -201,6 +217,23 @@ describe("Herdr worker pane pool", () => {
 		assert.equal(second.paneId, first.paneId);
 		assert.equal(client.requests.filter((request) => request.method === "tab.create").length, 1);
 		assert.equal(reconnected.getSnapshot().tabLabel, label);
+	});
+
+	it("does not duplicate-launch into a recovered busy pane after reload", async () => {
+		const client = new FakeHerdrPoolClient();
+		const label = new HerdrWorkerPanePool(client, { rootSessionId: "reload-root", cwd: "/repo" }).getSnapshot().tabLabel;
+		client.seedTab(label, ["w1:p9"], "working");
+		let recovered: "busy" | "retained-success" = "busy";
+		const workers = pool(client, "reload-root", undefined, () => new Map([["w1:p9", { state: recovered, affinityKey: "same-dispatch" }]]));
+		let resolved = false;
+		const pending = workers.reserve({ affinityKey: "same-dispatch" }).then((reservation) => { resolved = true; return reservation; });
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		assert.equal(resolved, false);
+		assert.equal(client.requests.some((request) => request.method === "pane.split" || request.method === "tab.create"), false);
+
+		recovered = "retained-success";
+		workers.clearRetained();
+		assert.equal((await pending).paneId, "w1:p9");
 	});
 
 	it("fails visibly without managed workspace identity", async () => {

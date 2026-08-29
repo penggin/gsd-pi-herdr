@@ -19,12 +19,15 @@ import {
   herdrWorkerRuntimeRoot,
   readHerdrWorkerEnvAndDelete,
   readHerdrWorkerExit,
+  readHerdrWorkerHeartbeat,
   readHerdrWorkerLaunchSpec,
+  readHerdrWorkerOwnership,
   readHerdrWorkerState,
   resolveHerdrWorkerArtifactPaths,
   writeHerdrWorkerExit,
   writeHerdrWorkerHeartbeat,
   writeHerdrWorkerLaunchBundle,
+  writeHerdrWorkerOwnership,
   writeHerdrWorkerState,
 } from "../artifacts.js";
 
@@ -164,6 +167,7 @@ describe("Herdr worker artifact contract v1", () => {
       status: "working",
     });
     assert.equal(JSON.parse(readFileSync(paths.heartbeatPath, "utf8")).pid, 10);
+    assert.equal(readHerdrWorkerHeartbeat(paths).status, "working");
 
     writeHerdrWorkerExit(paths, {
       schemaVersion: 1,
@@ -183,6 +187,28 @@ describe("Herdr worker artifact contract v1", () => {
       }),
       /already exists|EEXIST/,
     );
+  });
+
+  it("persists identity-bound pane ownership transitions", () => {
+    const { paths, identity } = fixture();
+    ensureHerdrWorkerArtifactDirectory(paths);
+    writeHerdrWorkerOwnership(paths, {
+      schemaVersion: 1,
+      ...identity,
+      ownerInstanceId: "instance-1",
+      paneId: "w1:p2",
+      tabId: "w1:t2",
+      workspaceId: "w1",
+      affinityKey: "dispatch:child-0",
+      status: "reserved",
+      updatedAt: "2026-08-30T00:00:00.000Z",
+    });
+    const ownership = readHerdrWorkerOwnership(paths);
+    assert.equal(ownership.paneId, "w1:p2");
+    assert.equal(ownership.status, "reserved");
+    writeHerdrWorkerOwnership(paths, { ...ownership, status: "running", updatedAt: "2026-08-30T00:00:01.000Z" });
+    assert.equal(readHerdrWorkerOwnership(paths).status, "running");
+    if (process.platform !== "win32") assert.equal(lstatSync(paths.ownershipPath).mode & 0o777, 0o600);
   });
 
   it("rejects group/world-readable launch input", () => {

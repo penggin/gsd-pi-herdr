@@ -9,6 +9,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
 
 import { HerdrClient } from "../../herdr/client.js";
+import { herdrRootRuntimeId } from "../../herdr/runtime-records.js";
 import { runHerdrCli, type HerdrCliResult } from "../../herdr/cli.js";
 import {
 	HerdrWorkerPanePool,
@@ -20,9 +21,13 @@ import {
 	createHerdrWorkerLaunchSpec,
 	herdrWorkerRuntimeRoot,
 	readHerdrWorkerExit,
+	readHerdrWorkerHeartbeat,
 	readHerdrWorkerState,
+	readHerdrWorkerOwnership,
 	resolveHerdrWorkerArtifactPaths,
 	writeHerdrWorkerLaunchBundle,
+	writeHerdrWorkerOwnership,
+	writeHerdrWorkerState,
 	type HerdrWorkerArtifactPaths,
 } from "./herdr-worker/artifacts.js";
 import { JsonlLineFramer } from "./herdr-worker/jsonl.js";
@@ -38,6 +43,7 @@ const DEFAULT_WAIT_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_POLL_INTERVAL_MS = 50;
 const DEFAULT_CANCEL_EVIDENCE_TIMEOUT_MS = 15_000;
 const DEFAULT_PANE_PROBE_INTERVAL_MS = 1000;
+const DEFAULT_HEARTBEAT_TIMEOUT_MS = 20_000;
 
 export interface HerdrBackendPoolLike {
 	reserve(request?: HerdrPaneReservationRequest): Promise<HerdrPaneReservation>;
@@ -61,6 +67,7 @@ export interface HerdrBackendOptions {
 	pollIntervalMs?: number;
 	cancelEvidenceTimeoutMs?: number;
 	paneProbeIntervalMs?: number;
+	heartbeatTimeoutMs?: number;
 	terminateProcessTree?: typeof terminateHerdrWorkerProcessGroup;
 }
 
@@ -75,10 +82,11 @@ const liveHerdrExecutions = new Map<string, LiveHerdrExecution>();
 export function createHerdrSubagentBackend(options: HerdrBackendOptions): SubagentExecutionBackend {
 	const client = options.client ?? new HerdrClient("custom:gsd-herdr-backend");
 	const pool = options.pool ?? resolveSharedPool(client, options);
+	const ownerInstanceId = randomUUID();
 	return {
 		id: "herdr",
 		isAvailable: () => client.getEnvironment().available,
-		execute: (request, callbacks) => executeHerdrSubagent(client, pool, options, request, callbacks),
+		execute: (request, callbacks) => executeHerdrSubagent(client, pool, options, ownerInstanceId, request, callbacks),
 		interrupt: async (handle) => {
 			const paneId = typeof handle.executionId === "string" ? handle.executionId : undefined;
 			if (paneId) await sendPaneInterrupt(client, paneId);
@@ -90,6 +98,7 @@ async function executeHerdrSubagent(
 	client: HerdrBackendClientLike,
 	pool: HerdrBackendPoolLike,
 	options: HerdrBackendOptions,
+	ownerInstanceId: string,
 	request: SubagentBackendExecutionRequest,
 	callbacks: SubagentBackendCallbacks,
 ): Promise<SubagentBackendExecutionResult> {
@@ -110,7 +119,7 @@ async function executeHerdrSubagent(
 
 	const executionUuid = randomUUID();
 	const artifactIdentity = {
-		rootSessionId: generatedId("root", options.rootSessionId),
+		rootSessionId: herdrRootRuntimeId(options.rootSessionId),
 		dispatchId: generatedId("dispatch", request.identity.dispatchId ?? request.identity.runId ?? executionUuid),
 		childId: generatedId("child", `${request.identity.childIndex ?? request.identity.step ?? "x"}:${executionUuid}`),
 	};
@@ -140,6 +149,17 @@ async function executeHerdrSubagent(
 			executable: nodeExecutable,
 			args: realChildArgs,
 		}, request.launch.env);
+		writeHerdrWorkerOwnership(paths, {
+			schemaVersion: 1,
+			...artifactIdentity,
+			ownerInstanceId,
+			paneId: reservation.paneId,
+			tabId: reservation.tabId,
+			workspaceId: reservation.workspaceId,
+			affinityKey,
+			status: "reserved",
+			updatedAt: new Date().toISOString(),
+		});
 	} catch (error) {
 		reservation.release("failed");
 		return failure(`Herdr worker launch bundle creation failed: ${errorMessage(error)}`, "not-started", reservation, paths);
@@ -156,6 +176,7 @@ async function executeHerdrSubagent(
 		paths.launchPath,
 	]);
 	if (!submit.ok) {
+		updateOwnershipStatus(paths, "orphaned");
 		await sendPaneInterrupt(client, reservation.paneId);
 		reservation.release("failed");
 		return failure(
@@ -165,10 +186,12 @@ async function executeHerdrSubagent(
 			paths,
 		);
 	}
+	updateOwnershipStatus(paths, "submitted");
 
 	liveHerdrExecutions.set(reservation.paneId, { paneId: reservation.paneId, client });
 	try {
 		const evidence = await waitForWorkerEvidence(client, reservation, paths, request, callbacks, options);
+		updateOwnershipStatus(paths, evidence.runtimeError ? "orphaned" : "settled");
 		const outcome: HerdrWorkerReleaseOutcome = evidence.aborted
 			? "aborted"
 			: evidence.exitCode === 0 && !evidence.runtimeError
@@ -207,6 +230,7 @@ async function waitForWorkerEvidence(
 	const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
 	const cancelEvidenceTimeoutMs = options.cancelEvidenceTimeoutMs ?? DEFAULT_CANCEL_EVIDENCE_TIMEOUT_MS;
 	const paneProbeIntervalMs = options.paneProbeIntervalMs ?? DEFAULT_PANE_PROBE_INTERVAL_MS;
+	const heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? DEFAULT_HEARTBEAT_TIMEOUT_MS;
 	const stdout = new JsonlLineFramer({ onLine: callbacks.onStdoutLine });
 	const stderrDecoder = new StringDecoder("utf8");
 	const stdoutTail = { offset: 0 };
@@ -264,6 +288,11 @@ async function waitForWorkerEvidence(
 					runtimeError: `Herdr worker pane disappeared before final exit evidence was produced${cleanupError ? `; detached worker cleanup failed: ${cleanupError}` : ""}`,
 				};
 			}
+			const livenessError = await inspectWorkerLiveness(paths, heartbeatTimeoutMs, options, now);
+			if (livenessError) {
+				finalizeRelays();
+				return { exitCode: 1, aborted: false, runtimeError: livenessError };
+			}
 		}
 		if (request.signal?.aborted && interruptSentAt === undefined) {
 			interruptSentAt = now;
@@ -291,6 +320,37 @@ async function waitForWorkerEvidence(
 	}
 }
 
+async function inspectWorkerLiveness(
+	paths: HerdrWorkerArtifactPaths,
+	heartbeatTimeoutMs: number,
+	options: HerdrBackendOptions,
+	now: number,
+): Promise<string | undefined> {
+	if (!existsSync(paths.statePath)) return undefined;
+	try {
+		const state = readHerdrWorkerState(paths);
+		if (["completed", "failed", "aborted", "orphaned"].includes(state.status)) return undefined;
+		let reason: string | undefined;
+		if (state.pid && !isProcessAlive(state.pid)) reason = `Herdr internal worker process ${state.pid} disappeared`;
+		if (!reason && existsSync(paths.heartbeatPath)) {
+			const heartbeat = readHerdrWorkerHeartbeat(paths);
+			if (now - Date.parse(heartbeat.updatedAt) > heartbeatTimeoutMs) reason = "Herdr worker heartbeat became stale";
+		}
+		if (!reason) return undefined;
+		const cleanupError = await terminateDetachedWorkerAfterPaneLoss(paths, options);
+		writeHerdrWorkerState(paths, {
+			...state,
+			status: "orphaned",
+			updatedAt: new Date(now).toISOString(),
+			lastActivity: { kind: "error", label: reason },
+		});
+		updateOwnershipStatus(paths, "orphaned");
+		return `${reason} before final exit evidence was produced${cleanupError ? `; detached worker cleanup failed: ${cleanupError}` : ""}`;
+	} catch (error) {
+		return `Herdr worker liveness evidence is invalid: ${errorMessage(error)}`;
+	}
+}
+
 async function terminateDetachedWorkerAfterPaneLoss(
 	paths: HerdrWorkerArtifactPaths,
 	options: HerdrBackendOptions,
@@ -314,6 +374,19 @@ function isProcessAlive(pid: number): boolean {
 		return true;
 	} catch (error) {
 		return (error as NodeJS.ErrnoException).code === "EPERM";
+	}
+}
+
+function updateOwnershipStatus(
+	paths: HerdrWorkerArtifactPaths,
+	status: "submitted" | "settled" | "orphaned",
+): void {
+	try {
+		const ownership = readHerdrWorkerOwnership(paths);
+		writeHerdrWorkerOwnership(paths, { ...ownership, status, updatedAt: new Date().toISOString() });
+	} catch {
+		// State/exit evidence remains authoritative to the common runner. A
+		// missing ownership transition is handled conservatively on reload.
 	}
 }
 

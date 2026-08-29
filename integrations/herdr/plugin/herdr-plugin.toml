@@ -32,6 +32,24 @@ title = "Release retained GSD workers"
 contexts = ["global", "workspace", "tab", "pane"]
 command = ["node", "operations.mjs", "cleanup-retained"]
 
+[[actions]]
+id = "prune-artifacts"
+title = "Prune expired GSD worker artifacts"
+contexts = ["global"]
+command = ["node", "operations.mjs", "prune-artifacts"]
+
+[[events]]
+on = "pane.closed"
+command = ["node", "operations.mjs", "reconcile"]
+
+[[events]]
+on = "pane.exited"
+command = ["node", "operations.mjs", "reconcile"]
+
+[[events]]
+on = "pane.agent_status_changed"
+command = ["node", "operations.mjs", "reconcile"]
+
 [[panes]]
 id = "dashboard"
 title = "GSD worker dashboard"
@@ -39,4 +57,3 @@ placement = "popup"
 width = "80%"
 height = "70%"
 command = ["node", "dashboard.mjs"]
-

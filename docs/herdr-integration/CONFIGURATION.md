@@ -49,6 +49,8 @@ Recommended first-stable behavior:
 - `display.level`: `activity`.
 - `show_raw_json`: always `false` in normal UI; raw JSONL remains in artifacts.
 - failed worker panes remain until review/cleanup by default.
+- completed and aborted artifact directories are pruned by the operations plugin only after 72 hours by default; failed and orphaned evidence is retained indefinitely.
+- the current M6 retention policy is an implementation default. The proposed `retention` preference keys above remain future public configuration until preference validation is added.
 
 ## Backend selection
 
@@ -128,6 +130,10 @@ Prefer a GSD-owned path under the existing application root, for example:
 ```
 
 rather than inventing a second unrelated application root. The final path should use existing `app-paths` helpers where possible.
+
+The implemented schema-v1 layout also contains instance-bound root ownership and
+heartbeat records plus per-worker ownership, orphan, and cleanup requests. All
+control files remain owner-only and identity-bound.
 
 ## Validation rules
 

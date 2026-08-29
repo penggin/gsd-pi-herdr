@@ -1,6 +1,7 @@
 import {
   closeSync,
   constants as fsConstants,
+  existsSync,
   fsyncSync,
   openSync,
   writeSync,
@@ -15,8 +16,11 @@ import type {
 import {
   HERDR_WORKER_SCHEMA_VERSION,
   readHerdrWorkerEnvAndDelete,
+  readHerdrWorkerOwnership,
+  readHerdrWorkerOrphanRequest,
   writeHerdrWorkerExit,
   writeHerdrWorkerHeartbeat,
+  writeHerdrWorkerOwnership,
   writeHerdrWorkerState,
 } from "./artifacts.js";
 import { HerdrWorkerActivityRenderer } from "./activity.js";
@@ -39,7 +43,7 @@ const HERDR_IDENTITY_ENV_KEYS = [
 export interface WorkerReporterLike {
   initialize(): Promise<void>;
   reportStatus(status: HerdrWorkerStatus, message?: string): Promise<void>;
-  reportFinal(status: "completed" | "failed" | "aborted"): Promise<void>;
+  reportFinal(status: "completed" | "failed" | "aborted" | "orphaned"): Promise<void>;
 }
 
 export interface RunHerdrWorkerOptions {
@@ -91,6 +95,7 @@ export async function runHerdrWorker(
   let receivedSignal: NodeJS.Signals | null = null;
   let childClosed = false;
   let cancellationPromise: Promise<void> | undefined;
+  let orphanRequested = false;
 
   const writeRuntimeArtifacts = (status = currentStatus, activity = lastActivity) => {
     currentStatus = status;
@@ -127,6 +132,7 @@ export async function runHerdrWorker(
   };
   const framer = new JsonlLineFramer({ onLine: consumeJsonlLine });
 
+  updateOwnershipStatus(paths, "running", now);
   writeRuntimeArtifacts("starting");
   await safeReporterCall(() => reporter.initialize());
   await safeReporterCall(() => reporter.reportStatus("starting", spec.taskPreview ?? "starting"));
@@ -134,6 +140,11 @@ export async function runHerdrWorker(
   const heartbeatMs = boundedPositiveMs(options.heartbeatMs, DEFAULT_HEARTBEAT_MS);
   const heartbeatTimer = setInterval(() => {
     try {
+      if (!orphanRequested && existsSync(paths.orphanPath)) {
+        readHerdrWorkerOrphanRequest(paths);
+        orphanRequested = true;
+        requestCancellation("SIGTERM");
+      }
       const updatedAt = now().toISOString();
       writeHerdrWorkerHeartbeat(paths, {
         schemaVersion: HERDR_WORKER_SCHEMA_VERSION,
@@ -229,8 +240,10 @@ export async function runHerdrWorker(
   }
 
   const aborted = receivedSignal !== null;
-  const finalStatus: "completed" | "failed" | "aborted" = aborted
-    ? "aborted"
+  const finalStatus: "completed" | "failed" | "aborted" | "orphaned" = orphanRequested
+    ? "orphaned"
+    : aborted
+      ? "aborted"
     : childExitCode === 0
       ? "completed"
       : "failed";
@@ -240,6 +253,7 @@ export async function runHerdrWorker(
   // pane cannot start a replacement worker while the previous source is still
   // finishing its visibility updates.
   await safeReporterCall(() => reporter.reportFinal(finalStatus));
+  updateOwnershipStatus(paths, finalStatus === "orphaned" ? "orphaned" : "settled", now);
   writeHerdrWorkerExit(paths, {
     schemaVersion: HERDR_WORKER_SCHEMA_VERSION,
     exitCode: childExitCode,
@@ -250,6 +264,20 @@ export async function runHerdrWorker(
 
   if (aborted) return receivedSignal === "SIGTERM" ? 143 : 130;
   return normalizeProcessExitCode(childExitCode);
+}
+
+function updateOwnershipStatus(
+  paths: HerdrWorkerArtifactPaths,
+  status: "running" | "settled" | "orphaned",
+  now: () => Date,
+): void {
+  try {
+    const ownership = readHerdrWorkerOwnership(paths);
+    writeHerdrWorkerOwnership(paths, { ...ownership, status, updatedAt: now().toISOString() });
+  } catch {
+    // Compatibility with pre-M6 launch bundles. New bundles always include
+    // ownership.json; reconciliation treats a missing record conservatively.
+  }
 }
 
 export function buildHerdrWorkerChildEnv(

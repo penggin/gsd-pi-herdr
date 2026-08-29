@@ -1,7 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import type { HerdrEnvironment, HerdrResponse } from "../../herdr/client.js";
-import { consumeHerdrWorkerCleanupRequests } from "./herdr-runtime.js";
+import {
+	consumeHerdrWorkerCleanupRequests,
+	recoverHerdrWorkerSlotStates,
+	type HerdrRecoveredSlot,
+} from "./herdr-runtime.js";
 
 const DEFAULT_MAX_PANES = 4;
 
@@ -21,6 +25,7 @@ export interface HerdrWorkerPanePoolOptions {
 	paneEnv?: Readonly<Record<string, string>>;
 	runtimeRoot?: string;
 	consumeCleanupRequests?: () => readonly string[];
+	recoverSlots?: () => ReadonlyMap<string, HerdrRecoveredSlot>;
 }
 
 export interface HerdrWorkerPaneSlotSnapshot {
@@ -75,11 +80,13 @@ export class HerdrWorkerPanePool {
 	private readonly tabLabel: string;
 	private readonly paneEnv: Readonly<Record<string, string>>;
 	private readonly consumeCleanupRequests: () => readonly string[];
+	private readonly recoverSlots: () => ReadonlyMap<string, HerdrRecoveredSlot>;
 	private workspaceId: string | undefined;
 	private tabId: string | undefined;
 	private slots: MutableSlot[] = [];
 	private waiters: Waiter[] = [];
 	private mutationQueue: Promise<void> = Promise.resolve();
+	private recoveryPollTimer: ReturnType<typeof setTimeout> | undefined;
 
 	constructor(client: HerdrPanePoolClient, options: HerdrWorkerPanePoolOptions) {
 		this.client = client;
@@ -91,6 +98,10 @@ export class HerdrWorkerPanePool {
 			?? (options.runtimeRoot
 				? () => consumeHerdrWorkerCleanupRequests(options.runtimeRoot!, this.rootSessionId)
 				: () => []);
+		this.recoverSlots = options.recoverSlots
+			?? (options.runtimeRoot
+				? () => recoverHerdrWorkerSlotStates(options.runtimeRoot!, this.rootSessionId)
+				: () => new Map());
 		const prefix = options.tabLabelPrefix?.trim() || "GSD Workers";
 		this.tabLabel = `${prefix} · ${rootSessionHash(this.rootSessionId)}`;
 	}
@@ -137,16 +148,20 @@ export class HerdrWorkerPanePool {
 	private async drain(): Promise<void> {
 		if (this.waiters.length === 0) return;
 		await this.ensureTab();
+		this.applyRecoveredSlotStates();
 		this.applyCleanupRequests();
 
 		while (this.waiters.length > 0) {
 			let slot = this.pickImmediatelyReusableSlot(this.waiters[0].request);
-			if (!slot && this.slots.length < this.maxPanes) {
-				const activeDemand = this.slots.filter((item) => item.state === "busy").length + this.waiters.length;
+			const waitsForRecoveredAffinity = Boolean(this.waiters[0].request.affinityKey
+				&& this.slots.some((item) => item.state === "busy" && item.affinityKey === this.waiters[0].request.affinityKey));
+			if (!slot && !waitsForRecoveredAffinity && this.slots.length < this.maxPanes) {
+				const unavailable = this.slots.filter((item) => item.state === "busy" || item.state === "retained-failure").length;
+				const activeDemand = unavailable + this.waiters.length;
 				await this.ensureCapacity(Math.min(this.maxPanes, Math.max(1, activeDemand)));
 				slot = this.pickImmediatelyReusableSlot(this.waiters[0].request);
 			}
-			if (!slot) slot = this.pickReclaimableSuccess(this.waiters[0].request);
+			if (!slot && !waitsForRecoveredAffinity) slot = this.pickReclaimableSuccess(this.waiters[0].request);
 			if (!slot) {
 				const busy = this.slots.some((item) => item.state === "busy");
 				const allCapacityRetainedFailure = this.slots.length >= this.maxPanes
@@ -156,6 +171,7 @@ export class HerdrWorkerPanePool {
 					waiter.reject(new Error("All Herdr worker panes are retained after failures; cleanup/reconciliation is required before another launch"));
 					continue;
 				}
+				if (busy) this.scheduleRecoveryPoll();
 				return;
 			}
 
@@ -166,6 +182,27 @@ export class HerdrWorkerPanePool {
 			slot.retainedAt = undefined;
 			if (waiter.request.affinityKey) slot.affinityKey = waiter.request.affinityKey;
 			waiter.resolve(this.createReservation(slot, leaseId));
+		}
+	}
+
+	private scheduleRecoveryPoll(): void {
+		if (this.recoveryPollTimer) return;
+		this.recoveryPollTimer = setTimeout(() => {
+			this.recoveryPollTimer = undefined;
+			this.scheduleDrain();
+		}, 500);
+		this.recoveryPollTimer.unref?.();
+	}
+
+	private applyRecoveredSlotStates(): void {
+		const recovered = this.recoverSlots();
+		for (const slot of this.slots) {
+			if (slot.leaseId) continue;
+			const recoveredSlot = recovered.get(slot.paneId);
+			if (!recoveredSlot) continue;
+			slot.state = recoveredSlot.state;
+			slot.affinityKey = recoveredSlot.affinityKey;
+			if (recoveredSlot.state !== "busy") slot.retainedAt ??= Date.now();
 		}
 	}
 
@@ -196,7 +233,13 @@ export class HerdrWorkerPanePool {
 				.sort((left, right) => comparePublicIds(left.paneId, right.paneId));
 			if (panes.length === 0) throw new Error("Existing Herdr worker tab has no panes");
 			if (panes.length > this.maxPanes) throw new Error("Existing Herdr worker tab exceeds configured pane capacity");
-			this.slots = panes.map((pane, index) => ({ index, paneId: pane.paneId, state: "idle" }));
+			this.slots = panes.map((pane, index) => ({
+				index,
+				paneId: pane.paneId,
+				state: pane.agentStatus === "working" || pane.agentStatus === "blocked" || pane.agentStatus === "unknown"
+					? "busy"
+					: "idle",
+			}));
 			return;
 		}
 
@@ -292,7 +335,7 @@ export class HerdrWorkerPanePool {
 		});
 	}
 
-	private async listPanes(workspaceId: string): Promise<Array<{ paneId: string; tabId: string }>> {
+	private async listPanes(workspaceId: string): Promise<Array<{ paneId: string; tabId: string; agentStatus?: string }>> {
 		const result = await this.requireResult("pane.list", { workspace_id: workspaceId }, "pane_list");
 		const panes = Array.isArray(result.panes) ? result.panes : [];
 		return panes.flatMap((value) => {
@@ -350,9 +393,13 @@ function parseTabInfo(value: Record<string, unknown> | undefined): { tabId: stri
 	return { tabId: value.tab_id, label: value.label };
 }
 
-function parsePaneInfo(value: Record<string, unknown> | undefined): { paneId: string; tabId: string } | undefined {
+function parsePaneInfo(value: Record<string, unknown> | undefined): { paneId: string; tabId: string; agentStatus?: string } | undefined {
 	if (!value || typeof value.pane_id !== "string" || typeof value.tab_id !== "string") return undefined;
-	return { paneId: value.pane_id, tabId: value.tab_id };
+	return {
+		paneId: value.pane_id,
+		tabId: value.tab_id,
+		...(typeof value.agent_status === "string" ? { agentStatus: value.agent_status } : {}),
+	};
 }
 
 function comparePublicIds(left: string, right: string): number {

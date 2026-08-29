@@ -250,11 +250,13 @@ Rules:
 
 ## 9. Durable artifact layout
 
-Proposed root:
+Implemented root:
 
 ```text
 ~/.gsd/runtime/herdr/v1/
-└── <root-session-id>/
+└── <hashed-root-runtime-id>/
+    ├── root.json
+    ├── root-heartbeat.json
     └── <dispatch-id>/
         └── <child-id>/
             ├── launch.json
@@ -262,9 +264,17 @@ Proposed root:
             ├── stdout.jsonl
             ├── stderr.log
             ├── state.json
-            ├── heartbeat
+            ├── heartbeat.json
+            ├── ownership.json
+            ├── orphan.json     # only when root reconciliation requests stop
+            ├── cleanup.json    # optional owner-consumed pane release request
             └── exit.json
 ```
+
+Root leases are instance-bound. Worker ownership records persist pane, tab,
+workspace, affinity, and reservation phase so a replacement runtime can recover
+capacity without starting the same affinity twice. `orphan.json` is a durable
+owner-to-runner cancellation handshake; it is not semantic success evidence.
 
 Security requirements are defined in `SECURITY.md`.
 

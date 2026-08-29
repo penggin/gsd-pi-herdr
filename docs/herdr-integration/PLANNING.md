@@ -1,8 +1,8 @@
 # GSD–Herdr Living Plan
 
-> **Status:** M0–M5 complete; M6 ready
+> **Status:** M0–M6 complete; M7 ready
 > **Last updated:** 2026-08-30
-> **Current milestone:** M6 — Durability and recovery
+> **Current milestone:** M7 — Downstream release/upstream maintenance automation
 > **Canonical rule:** Every Herdr-integration development session starts by reading this file and ends by updating it.
 
 ## 1. Mission
@@ -225,20 +225,20 @@ M4 exit = first practically usable monitored Herdr-subagent runtime proven in a 
 
 ### M6 — Durability and recovery
 
-**Status:** `READY`
+**Status:** `COMPLETE`
 
-- [ ] M6.1 Persist versioned run/worker runtime records.
-- [ ] M6.2 Add root/worker heartbeats.
-- [ ] M6.3 Reconcile durable state with `session.snapshot`.
-- [ ] M6.4 Detect manual pane closure/process loss.
-- [ ] M6.5 Mark uncertain workers `orphaned` and retain evidence.
-- [ ] M6.6 Prevent duplicate launch during reload/reconnect.
-- [ ] M6.7 Add root-crash, worker-crash, Herdr restart, detach/reattach E2E.
-- [ ] M6.8 Finalize retention and cleanup policy.
+- [x] M6.1 Persist versioned run/worker runtime records.
+- [x] M6.2 Add root/worker heartbeats.
+- [x] M6.3 Reconcile durable state with `session.snapshot`.
+- [x] M6.4 Detect manual pane closure/process loss.
+- [x] M6.5 Mark uncertain workers `orphaned` and retain evidence.
+- [x] M6.6 Prevent duplicate launch during reload/reconnect.
+- [x] M6.7 Add root-crash, worker-crash, Herdr restart, detach/reattach E2E.
+- [x] M6.8 Finalize retention and cleanup policy.
 
 ### M7 — Downstream release/upstream maintenance automation
 
-**Status:** `NOT STARTED`
+**Status:** `READY`
 
 - [ ] M7.1 Automate upstream-main change detection and impact reports.
 - [ ] M7.2 Automate supported/canary Herdr capability checks.
@@ -287,9 +287,9 @@ Structural gaps discovered:
 
 ## 9. Current execution queue
 
-1. **M6.1–M6.3:** add versioned root/run ownership records and root heartbeat, then reconcile them with worker heartbeats and `session.snapshot`.
-2. M6.4–M6.6: make pane/process loss, orphan classification, and reload/reconnect duplicate prevention durable rather than only in-memory.
-3. M6.7–M6.8: run crash/restart/detach recovery E2E and finalize bounded retention/cleanup policy before M7 automation.
+1. **M7.1–M7.2:** automate upstream impact reporting and stable/canary Herdr capability checks.
+2. M7.3–M7.5: stamp exact upstream/Herdr release identity, run canaries, and retain the prior known-good rollback target.
+3. M7.6: document install/update/release identity, then run the complete downstream release gate.
 
 ## 10. Progress log
 
@@ -485,6 +485,19 @@ Structural gaps discovered:
 - Official Herdr v0.8.2 validation passed in an isolated config/state/data/cache environment: local link accepted all four actions, startup hook, and dashboard pane; startup reconciliation exited 0; the status action reported `Herdr: 0.8.2 · protocol 20`; plugin logs recorded both commands as succeeded. The isolated server and temporary plugin registry were removed afterward.
 - Focused validation: plugin operations **4/4 pass**; pane-pool/runtime control **11/11 pass**; `typecheck:extensions` passes.
 - **M5 is complete. M6 is ready. Exact next task: M6.1 — persist versioned root/run ownership and root heartbeat records alongside existing worker state.**
+
+### 2026-08-30 — M6 durability, crash recovery, and restart closeout
+
+- Added instance-bound, schema-v1 `root.json` and `root-heartbeat.json` leases under the same hashed root runtime directory used by HerdrBackend. A replaced root instance cannot be overwritten by an obsolete shutdown/heartbeat writer.
+- Added owner-only `ownership.json` records for every reservation and durable `reserved → submitted → running → settled|orphaned` transitions. Reload reconstructs pane state and affinity from these records, queues matching recovered-busy affinity instead of duplicate-launching, and still allows unrelated work to use free capacity.
+- Added root-aware plugin reconciliation against `session.snapshot`, process liveness, and heartbeats. Stale roots become `crashed`; active children receive an identity-bound `orphan.json`; the runner consumes that request, escalates its detached process tree, publishes `state=orphaned` and immutable `exit.aborted=true`, and preserves orphan ownership.
+- Worker-pane loss and internal-runner loss are bounded failures even if the pane itself remains. A real runner-only kill (runner PID `73160`, JSON child `73170`, escaped descendant `73630`) returned an explicit missing-runner runtime error in about five seconds and reaped all descendants without killing the root.
+- A real public-subagent root-crash run used root PID `92847`, internal runner `93886`, JSON child `93892`, and escaped `sleep 300` PID `94371`. Reconciled status marked the root `crashed`, wrote the durable orphan request, produced `state=orphaned` / `exit.aborted=true`, and left none of those processes alive. The live test also proved status must reconcile rather than merely format stale records; that behavior is now regression-covered.
+- Restarted official Herdr v0.8.2 (protocol 20) from the exact isolated XDG config/state. Its persisted workspace restored all four tabs/panes with stable public IDs, the plugin startup hook succeeded (`roots=3`, `workers=3`, `authority_released=3`), and no old root/worker/descendant process relaunched. The long worker had continued while the server was headless with no TUI client before crash, covering detach/reattach persistence without transferring orchestration authority.
+- Retention is conservative: completed/aborted evidence is eligible for owner-checked, symlink-refusing pruning after 72 hours; failed/orphaned evidence is retained indefinitely by default. Terminal pane cleanup remains an owner-consumed request rather than plugin mutation of in-memory leases.
+- Live validation exposed and fixed capacity accounting around retained failures: unavailable slots now include busy plus failure-retained panes, allowing the pool to expand to the four-pane cap instead of leaving a waiter stuck.
+- Focused validation after these fixes: Herdr/plugin/subagent compiled regression **154/154 pass**, plugin operations **7/7 pass**, and `typecheck:extensions` passes. `build:core` also passes with the durable runner changes.
+- **M6 is complete. M7 is ready. Exact next task: M7.1 — automate upstream-main change detection and semantic impact reports.**
 
 ## 11. Working-session protocol
 

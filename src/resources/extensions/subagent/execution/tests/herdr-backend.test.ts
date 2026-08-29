@@ -143,6 +143,7 @@ describe("HerdrBackend", () => {
 		assert.equal(stdout.length, 1);
 		assert.deepEqual(stderr, ["diagnostic"]);
 		assert.match(String(result.metadata?.workerDir), /runtime[\\/]herdr[\\/]v1/);
+		assert.equal(JSON.parse(readFileSync(join(String(result.metadata?.workerDir), "ownership.json"), "utf8")).status, "settled");
 		assert.equal(getLiveHerdrSubagentExecutionCount(), 0);
 		void cliCalls;
 	});
@@ -232,5 +233,35 @@ describe("HerdrBackend", () => {
 		assert.deepEqual(pool.released, ["failed"]);
 		assert.deepEqual(terminated, [424242]);
 		assert.equal(pool.discarded, 1);
+	});
+
+	it("fails boundedly and orphans evidence when the pane survives but its internal runner disappears", async () => {
+		const { gsdHome, cwd, pool, client } = fixture();
+		const backend = createHerdrSubagentBackend({
+			rootSessionId: "root-session", cwd, gsdHome, client, pool,
+			gsdBinPath: "/opt/gsd/loader.js",
+			pollIntervalMs: 5,
+			paneProbeIntervalMs: 5,
+			waitTimeoutMs: 500,
+			runCli: async (args) => {
+				const launchPath = String(args.at(-1));
+				const spec = JSON.parse(readFileSync(launchPath, "utf8"));
+				writeFileSync(spec.statePath, JSON.stringify({
+					schemaVersion: 1,
+					status: "working",
+					updatedAt: new Date().toISOString(),
+					pid: 999_999,
+					paneId: "w1:p9",
+				}), { mode: 0o600 });
+				return cliResult(true);
+			},
+		});
+		const result = await backend.execute(request(cwd), { onStdoutLine: () => {}, onStderr: () => {} });
+		assert.equal(result.exitCode, 1);
+		assert.match(result.runtimeError ?? "", /internal worker process .* disappeared/);
+		assert.deepEqual(pool.released, ["failed"]);
+		const workerDir = String(result.metadata?.workerDir);
+		assert.equal(JSON.parse(readFileSync(join(workerDir, "state.json"), "utf8")).status, "orphaned");
+		assert.equal(JSON.parse(readFileSync(join(workerDir, "ownership.json"), "utf8")).status, "orphaned");
 	});
 });

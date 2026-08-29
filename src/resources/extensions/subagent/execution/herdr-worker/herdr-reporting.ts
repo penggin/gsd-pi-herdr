@@ -57,7 +57,7 @@ export class HerdrWorkerReporter {
     });
   }
 
-  async reportFinal(status: Extract<HerdrWorkerStatus, "completed" | "failed" | "aborted">): Promise<void> {
+  async reportFinal(status: Extract<HerdrWorkerStatus, "completed" | "failed" | "aborted" | "orphaned">): Promise<void> {
     return this.enqueue(async () => {
       if (!this.client.isAvailable()) return;
       await this.client.reportAgent(

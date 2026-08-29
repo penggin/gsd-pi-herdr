@@ -8,6 +8,7 @@ import {
   readFileSync,
   readdirSync,
   renameSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
@@ -23,6 +24,8 @@ const TERMINAL = new Set(["completed", "failed", "aborted", "orphaned"]);
 const PRIVATE_FILE_MODE = 0o600;
 const PRIVATE_DIRECTORY_MODE = 0o700;
 const STALE_AUTHORITY_MS = 30_000;
+const ROOT_STALE_MS = 20_000;
+const DEFAULT_TERMINAL_RETENTION_MS = 72 * 60 * 60 * 1_000;
 
 export function resolveRuntimeRoot(env = process.env) {
   const gsdHome = env.GSD_HOME?.trim() || join(homedir(), ".gsd");
@@ -54,6 +57,8 @@ export function scanWorkers(runtimeRoot = resolveRuntimeRoot()) {
             heartbeatPath: join(workerDir, "heartbeat.json"),
             exitPath: join(workerDir, "exit.json"),
             cleanupPath: join(workerDir, "cleanup.json"),
+            ownershipPath: join(workerDir, "ownership.json"),
+            orphanPath: join(workerDir, "orphan.json"),
             state,
           });
         } catch (error) {
@@ -66,6 +71,8 @@ export function scanWorkers(runtimeRoot = resolveRuntimeRoot()) {
             heartbeatPath: join(workerDir, "heartbeat.json"),
             exitPath: join(workerDir, "exit.json"),
             cleanupPath: join(workerDir, "cleanup.json"),
+            ownershipPath: join(workerDir, "ownership.json"),
+            orphanPath: join(workerDir, "orphan.json"),
             state: { schemaVersion: SCHEMA_VERSION, status: "orphaned", updatedAt: new Date(0).toISOString() },
             diagnostic: bounded(error instanceof Error ? error.message : String(error)),
           });
@@ -74,6 +81,27 @@ export function scanWorkers(runtimeRoot = resolveRuntimeRoot()) {
     }
   }
   return records.sort((left, right) => Date.parse(right.state.updatedAt) - Date.parse(left.state.updatedAt));
+}
+
+export function scanRoots(runtimeRoot = resolveRuntimeRoot()) {
+  if (!existsSync(runtimeRoot)) return [];
+  assertPrivateDirectory(runtimeRoot, "runtime root");
+  const roots = [];
+  for (const rootRuntimeId of safeDirectories(runtimeRoot)) {
+    const rootDir = join(runtimeRoot, rootRuntimeId);
+    const recordPath = join(rootDir, "root.json");
+    if (!existsSync(recordPath)) continue;
+    try {
+      const record = readPrivateJson(recordPath, "root record");
+      validateRootRecord(record, rootRuntimeId);
+      const heartbeatPath = join(rootDir, "root-heartbeat.json");
+      const heartbeat = existsSync(heartbeatPath) ? readPrivateJson(heartbeatPath, "root heartbeat") : undefined;
+      roots.push({ rootRuntimeId, rootDir, recordPath, heartbeatPath, record, heartbeat });
+    } catch (error) {
+      roots.push({ rootRuntimeId, rootDir, recordPath, diagnostic: bounded(error instanceof Error ? error.message : String(error)) });
+    }
+  }
+  return roots;
 }
 
 export async function requestHerdr(method, params = {}, env = process.env, timeoutMs = 2_000) {
@@ -125,7 +153,7 @@ export async function sessionSnapshot(env = process.env) {
   return result.snapshot;
 }
 
-export function formatStatus(records, snapshot, env = process.env) {
+export function formatStatus(records, snapshot, env = process.env, roots = scanRoots(resolveRuntimeRoot(env))) {
   const workspaceId = invocationWorkspace(env);
   const scoped = workspaceId
     ? records.filter((record) => paneById(snapshot, record.state.paneId)?.workspace_id === workspaceId)
@@ -136,6 +164,7 @@ export function formatStatus(records, snapshot, env = process.env) {
     "GSD Herdr workers",
     `  Herdr: ${snapshot.version ?? "unknown"} · protocol ${snapshot.protocol ?? "unknown"}`,
     `  scope: ${workspaceId ?? "all workspaces"}`,
+    `  roots: ${roots.length} · active=${roots.filter((root) => root.record?.status === "active").length} · crashed=${roots.filter((root) => root.record?.status === "crashed").length}`,
     `  workers: ${scoped.length} · ${[...counts.entries()].map(([status, count]) => `${status}=${count}`).join(" · ") || "none"}`,
   ];
   for (const record of scoped.slice(0, 20)) {
@@ -150,19 +179,52 @@ export function formatStatus(records, snapshot, env = process.env) {
 export async function reconcileWorkers({ env = process.env, runtimeRoot = resolveRuntimeRoot(env), now = Date.now() } = {}) {
   const snapshot = await sessionSnapshot(env);
   const records = scanWorkers(runtimeRoot);
+  const roots = scanRoots(runtimeRoot);
+  const unavailableRoots = new Set();
   let orphaned = 0;
   let released = 0;
+  let crashedRoots = 0;
+  for (const root of roots) {
+    if (!root.record) continue;
+    const pane = paneById(snapshot, root.record.paneId);
+    const heartbeatFresh = root.heartbeat
+      && root.heartbeat.instanceId === root.record.instanceId
+      && Number.isFinite(Date.parse(root.heartbeat.updatedAt))
+      && now - Date.parse(root.heartbeat.updatedAt) <= ROOT_STALE_MS;
+    const healthy = root.record.status === "active" && pane && heartbeatFresh && isProcessAlive(root.record.pid);
+    if (healthy) continue;
+    unavailableRoots.add(root.rootRuntimeId);
+    if (root.record.status === "active") {
+      const updated = { ...root.record, status: "crashed", updatedAt: new Date(now).toISOString() };
+      writePrivateJsonAtomic(root.recordPath, updated);
+      root.record = updated;
+      crashedRoots += 1;
+      if (pane) {
+        await requestHerdr("pane.clear_agent_authority", { pane_id: pane.pane_id, source: root.record.source }, env);
+        released += 1;
+      }
+    }
+  }
   for (const record of records) {
     const pane = paneById(snapshot, record.state.paneId);
     const childAlive = isProcessAlive(record.state.childPid);
-    if (ACTIVE.has(record.state.status) && (!pane || (record.state.childPid && !childAlive))) {
+    if (ACTIVE.has(record.state.status) && (unavailableRoots.has(record.rootSessionId) || !pane || (record.state.childPid && !childAlive))) {
+      if (unavailableRoots.has(record.rootSessionId) && pane && childAlive) writeOrphanRequest(record, now);
       writeWorkerState(record, {
         ...record.state,
         status: "orphaned",
         updatedAt: new Date(now).toISOString(),
-        lastActivity: { kind: "error", label: !pane ? "worker pane missing during reconciliation" : "worker process missing during reconciliation" },
+        lastActivity: {
+          kind: "error",
+          label: unavailableRoots.has(record.rootSessionId)
+            ? "root owner unavailable during reconciliation"
+            : !pane
+              ? "worker pane missing during reconciliation"
+              : "worker process missing during reconciliation",
+        },
       });
       record.state.status = "orphaned";
+      writeOrphanedOwnership(record, now);
       orphaned += 1;
     }
     const age = Math.max(0, now - Date.parse(record.state.updatedAt));
@@ -175,7 +237,31 @@ export async function reconcileWorkers({ env = process.env, runtimeRoot = resolv
       released += 1;
     }
   }
-  return { snapshot, records, orphaned, released };
+  return { snapshot, roots, records, crashedRoots, orphaned, released };
+}
+
+export async function statusWorkers(options = {}) {
+  const env = options.env ?? process.env;
+  const result = await reconcileWorkers({ ...options, env });
+  return {
+    ...result,
+    output: formatStatus(result.records, result.snapshot, env, result.roots),
+  };
+}
+
+export function pruneTerminalArtifacts({ env = process.env, runtimeRoot = resolveRuntimeRoot(env), now = Date.now(), retentionMs = DEFAULT_TERMINAL_RETENTION_MS } = {}) {
+  if (!Number.isFinite(retentionMs) || retentionMs < 60_000) throw new Error("Herdr worker retention must be at least one minute");
+  const removed = [];
+  for (const record of scanWorkers(runtimeRoot)) {
+    if (record.state.status === "failed" || record.state.status === "orphaned" || !TERMINAL.has(record.state.status)) continue;
+    if (isProcessAlive(record.state.childPid)) continue;
+    const terminalAt = Date.parse(record.state.updatedAt);
+    if (!Number.isFinite(terminalAt) || now - terminalAt < retentionMs) continue;
+    assertSafeRemovalTree(runtimeRoot, record.workerDir);
+    rmSync(record.workerDir, { recursive: true, force: false });
+    removed.push(record.workerDir);
+  }
+  return removed;
 }
 
 export async function focusWorkers({ env = process.env } = {}) {
@@ -286,9 +372,56 @@ function validateState(state) {
   }
 }
 
+function validateRootRecord(record, rootRuntimeId) {
+  if (!record || record.schemaVersion !== SCHEMA_VERSION || record.rootRuntimeId !== rootRuntimeId) throw new Error("Invalid GSD Herdr root record");
+  for (const key of ["rootSessionId", "instanceId", "source", "paneId", "cwd", "startedAt", "updatedAt"]) {
+    if (typeof record[key] !== "string" || !record[key]) throw new Error(`Invalid GSD Herdr root ${key}`);
+  }
+  if (!Number.isSafeInteger(record.pid) || record.pid <= 0) throw new Error("Invalid GSD Herdr root pid");
+  if (!new Set(["active", "stopped", "crashed"]).has(record.status)) throw new Error("Invalid GSD Herdr root status");
+  if (!Number.isFinite(Date.parse(record.startedAt)) || !Number.isFinite(Date.parse(record.updatedAt))) throw new Error("Invalid GSD Herdr root timestamp");
+}
+
 function writeWorkerState(record, state) {
   assertContained(record.workerDir, record.statePath, "worker state");
   writePrivateJsonAtomic(record.statePath, state);
+}
+
+function writeOrphanedOwnership(record, now) {
+  if (!existsSync(record.ownershipPath)) return;
+  try {
+    const ownership = readPrivateJson(record.ownershipPath, "worker ownership");
+    if (ownership.rootSessionId !== record.rootSessionId || ownership.dispatchId !== record.dispatchId || ownership.childId !== record.childId) return;
+    writePrivateJsonAtomic(record.ownershipPath, { ...ownership, status: "orphaned", updatedAt: new Date(now).toISOString() });
+  } catch {
+    // The malformed ownership record remains retained as diagnostic evidence.
+  }
+}
+
+function writeOrphanRequest(record, now) {
+  if (existsSync(record.orphanPath)) return;
+  writePrivateJsonAtomic(record.orphanPath, {
+    schemaVersion: SCHEMA_VERSION,
+    action: "orphan",
+    rootSessionId: record.rootSessionId,
+    dispatchId: record.dispatchId,
+    childId: record.childId,
+    paneId: record.state.paneId,
+    requestedAt: new Date(now).toISOString(),
+    reason: "root owner unavailable during reconciliation",
+  });
+}
+
+function assertSafeRemovalTree(runtimeRoot, target) {
+  assertContained(runtimeRoot, target, "worker cleanup target");
+  const stat = lstatSync(target);
+  if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error("Unsafe Herdr worker cleanup target");
+  for (const entry of readdirSync(target, { withFileTypes: true })) {
+    const path = join(target, entry.name);
+    const child = lstatSync(path);
+    if (child.isSymbolicLink()) throw new Error("Herdr worker cleanup refuses symlinked evidence");
+    if (child.isDirectory()) assertSafeRemovalTree(runtimeRoot, path);
+  }
 }
 
 function writePrivateJsonAtomic(path, value) {
@@ -315,13 +448,13 @@ function bounded(value) {
 async function main() {
   const command = process.argv[2];
   if (command === "status") {
-    const snapshot = await sessionSnapshot();
-    process.stdout.write(`${formatStatus(scanWorkers(), snapshot)}\n`);
+    const result = await statusWorkers();
+    process.stdout.write(`${result.output}\n`);
     return;
   }
   if (command === "reconcile") {
     const result = await reconcileWorkers();
-    process.stdout.write(`GSD worker reconciliation: workers=${result.records.length} orphaned=${result.orphaned} authority_released=${result.released}\n`);
+    process.stdout.write(`GSD worker reconciliation: roots=${result.roots.length} crashed_roots=${result.crashedRoots} workers=${result.records.length} orphaned=${result.orphaned} authority_released=${result.released}\n`);
     return;
   }
   if (command === "focus-workers") {
@@ -337,7 +470,12 @@ async function main() {
     process.stdout.write(`Released ${panes.length} retained GSD worker pane(s)${panes.length ? `: ${panes.join(", ")}` : ""}\n`);
     return;
   }
-  throw new Error("Usage: node operations.mjs <status|reconcile|focus-workers|focus-failed-worker|cleanup-retained>");
+  if (command === "prune-artifacts") {
+    const removed = pruneTerminalArtifacts();
+    process.stdout.write(`Pruned ${removed.length} expired GSD worker artifact director${removed.length === 1 ? "y" : "ies"}\n`);
+    return;
+  }
+  throw new Error("Usage: node operations.mjs <status|reconcile|focus-workers|focus-failed-worker|cleanup-retained|prune-artifacts>");
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {

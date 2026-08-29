@@ -1,6 +1,12 @@
 import { existsSync, lstatSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 
+import {
+	readHerdrWorkerOwnership,
+	readHerdrWorkerState,
+	resolveHerdrWorkerArtifactPaths,
+} from "./herdr-worker/artifacts.js";
+
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const SAFE_PANE_ID = /^[A-Za-z0-9][A-Za-z0-9:._-]{0,127}$/;
 
@@ -12,6 +18,47 @@ export interface HerdrWorkerCleanupRequestV1 {
 	rootSessionId: string;
 	dispatchId: string;
 	childId: string;
+}
+
+export type HerdrRecoveredSlotState = "busy" | "retained-success" | "retained-failure";
+export interface HerdrRecoveredSlot {
+	state: HerdrRecoveredSlotState;
+	affinityKey: string;
+}
+
+export function recoverHerdrWorkerSlotStates(runtimeRoot: string, rootSessionId: string): ReadonlyMap<string, HerdrRecoveredSlot> {
+	if (!isAbsolute(runtimeRoot)) throw new Error("Herdr runtime root must be absolute");
+	assertSafeId(rootSessionId, "rootSessionId");
+	const rootDir = resolve(runtimeRoot, rootSessionId);
+	if (!existsSync(rootDir)) return new Map();
+	assertPrivateDirectory(rootDir);
+	const recovered = new Map<string, { state: HerdrRecoveredSlotState; affinityKey: string; updatedAt: number }>();
+	for (const dispatchId of safeDirectories(rootDir)) {
+		const dispatchDir = join(rootDir, dispatchId);
+		for (const childId of safeDirectories(dispatchDir)) {
+			const paths = resolveHerdrWorkerArtifactPaths(runtimeRoot, { rootSessionId, dispatchId, childId });
+			if (!existsSync(paths.ownershipPath)) continue;
+			try {
+				const ownership = readHerdrWorkerOwnership(paths);
+				const workerState = existsSync(paths.statePath) ? readHerdrWorkerState(paths).status : undefined;
+				let state: HerdrRecoveredSlotState;
+				if (ownership.status === "orphaned" || workerState === "orphaned" || workerState === "failed") {
+					state = "retained-failure";
+				} else if (ownership.status === "settled" || existsSync(paths.exitPath)) {
+					state = workerState === "completed" || workerState === "aborted" ? "retained-success" : "retained-failure";
+				} else {
+					state = "busy";
+				}
+				const updatedAt = Date.parse(ownership.updatedAt);
+				const current = recovered.get(ownership.paneId);
+				if (!current || updatedAt >= current.updatedAt) recovered.set(ownership.paneId, { state, affinityKey: ownership.affinityKey, updatedAt });
+			} catch {
+				// A malformed durable record is ambiguous, never reusable. The pane
+				// remains retained through its live agent status and diagnostics.
+			}
+		}
+	}
+	return new Map([...recovered].map(([paneId, value]) => [paneId, { state: value.state, affinityKey: value.affinityKey }]));
 }
 
 /**

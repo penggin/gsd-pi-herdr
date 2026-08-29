@@ -50,6 +50,8 @@ export interface HerdrWorkerArtifactPaths {
   statePath: string;
   heartbeatPath: string;
   exitPath: string;
+  ownershipPath: string;
+  orphanPath: string;
 }
 
 export interface HerdrWorkerLaunchSpecV1 extends HerdrWorkerIdentity {
@@ -106,6 +108,27 @@ export interface HerdrWorkerExitV1 {
   completedAt: string;
 }
 
+export type HerdrWorkerOwnershipStatus = "reserved" | "submitted" | "running" | "settled" | "orphaned";
+
+export interface HerdrWorkerOwnershipV1 extends HerdrWorkerIdentity {
+  schemaVersion: typeof HERDR_WORKER_SCHEMA_VERSION;
+  ownerInstanceId: string;
+  paneId: string;
+  tabId: string;
+  workspaceId: string;
+  affinityKey: string;
+  status: HerdrWorkerOwnershipStatus;
+  updatedAt: string;
+}
+
+export interface HerdrWorkerOrphanRequestV1 extends HerdrWorkerIdentity {
+  schemaVersion: typeof HERDR_WORKER_SCHEMA_VERSION;
+  action: "orphan";
+  paneId: string;
+  requestedAt: string;
+  reason: string;
+}
+
 export interface CreateHerdrWorkerLaunchInput extends HerdrWorkerIdentity {
   agent: string;
   trackingName?: string;
@@ -160,6 +183,8 @@ export function resolveHerdrWorkerArtifactPaths(
     statePath: join(workerDir, "state.json"),
     heartbeatPath: join(workerDir, "heartbeat.json"),
     exitPath: join(workerDir, "exit.json"),
+    ownershipPath: join(workerDir, "ownership.json"),
+    orphanPath: join(workerDir, "orphan.json"),
   };
 }
 
@@ -253,6 +278,58 @@ export function writeHerdrWorkerExit(paths: HerdrWorkerArtifactPaths, exit: Herd
   writePrivateJsonImmutable(paths.exitPath, exit);
 }
 
+export function writeHerdrWorkerOwnership(paths: HerdrWorkerArtifactPaths, ownership: HerdrWorkerOwnershipV1): void {
+  validateOwnership(ownership);
+  const expected = resolveHerdrWorkerArtifactPaths(paths.runtimeRoot, ownership);
+  assertSameWorkerPaths(paths, expected);
+  writePrivateJsonAtomic(paths.ownershipPath, ownership);
+}
+
+export function readHerdrWorkerOwnership(paths: HerdrWorkerArtifactPaths): HerdrWorkerOwnershipV1 {
+  const runtimeRoot = resolve(paths.runtimeRoot);
+  assertSafeWorkerDirectoryChain(runtimeRoot, paths.workerDir);
+  if (dirname(resolve(paths.ownershipPath)) !== resolve(paths.workerDir) || basename(paths.ownershipPath) !== "ownership.json") {
+    throw new Error("Herdr worker ownership artifact must be the worker-local ownership.json");
+  }
+  assertRegularPrivateFile(paths.ownershipPath, "ownership artifact");
+  const value = parseJsonFile(paths.ownershipPath, "ownership artifact");
+  if (!isRecord(value)) throw new Error("Invalid Herdr worker ownership artifact");
+  const ownership = value as unknown as HerdrWorkerOwnershipV1;
+  validateOwnership(ownership);
+  const expected = resolveHerdrWorkerArtifactPaths(runtimeRoot, ownership);
+  if (expected.ownershipPath !== resolve(paths.ownershipPath)) {
+    throw new Error("Herdr worker ownership identity does not match its artifact path");
+  }
+  return ownership;
+}
+
+export function readHerdrWorkerOrphanRequest(paths: HerdrWorkerArtifactPaths): HerdrWorkerOrphanRequestV1 {
+  const runtimeRoot = resolve(paths.runtimeRoot);
+  assertSafeWorkerDirectoryChain(runtimeRoot, paths.workerDir);
+  if (dirname(resolve(paths.orphanPath)) !== resolve(paths.workerDir) || basename(paths.orphanPath) !== "orphan.json") {
+    throw new Error("Herdr worker orphan request must be the worker-local orphan.json");
+  }
+  assertRegularPrivateFile(paths.orphanPath, "orphan request");
+  const value = parseJsonFile(paths.orphanPath, "orphan request");
+  if (!isRecord(value) || value.schemaVersion !== HERDR_WORKER_SCHEMA_VERSION || value.action !== "orphan") {
+    throw new Error("Invalid Herdr worker orphan request");
+  }
+  const request = {
+    schemaVersion: HERDR_WORKER_SCHEMA_VERSION,
+    action: "orphan" as const,
+    rootSessionId: requireString(value.rootSessionId, "orphan.rootSessionId"),
+    dispatchId: requireString(value.dispatchId, "orphan.dispatchId"),
+    childId: requireString(value.childId, "orphan.childId"),
+    paneId: requireString(value.paneId, "orphan.paneId"),
+    requestedAt: requireString(value.requestedAt, "orphan.requestedAt"),
+    reason: requireString(value.reason, "orphan.reason"),
+  };
+  assertIsoTimestamp(request.requestedAt, "orphan.requestedAt");
+  const expected = resolveHerdrWorkerArtifactPaths(runtimeRoot, request);
+  if (expected.orphanPath !== resolve(paths.orphanPath)) throw new Error("Herdr worker orphan request identity does not match its path");
+  return request;
+}
+
 export function readHerdrWorkerExit(paths: HerdrWorkerArtifactPaths): HerdrWorkerExitV1 {
   const runtimeRoot = resolve(paths.runtimeRoot);
   assertSafeWorkerDirectoryChain(runtimeRoot, paths.workerDir);
@@ -323,6 +400,37 @@ export function readHerdrWorkerState(paths: HerdrWorkerArtifactPaths): HerdrWork
     ...(childPid ? { childPid } : {}),
     ...(paneId ? { paneId } : {}),
     ...(lastActivity ? { lastActivity } : {}),
+  };
+}
+
+export function readHerdrWorkerHeartbeat(paths: HerdrWorkerArtifactPaths): HerdrWorkerHeartbeatV1 {
+  const runtimeRoot = resolve(paths.runtimeRoot);
+  assertSafeWorkerDirectoryChain(runtimeRoot, paths.workerDir);
+  if (dirname(resolve(paths.heartbeatPath)) !== resolve(paths.workerDir) || basename(paths.heartbeatPath) !== "heartbeat.json") {
+    throw new Error("Herdr worker heartbeat artifact must be the worker-local heartbeat.json");
+  }
+  assertRegularPrivateFile(paths.heartbeatPath, "heartbeat artifact");
+  const value = parseJsonFile(paths.heartbeatPath, "heartbeat artifact");
+  if (!isRecord(value)) throw new Error("Invalid Herdr worker heartbeat artifact");
+  assertSchemaVersion(value.schemaVersion, "heartbeat.json");
+  const updatedAt = requireString(value.updatedAt, "heartbeat.updatedAt");
+  assertIsoTimestamp(updatedAt, "heartbeat.updatedAt");
+  const pid = optionalPositivePid(value.pid, "heartbeat.pid");
+  if (!pid) throw new Error("Invalid Herdr worker heartbeat pid");
+  const childPid = optionalPositivePid(value.childPid, "heartbeat.childPid");
+  const statuses: readonly HerdrWorkerStatus[] = [
+    "queued", "starting", "working", "retrying", "blocked",
+    "completed", "failed", "aborted", "orphaned",
+  ];
+  if (typeof value.status !== "string" || !statuses.includes(value.status as HerdrWorkerStatus)) {
+    throw new Error("Invalid Herdr worker heartbeat status");
+  }
+  return {
+    schemaVersion: HERDR_WORKER_SCHEMA_VERSION,
+    updatedAt,
+    pid,
+    ...(childPid ? { childPid } : {}),
+    status: value.status as HerdrWorkerStatus,
   };
 }
 
@@ -414,6 +522,31 @@ function validateLaunchSpec(value: unknown): HerdrWorkerLaunchSpecV1 {
     exitPath: requireString(value.exitPath, "exitPath"),
     envPath: requireString(value.envPath, "envPath"),
   };
+}
+
+function validateOwnership(value: HerdrWorkerOwnershipV1): void {
+  if (!isRecord(value)) throw new Error("Invalid Herdr worker ownership artifact");
+  assertSchemaVersion(value.schemaVersion, "ownership.json");
+  for (const [key, item] of Object.entries({
+    rootSessionId: value.rootSessionId,
+    dispatchId: value.dispatchId,
+    childId: value.childId,
+  })) {
+    if (typeof item !== "string") throw new Error(`Invalid Herdr worker ownership ${key}`);
+    assertSafeGeneratedId(item, key);
+  }
+  for (const [key, item] of Object.entries({
+    ownerInstanceId: value.ownerInstanceId,
+    paneId: value.paneId,
+    tabId: value.tabId,
+    workspaceId: value.workspaceId,
+    affinityKey: value.affinityKey,
+  })) {
+    if (typeof item !== "string" || !item.trim()) throw new Error(`Invalid Herdr worker ownership ${key}`);
+  }
+  const statuses: readonly HerdrWorkerOwnershipStatus[] = ["reserved", "submitted", "running", "settled", "orphaned"];
+  if (!statuses.includes(value.status)) throw new Error("Invalid Herdr worker ownership status");
+  assertIsoTimestamp(value.updatedAt, "ownership.updatedAt");
 }
 
 function optionalPositivePid(value: unknown, label: string): number | undefined {

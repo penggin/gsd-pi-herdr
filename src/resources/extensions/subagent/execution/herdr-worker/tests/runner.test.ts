@@ -13,8 +13,10 @@ import { join } from "node:path";
 import { afterEach, describe, it } from "node:test";
 import {
   herdrWorkerRuntimeRoot,
+  readHerdrWorkerOwnership,
   resolveHerdrWorkerArtifactPaths,
   writeHerdrWorkerLaunchBundle,
+  writeHerdrWorkerOwnership,
 } from "../artifacts.js";
 import {
   buildHerdrWorkerChildEnv,
@@ -45,6 +47,17 @@ describe("internal Herdr worker runner", () => {
       executable: process.execPath,
       args: [scriptPath],
     }, env);
+    writeHerdrWorkerOwnership(paths, {
+      schemaVersion: 1,
+      ...identity,
+      ownerInstanceId: "test-owner",
+      paneId: "w1:p4",
+      tabId: "w1:t2",
+      workspaceId: "w1",
+      affinityKey: "dispatch:child",
+      status: "submitted",
+      updatedAt: new Date().toISOString(),
+    });
     return { paths, spec };
   }
 
@@ -88,6 +101,7 @@ describe("internal Herdr worker runner", () => {
     assert.equal(existsSync(paths.envPath), false);
     assert.equal(JSON.parse(readFileSync(paths.statePath, "utf8")).status, "completed");
     assert.equal(JSON.parse(readFileSync(paths.exitPath, "utf8")).exitCode, 0);
+    assert.equal(readHerdrWorkerOwnership(paths).status, "settled");
     assert.deepEqual(reported, ["init", "starting", "working", "final:completed"]);
     // Fixture lines do not contain displayable tool activity, so no raw child
     // JSON is echoed to the human pane output.
@@ -145,6 +159,37 @@ describe("internal Herdr worker runner", () => {
     const second = JSON.parse(readFileSync(paths.heartbeatPath, "utf8")).updatedAt as string;
     assert.notEqual(second, first);
     assert.equal(await run, 0);
+  });
+
+  it("honors a durable root-orphan request and publishes final orphan evidence", async () => {
+    const { paths, spec } = fixture("setInterval(() => {}, 1000);");
+    writeFileSync(paths.orphanPath, `${JSON.stringify({
+      schemaVersion: 1,
+      action: "orphan",
+      rootSessionId: spec.rootSessionId,
+      dispatchId: spec.dispatchId,
+      childId: spec.childId,
+      paneId: "w1:p4",
+      requestedAt: new Date().toISOString(),
+      reason: "root owner unavailable",
+    })}\n`, { mode: 0o600 });
+    const finals: string[] = [];
+    const code = await runHerdrWorker(spec, paths, {
+      heartbeatMs: 10,
+      interruptGraceMs: 20,
+      terminateGraceMs: 20,
+      activityWrite: () => {},
+      reporter: {
+        initialize: async () => {},
+        reportStatus: async () => {},
+        reportFinal: async (status) => { finals.push(status); },
+      },
+    });
+    assert.equal(code, 143);
+    assert.equal(JSON.parse(readFileSync(paths.statePath, "utf8")).status, "orphaned");
+    assert.equal(JSON.parse(readFileSync(paths.exitPath, "utf8")).aborted, true);
+    assert.equal(readHerdrWorkerOwnership(paths).status, "orphaned");
+    assert.deepEqual(finals, ["orphaned"]);
   });
 
   it("does not publish reusable exit evidence before final Herdr reporting settles", async () => {

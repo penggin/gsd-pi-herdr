@@ -176,3 +176,23 @@ The downstream fork no longer needs that overlay approach, but the finding is re
 Herdr plugin commands run in separate processes and cannot safely mutate the root GSD process's in-memory pane leases. The plugin may inspect GSD-owned artifacts plus `session.snapshot`, focus live resources, clear stale Herdr presentation authority, and write an owner-only `cleanup.json` request into a terminal worker directory.
 
 Only the matching root GSD pane pool consumes that identity-bound request and changes a retained slot back to reusable. The plugin never launches workers, chooses retry/chain/parallel behavior, deletes live or ambiguous evidence, or treats a pane state as the GSD semantic result.
+
+---
+
+## ADR-H016 — Recover from durable, instance-bound ownership and use an orphan handshake
+
+**Status:** Accepted
+**Date:** 2026-08-30
+
+Root runtimes publish an instance-bound lease and heartbeat. Worker reservations
+publish pane/affinity ownership before submission and advance it through the
+runner lifecycle. A replacement runtime reconstructs conservative slot state
+from this evidence: active recovered affinity is queued, never duplicate-launched;
+failed/orphaned slots remain retained; settled success may be reclaimed.
+
+When reconciliation proves the root owner unavailable while a worker is still
+alive, the out-of-process plugin writes an identity-bound, owner-only
+`orphan.json`. The internal runner—not the plugin—consumes this request, performs
+bounded process-tree cancellation, and publishes final orphan/abort evidence.
+This preserves GSD's orchestration authority while making root crash recovery
+work across process and Herdr restart boundaries.

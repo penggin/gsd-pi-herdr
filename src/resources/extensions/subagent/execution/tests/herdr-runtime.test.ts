@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, it } from "node:test";
 
-import { consumeHerdrWorkerCleanupRequests } from "../herdr-runtime.js";
+import { consumeHerdrWorkerCleanupRequests, recoverHerdrWorkerSlotStates } from "../herdr-runtime.js";
 
 describe("Herdr runtime control artifacts", () => {
 	let tempRoot: string | undefined;
@@ -46,5 +46,33 @@ describe("Herdr runtime control artifacts", () => {
 		const value = JSON.parse(readFileSync(cleanupPath, "utf8"));
 		writeFileSync(cleanupPath, `${JSON.stringify({ ...value, childId: "other" })}\n`, { mode: 0o600 });
 		assert.throws(() => consumeHerdrWorkerCleanupRequests(runtimeRoot, "root-1"), /identity does not match/);
+	});
+
+	it("recovers busy and settled slot ownership without creating a duplicate lease", () => {
+		const { runtimeRoot, cleanupPath } = fixture();
+		const workerDir = join(runtimeRoot, "root-1", "dispatch-1", "child-1");
+		const ownershipPath = join(workerDir, "ownership.json");
+		const statePath = join(workerDir, "state.json");
+		writeFileSync(ownershipPath, `${JSON.stringify({
+			schemaVersion: 1,
+			rootSessionId: "root-1",
+			dispatchId: "dispatch-1",
+			childId: "child-1",
+			ownerInstanceId: "instance-1",
+			paneId: "w1:p2",
+			tabId: "w1:t2",
+			workspaceId: "w1",
+			affinityKey: "dispatch:child",
+			status: "running",
+			updatedAt: "2026-08-30T00:00:00.000Z",
+		})}\n`, { mode: 0o600 });
+		writeFileSync(statePath, `${JSON.stringify({ schemaVersion: 1, status: "working", updatedAt: "2026-08-30T00:00:00.000Z", paneId: "w1:p2" })}\n`, { mode: 0o600 });
+		assert.deepEqual(recoverHerdrWorkerSlotStates(runtimeRoot, "root-1").get("w1:p2"), { state: "busy", affinityKey: "dispatch:child" });
+
+		const ownership = JSON.parse(readFileSync(ownershipPath, "utf8"));
+		writeFileSync(ownershipPath, `${JSON.stringify({ ...ownership, status: "settled", updatedAt: "2026-08-30T00:01:00.000Z" })}\n`, { mode: 0o600 });
+		writeFileSync(statePath, `${JSON.stringify({ schemaVersion: 1, status: "completed", updatedAt: "2026-08-30T00:01:00.000Z", paneId: "w1:p2" })}\n`, { mode: 0o600 });
+		assert.deepEqual(recoverHerdrWorkerSlotStates(runtimeRoot, "root-1").get("w1:p2"), { state: "retained-success", affinityKey: "dispatch:child" });
+		assert.equal(existsSync(cleanupPath), true);
 	});
 });
