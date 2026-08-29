@@ -159,8 +159,8 @@ Exit criteria:
 
 **Goal:** Replace duplicated local/cmux execution semantics with one common child runner and runtime backends before Herdr worker execution is introduced.
 
-- [ ] M2.1 Add deterministic tests around current local `runSingleAgent()` semantic output.
-- [ ] M2.2 Define backend execution request/callback/evidence types.
+- [x] M2.1 Add deterministic tests around current local `runSingleAgent()` semantic output.
+- [x] M2.2 Define backend execution request/callback/evidence types.
 - [ ] M2.3 Extract direct `spawn()` mechanics to `LocalBackend` with no caller-selection change.
 - [ ] M2.4 Introduce common `runSingleAgentWithBackend()` semantic runner and prove local parity.
 - [ ] M2.5 Route resume through the common runner/backend resolver.
@@ -285,9 +285,9 @@ Structural gaps discovered:
 
 ## 9. Current execution queue
 
-1. **M2.1:** add deterministic characterization tests around current local `runSingleAgent()` semantic output before extracting any backend mechanics.
-2. Record local result/event/abort/process-registry semantics that the common runner must preserve.
-3. Only after M2.1 characterization is green, define M2.2 backend request/callback/evidence types; do not extract `LocalBackend` first.
+1. **M2.3:** extract only the current direct `spawn()` / stdout-line framing / stderr / process-registry / termination mechanics into `LocalBackend`.
+2. Keep `runSingleAgent()` as the semantic owner during M2.3; do not move agent lookup, phase guard, JSON event parsing, usage aggregation, missing-final validation, or abort-result mapping yet.
+3. Re-run the M2.1 characterization suite unchanged against the extracted LocalBackend path before starting M2.4 common-runner extraction.
 
 ## 10. Progress log
 
@@ -363,6 +363,27 @@ Structural gaps discovered:
 - Detailed evidence: [`spikes/M1.13-REAL-HERDR-SMOKE.md`](spikes/M1.13-REAL-HERDR-SMOKE.md).
 - **M1 is complete. M2.1 characterization tests are now the active work item.**
 - macOS-specific focus preservation, foreground process-group cancellation, detach/reattach, manual pane closure, and Herdr restart remain later backend/durability E2E concerns in M4–M6; they are not required to prove the M1 root socket/lifecycle contract.
+
+### 2026-08-30 — M2.1/M2.2 local parity baseline and backend contract
+
+- Added deterministic characterization tests around the existing local `runSingleAgent()` using a real spawned fake Node child rather than mocking `spawn()`.
+- The baseline now locks these current local semantics before extraction:
+  - malformed stdout lines are ignored while complete `message_end` / `tool_result_end` JSONL records stream into the shared parser;
+  - a complete final JSON record without a trailing newline is processed on child close;
+  - assistant usage accumulates input/output/cache/cost/turns while `contextTokens` tracks the latest assistant total and the first resolved model is retained;
+  - `onUpdate` fires on consumed semantic events while the result still has `running=true` / `exitCode=-1`; local finalization does not emit an additional completion update;
+  - exit `0` without assistant final text is rewritten to the canonical `Subagent produced no valid final response.` failure;
+  - nonzero child exit codes are preserved and are not rewritten as missing-final failures;
+  - forked launch session files are copied onto the semantic result;
+  - unknown-agent and active-phase conflict failures return before child spawn;
+  - `liveSubagentProcesses` contains direct local children while running and is cleared after shutdown termination;
+  - AbortSignal cancellation terminates the child and rejects the local runner with `Subagent was aborted` rather than returning a `SingleResult`.
+- Added only a narrow `__subagentLocalRunnerTestHooks` export so the tests exercise the existing private runner without moving production behavior ahead of the planned refactor.
+- M2.1 validation: characterization **9/9 pass**, compiled **9/9 pass**, existing subagent focused suite **44/44 pass**, `typecheck:extensions` pass, and changed-source gate selects the new `subagent/index.ts` regression suite.
+- Added `src/resources/extensions/subagent/execution/types.ts` for M2.2. The runtime-neutral contract carries resolved `SubagentLaunchPlan`, child/run identity, AbortSignal, complete stdout-line/stderr callbacks, opaque backend handles, and explicit `{ exitCode, aborted, signal?, runtimeError?, metadata? }` evidence.
+- The backend contract explicitly excludes retry/chain/parallel policy, model selection, JSON semantic parsing, usage aggregation, final-response validation, run-store truth, and isolation merge policy.
+- M2.2 contract tests **2/2 pass** together with the M2.1 suite and `typecheck:extensions`.
+- **M2.3 LocalBackend extraction is now the active work item.**
 
 ## 11. Working-session protocol
 

@@ -612,6 +612,19 @@ async function runSingleAgent(
 	}
 }
 
+/**
+ * M2 characterization seam only. Keep this intentionally narrow so parity
+ * tests can exercise the existing local runner through its real spawn/JSONL
+ * path before backend extraction changes any semantics.
+ *
+ * @internal
+ */
+export const __subagentLocalRunnerTestHooks = {
+	runSingleAgent,
+	stopLiveSubagents,
+	getLiveProcessCount: () => liveSubagentProcesses.size,
+};
+
 async function runSingleAgentInCmuxSplit(
 	cmuxClient: CmuxClient,
 	directionOrSurfaceId: "right" | "down" | string,
