@@ -1,375 +1,337 @@
 # GSD–Herdr Living Plan
 
-> **Status:** Repository migration and M0 feasibility validation  
+> **Status:** M0 complete; M1 root integration ready/in progress  
 > **Last updated:** 2026-08-29  
-> **Current milestone:** M0 — Downstream-fork foundation and feasibility validation  
+> **Current milestone:** M1 — Root GSD ↔ Herdr integration  
 > **Canonical rule:** Every Herdr-integration development session starts by reading this file and ends by updating it.
 
-## 1. Purpose
+## 1. Mission
 
-`penggin/gsd-pi-herdr` is a managed downstream fork of `open-gsd/gsd-pi` that adds first-class Herdr support and may carry other deliberate fork-specific improvements.
+`penggin/gsd-pi-herdr` is a managed downstream fork of `open-gsd/gsd-pi` that adds first-class Herdr support and may carry other deliberate fork-specific fixes, refactors, and experiments.
 
-The Herdr work must let GSD run subagents in persistent Herdr-managed panes while preserving GSD's existing orchestration semantics: retries, fresh/fork context, isolated worktrees, merge decisions, result parsing, usage accounting, cancellation, and run-state behavior.
+The Herdr integration must provide observable, persistent subagent execution without changing GSD's authority over orchestration semantics.
 
-The user-facing target is:
+Target UX:
 
-- the root GSD TUI is visible in Herdr as `working`, `blocked`, or `idle`;
-- every active subagent is observable in a Herdr worker pane;
-- worker panes show readable lifecycle/tool activity, not raw JSONL token updates;
-- detach/reattach does not terminate the work;
+- root GSD TUI reports `working`, `blocked`, or `idle` in Herdr;
+- every active subagent can be observed in a Herdr worker pane;
+- worker panes show concise lifecycle/tool activity rather than raw JSON/token deltas;
+- Herdr detach/reattach does not stop work;
 - retries, cancellation, pane loss, failures, and orphan states are explicit;
-- upstream GSD-Pi can be synchronized regularly without losing downstream behavior.
+- upstream GSD-Pi can be synchronized routinely while downstream behavior remains testable.
 
-## 2. Strategy change and migration history
-
-The original plan lived in `penggin/gsd-herdr` and assumed:
-
-```text
-official GSD-Pi + small patch + external integration repository
-```
-
-That assumption has been superseded. Because this fork will be maintained as the actual long-term GSD distribution, the integration can use proper internal abstractions instead of constraining itself to a tiny patch seam.
-
-Current model:
+## 2. Repository/branch model
 
 ```text
 open-gsd/gsd-pi:main
         │
         ▼
-penggin/gsd-pi-herdr
-        ├── upstream GSD functionality
-        ├── downstream fixes/customizations
-        └── first-class Herdr runtime support
-                 │
-                 ▼
-          official Herdr runtime
-          + optional Herdr plugin
+upstream-main              # pristine upstream mirror target
+        │
+        ▼
+main                       # downstream integration/release line
+        │
+        └── feature/*      # focused work branches
 ```
 
-The earlier M0.6 package-overlay investigation is preserved as historical evidence because it explains why patching a published package's `src/resources` would have been unsafe. It no longer determines our production distribution mechanism.
-
-## 3. Branch policy
-
-- `upstream-main`: pristine mirror target for `open-gsd/gsd-pi:main`.
-- `main`: downstream integration branch and intended releasable fork line.
-- `feature/*`: focused downstream work.
-- `compat/herdr-*`: temporary Herdr compatibility work if needed.
-- existing `fix/cmux-split-cli`: retained historical cmux fix branch; integrate intentionally during the backend refactor rather than merging blindly.
-
-Upstream synchronization must preserve commit intent and be followed by targeted downstream tests. See `UPSTREAM_MAINTENANCE.md`.
-
-## 4. Design principles
-
-1. **GSD remains authoritative for work semantics.** Herdr must not independently decide whether a GSD subagent succeeded.
-2. **Herdr owns terminal persistence and presentation.** Pane creation, persistence, focus, terminal input, and visible agent state belong to Herdr.
-3. **Use first-class downstream architecture.** Since this repository is the maintained distribution, prefer clean abstractions over load-order tricks or tiny patch seams.
-4. **Preserve upstream behavior by default.** Fork-specific behavior is explicit and tested.
-5. **No raw JSON flood.** Structured output is preserved for GSD but not mirrored directly to worker terminals.
-6. **No silent loss of observability.** When Herdr monitoring is required, launch failure is a dispatch failure rather than an invisible local fallback.
-7. **Separate root and worker authority.** A headless child may never mark the root GSD pane idle or replace its session identity.
-8. **Capability-check Herdr.** Depend on verified Herdr API/CLI capabilities, not only version strings.
-9. **Recover conservatively.** Unknown or lost execution becomes explicit `orphaned`/`failed`, never guessed-success.
-10. **Keep upstream synchronization cheap through tests and structure.** AI-assisted conflict resolution is useful, but semantic parity must be proven by tests.
-
-## 5. Target architecture
+Current GSD upstream base for this planning cycle:
 
 ```text
-GSD main process in Herdr pane
+4b26a642c0121ae6161abbb6f2dc6937c78874dd
+```
+
+Historical branch retained for later deliberate integration:
+
+```text
+fix/cmux-split-cli
+└── 5b74d301b6d1599df5fe0a385b90a28b48492b9a
+```
+
+## 3. Architecture invariants
+
+1. **GSD owns semantics:** dispatch, retry, fresh/fork context, isolation, result parsing, usage, run-state, and final outcome.
+2. **Herdr owns terminal runtime:** panes/tabs, terminal persistence, focus, input delivery, visible state, detach/reattach.
+3. **One child semantic path:** Local/Cmux/Herdr are runtime backends below one common GSD result-processing path.
+4. **JSON mode remains authoritative:** children continue to run in structured JSON mode.
+5. **No raw JSON pane flood:** token deltas/raw event JSON are artifact data, not normal terminal UI.
+6. **Root/worker authority is separate:** `GSD_SUBAGENT_CHILD=1` can never claim root-pane state/session authority.
+7. **Required observability is correctness:** once required Herdr execution is selected, launch failure does not silently become invisible local execution.
+8. **Official Herdr first:** no Herdr core fork unless a reproduced public-API gap blocks correctness.
+9. **Capability-based compatibility:** test actual Herdr API/CLI behavior, not only version strings.
+10. **Tests protect upstream sync:** AI-assisted merge/conflict work is acceptable, but semantic parity is evidence-driven.
+
+## 4. Current target architecture
+
+```text
+GSD root TUI in Herdr
 │
-├── bundled Herdr integration module
-│   ├── root session state reporter
-│   ├── Herdr capability/client layer
-│   └── worker pane pool coordinator
+├── bundled Herdr integration
+│   ├── environment/capability detection
+│   ├── socket/CLI client
+│   ├── root session reporter
+│   └── later: worker pane pool
 │
 └── bundled subagent tool
-    └── SubagentExecutionBackend abstraction
-        ├── LocalBackend
-        ├── CmuxBackend
-        └── HerdrBackend
-              │
-              ├── reserve/create Herdr worker pane
-              ├── run internal worker command
-              └── tail worker artifacts / propagate cancellation
-                       │
-                       ▼
-              Herdr-managed worker pane
-                       │
-                       └── gsd __herdr-worker <spec>
-                           ├── spawn existing GSD child --mode json
-                           ├── persist stdout.jsonl / stderr
-                           ├── parse events for display
-                           ├── report worker semantic state/metadata
-                           └── write heartbeat/state/exit artifacts
+    └── common one-child semantic runner
+        └── SubagentExecutionBackend
+            ├── LocalBackend
+            ├── CmuxBackend
+            └── HerdrBackend
+                  │
+                  ▼
+            Herdr worker pane
+                  └── internal GSD Herdr worker
+                      └── GSD child --mode json
 ```
 
-A Herdr plugin may later provide dashboard, cleanup, focus, and startup reconciliation actions, but GSD-side runtime execution should not depend on a Herdr core fork.
+Detailed design: [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
-## 6. Proposed code placement
-
-Exact names may change during implementation, but the preferred ownership is:
-
-```text
-src/resources/extensions/subagent/
-├── index.ts
-├── launch.ts
-└── backends/
-    ├── types.ts
-    ├── resolver.ts
-    ├── local.ts
-    ├── cmux.ts
-    └── herdr.ts
-
-src/resources/extensions/herdr/
-├── index.ts
-├── client.ts
-├── capabilities.ts
-├── root-state.ts
-├── pane-pool.ts
-├── artifacts.ts
-├── renderer.ts
-└── tests/
-
-src/
-└── internal-herdr-worker.ts       # or equivalent internal CLI entrypoint
-
-integrations/herdr/
-└── plugin/                        # optional Herdr operations plugin
-```
-
-The worker implementation may move under an existing package if build/packaging constraints make that cleaner; M1/M2 must verify the lowest-friction placement before committing the public surface.
-
-## 7. Compatibility baseline
+## 5. Compatibility baseline
 
 | Component | Initial target |
 |---|---|
 | Platform | macOS arm64 |
-| Node.js | repository requirement (`>=22.18.0`) |
-| GSD-Pi upstream baseline | current downstream sync at `4b26a642c0121ae6161abbb6f2dc6937c78874dd` |
-| Herdr | `v0.8.2` initially |
-| Herdr socket protocol at v0.8.2 | `20` |
-| Herdr API schema | `1` |
-| Downstream worker artifact schema | `1` proposed |
+| Node | repository requirement (`>=22.18.0`) |
+| GSD upstream base | `4b26a642c0121ae6161abbb6f2dc6937c78874dd` |
+| Herdr | `v0.8.2` |
+| Herdr tag commit | `9eb521456ac0d19d3ab3d9d7cea3cca10baa8a4c` |
+| Herdr socket protocol | `20` |
+| Herdr schema version | `1` |
+| Proposed worker artifact schema | `1` |
 
-The GSD baseline follows upstream through the managed-fork process; Herdr compatibility remains capability-tested.
-
-## 8. Milestones
+## 6. Milestones
 
 ### M0 — Downstream-fork foundation and feasibility validation
 
-**Goal:** Migrate the previous integration plan, synchronize the fork, verify Herdr capabilities, and finalize the new first-class downstream architecture.
+**Status:** `COMPLETE`
 
-**Status:** `IN PROGRESS`
+- [x] M0.1 Original integration planning/documentation created.
+- [x] M0.2 GSD v1.16.2 package/resource-loading investigation completed.
+- [x] M0.3 Managed downstream fork strategy selected.
+- [x] M0.4 Downstream `main` synchronized to upstream `4b26a642...` before Herdr work.
+- [x] M0.5 `upstream-main` established as pristine upstream line.
+- [x] M0.6 Herdr planning/design docs migrated under `docs/herdr-integration/`.
+- [x] M0.7 Herdr v0.8.2 API/CLI capability validation completed.
+- [x] M0.8 Old published-package overlay strategy superseded by source-built downstream distribution.
+- [x] M0.9 Current subagent runtime paths mapped into a Local/Cmux/Herdr refactor plan.
+- [x] M0.10 Final feasibility summary, estimates, and M1 entry checklist completed.
 
-Tasks:
+Evidence:
 
-- [x] M0.1 Create the original integration plan and architecture documents in `penggin/gsd-herdr`.
-- [x] M0.2 Investigate released GSD-Pi package/resource loading (historical M0.6 evidence).
-- [x] M0.3 Decide to maintain `penggin/gsd-pi-herdr` as the long-term downstream distribution.
-- [x] M0.4 Fast-forward downstream `main` to upstream commit `4b26a642c0121ae6161abbb6f2dc6937c78874dd` before integration work.
-- [x] M0.5 Maintain `upstream-main` as the pristine upstream synchronization line.
-- [x] M0.6 Migrate Herdr planning/design documentation into `docs/herdr-integration/` and mark it from the root README.
-- [x] M0.7 Validate the required Herdr `v0.8.2` API/CLI capabilities and document request/behavior constraints. See `spikes/M0.7-HERDR-API.md`.
-- [x] M0.8 Supersede the old package-overlay distribution decision: production will be built from this managed source fork; resource-overlay installation is no longer the primary architecture.
-- [ ] M0.9 Inspect current subagent execution paths after the 29-commit upstream sync and produce a concrete refactor map for Local/Cmux/Herdr backends.
-- [ ] M0.10 Produce the final M0 technical-spike summary, revised implementation estimates, and exact M1 entry tasks.
+- [`spikes/M0.6-GSD-PACKAGE-LOADING.md`](spikes/M0.6-GSD-PACKAGE-LOADING.md)
+- [`spikes/M0.7-HERDR-API.md`](spikes/M0.7-HERDR-API.md)
+- [`spikes/M0.9-SUBAGENT-BACKEND-REFACTOR.md`](spikes/M0.9-SUBAGENT-BACKEND-REFACTOR.md)
+- [`spikes/M0.10-M0-FINAL-SUMMARY.md`](spikes/M0.10-M0-FINAL-SUMMARY.md)
 
-Exit criteria:
-
-- The downstream repository topology and upstream sync policy are explicit.
-- Herdr v0.8.2 provides the runtime capabilities needed for the first implementation without a core fork.
-- The old minimal-patch/overlay design has been explicitly superseded where necessary.
-- The current GSD subagent execution code has a reviewed refactor map with no lost mode (single/parallel/chain/background/retry/fork/isolation).
-- M1 can begin without reopening repository/distribution strategy.
+Exit assessment: all M0 criteria satisfied. No Herdr core fork is required for the initial design, and the GSD runtime refactor boundary is identified.
 
 ### M1 — Root GSD ↔ Herdr integration
 
-**Goal:** Make the root GSD TUI a correctly reported Herdr agent and establish reusable Herdr client/capability infrastructure.
+**Status:** `IN PROGRESS`
 
-Tasks:
+**Goal:** Make the root GSD TUI a correctly reported Herdr agent and establish reusable Herdr client/capability infrastructure without yet moving subagents into Herdr panes.
 
-- [ ] M1.1 Define downstream `HerdrPreferences` and defaults without changing non-Herdr behavior.
-- [ ] M1.2 Implement Herdr environment/capability detection.
-- [ ] M1.3 Implement reusable Herdr socket/CLI client helpers with bounded failures.
-- [ ] M1.4 Add a bundled Herdr integration extension/module.
-- [ ] M1.5 Gate root authority on TUI mode and `GSD_SUBAGENT_CHILD !== "1"`.
-- [ ] M1.6 Report root session identity and semantic `working`/`blocked`/`idle` state.
-- [ ] M1.7 Report milestone/slice/task context through bounded metadata/state messages.
-- [ ] M1.8 Release root authority on shutdown/reload.
-- [ ] M1.9 Add `/gsd herdr status` or equivalent diagnostics.
-- [ ] M1.10 Add unit/integration tests for state ownership and failure behavior.
+- [ ] M1.1 Define `HerdrPreferences` and validation/default behavior without changing non-Herdr execution.
+- [ ] M1.2 Implement Herdr environment detection and typed resolved config.
+- [ ] M1.3 Implement reusable Herdr socket client with bounded connect/request retry/timeouts.
+- [ ] M1.4 Implement CLI capability helper for operations that are CLI-only (`pane run` later).
+- [ ] M1.5 Add bundled `herdr` integration module/extension and packaging/discovery metadata.
+- [ ] M1.6 Gate root authority on visible TUI mode and `GSD_SUBAGENT_CHILD !== "1"`.
+- [ ] M1.7 Report root native session identity through `pane.report_agent_session` where available.
+- [ ] M1.8 Report semantic root `working` / `blocked` / `idle` lifecycle with ordered `seq` values.
+- [ ] M1.9 Project milestone/slice/task context into bounded Herdr metadata/message fields.
+- [ ] M1.10 Release/replace root lifecycle authority safely on shutdown/reload.
+- [ ] M1.11 Add GSD-native Herdr status/doctor diagnostics.
+- [ ] M1.12 Add unit/integration tests for detection, protocol requests, state ownership, ordering, and non-Herdr regression.
+- [ ] M1.13 Validate the root reporter against real Herdr v0.8.2 in an isolated session.
 
 Exit criteria:
 
-- Root GSD state is correct through normal turns, blocked prompts, retries, reload, and shutdown.
-- Headless children cannot claim root-pane authority.
-- GSD behaves identically outside Herdr when the feature is disabled/unavailable.
+- root state is correct through idle → working → idle, blocked interactions, reload, and shutdown;
+- JSON/headless child sessions cannot overwrite root state or root session identity;
+- disabled/non-Herdr GSD behavior is unchanged;
+- missing/broken Herdr integration produces bounded diagnostics rather than hanging GSD;
+- focused tests and one real v0.8.2 integration smoke scenario pass.
 
 ### M2 — Subagent execution backend abstraction
 
-**Goal:** Refactor existing execution code into one semantic path with Local, Cmux, and Herdr runtime backends.
+**Status:** `NOT STARTED`
 
-Tasks:
+**Goal:** Replace duplicated local/cmux execution semantics with one common child runner and runtime backends before Herdr worker execution is introduced.
 
-- [ ] M2.1 Define `SubagentExecutionBackend` and execution request/result contracts.
-- [ ] M2.2 Extract local spawn behavior without semantic changes.
-- [ ] M2.3 Adapt current cmux behavior to the backend interface.
-- [ ] M2.4 Incorporate/revalidate the earlier `fix/cmux-split-cli` changes against current upstream.
-- [ ] M2.5 Centralize result parsing, usage accounting, abort semantics, and `markMissingFinalResponse` above runtime-specific code.
-- [ ] M2.6 Route single mode through the abstraction.
-- [ ] M2.7 Route parallel mode through the abstraction.
-- [ ] M2.8 Route chain mode through the abstraction.
-- [ ] M2.9 Verify background/retry/fork/isolation behavior reaches the same execution seam.
-- [ ] M2.10 Add local-vs-refactored result parity tests.
+- [ ] M2.1 Add deterministic tests around current local `runSingleAgent()` semantic output.
+- [ ] M2.2 Define backend execution request/callback/evidence types.
+- [ ] M2.3 Extract direct `spawn()` mechanics to `LocalBackend` with no caller-selection change.
+- [ ] M2.4 Introduce common `runSingleAgentWithBackend()` semantic runner and prove local parity.
+- [ ] M2.5 Route resume through the common runner/backend resolver.
+- [ ] M2.6 Route background single through the common runner and execution registry.
+- [ ] M2.7 Route chain through the common runner while preserving `{previous}`/stop-on-error semantics.
+- [ ] M2.8 Route parallel/retry through the common runner while preserving concurrency/retry policy.
+- [ ] M2.9 Route foreground single through resolver/common runner.
+- [ ] M2.10 Extract `CmuxBackend` and remove duplicate result/parsing pipeline.
+- [ ] M2.11 Reapply/revalidate `fix/cmux-split-cli` against the new backend.
+- [ ] M2.12 Remove raw JSON `tee`, normalize abort classification, and prevent runtime-specific silent fallback.
+- [ ] M2.13 Move cmux shell escaping/env composition out of general `launch.ts`.
+- [ ] M2.14 Add mode-to-backend, local parity, cmux regression, phase-conflict, shutdown, and cancellation tests.
 
-Exit criteria:
-
-- Local behavior is semantically unchanged.
-- Cmux remains functional and no longer requires a separate duplicate result-processing pipeline.
-- Every supported subagent mode has an explicit test proving which backend path it uses.
+Deferred existing behavior: chain-mode `isolated` handling is tracked separately after pure parity extraction unless the refactor makes a fix unavoidable.
 
 ### M3 — Internal Herdr worker runner
 
-**Goal:** Run one GSD child inside a Herdr pane while preserving structured output and presenting readable activity.
+**Status:** `NOT STARTED`
 
-Tasks:
+- [ ] M3.1 Define versioned launch/state/heartbeat/exit artifacts.
+- [ ] M3.2 Add private/internal GSD Herdr-worker entrypoint receiving a validated spec path.
+- [ ] M3.3 Spawn the existing JSON-mode child with argv arrays and `shell:false`.
+- [ ] M3.4 Persist raw JSONL/stderr with restrictive permissions.
+- [ ] M3.5 Parse chunked JSONL safely and relay complete lines.
+- [ ] M3.6 Render bounded lifecycle/tool activity and suppress token deltas.
+- [ ] M3.7 Strip root Herdr identity from child launch env and apply worker-pane identity.
+- [ ] M3.8 Report worker semantic state/metadata to its own pane.
+- [ ] M3.9 Add heartbeat and atomic final exit evidence.
+- [ ] M3.10 Add SIGINT → SIGTERM → SIGKILL process-group escalation.
+- [ ] M3.11 Add security/redaction/path/process tests.
 
-- [ ] M3.1 Define versioned launch/state/heartbeat/exit artifact schemas.
-- [ ] M3.2 Add an internal GSD worker entrypoint that receives only a validated spec path.
-- [ ] M3.3 Spawn the existing GSD child with argv arrays, `shell: false`, and JSON mode.
-- [ ] M3.4 Persist raw stdout JSONL and stderr with restrictive permissions.
-- [ ] M3.5 Parse chunked JSONL safely and tolerate unknown events.
-- [ ] M3.6 Render bounded lifecycle/tool activity; suppress token deltas and large payloads.
-- [ ] M3.7 Strip parent Herdr-managed environment and use worker-pane context.
-- [ ] M3.8 Report worker semantic state and metadata to its own pane.
-- [ ] M3.9 Implement heartbeat and atomic final exit evidence.
-- [ ] M3.10 Implement SIGINT → SIGTERM → SIGKILL escalation on macOS/Unix process groups.
+### M4 — Herdr backend and persistent worker pane pool
 
-Exit criteria:
-
-- Raw JSON exists in artifacts but not in terminal output.
-- The parent can reconstruct the same GSD result as local execution.
-- Cancellation reliably terminates the intended child process group.
-
-### M4 — Herdr backend and worker pane pool
-
-**Goal:** Execute real GSD subagents through persistent Herdr worker panes.
-
-Tasks:
+**Status:** `NOT STARTED`
 
 - [ ] M4.1 Create/reuse one worker tab per root GSD session.
-- [ ] M4.2 Support one-, two-, and four-slot deterministic layouts.
-- [ ] M4.3 Implement slot reservation, queueing, reuse, and retention.
-- [ ] M4.4 Use Herdr CLI `pane run` for atomic command submission to an existing shell pane.
-- [ ] M4.5 Use Herdr semantic reporting/metadata APIs for worker state.
-- [ ] M4.6 Tail/relay worker JSONL incrementally to the shared GSD result parser.
-- [ ] M4.7 Keep retries and chain steps in stable panes where practical.
-- [ ] M4.8 Preserve root-pane focus by default.
-- [ ] M4.9 Treat required-backend loss as explicit dispatch failure.
-- [ ] M4.10 Run local-vs-Herdr result parity and cancellation tests.
+- [ ] M4.2 Create deterministic one/two/four-slot layouts.
+- [ ] M4.3 Implement bounded slot reservation, queueing, reuse, and retention.
+- [ ] M4.4 Launch the internal worker with Herdr CLI `pane run`.
+- [ ] M4.5 Tail/relay worker JSONL into the common GSD parser.
+- [ ] M4.6 Use Herdr semantic state/session/metadata APIs for worker visibility.
+- [ ] M4.7 Keep retry/chain work in stable slots where safe.
+- [ ] M4.8 Preserve root-pane focus.
+- [ ] M4.9 Fail visibly when required Herdr runtime is unavailable/ambiguous.
+- [ ] M4.10 Add Local-vs-Herdr result parity, cancellation, pane-loss, and >4-task queue tests.
 
-Exit criteria:
-
-- Single, parallel, and chain modes are observable and complete correctly.
-- No unmonitored local fallback occurs in required mode.
-- Parent result/usage/error semantics match local execution.
+M4 exit = first practically usable monitored Herdr-subagent runtime.
 
 ### M5 — Herdr operations plugin and diagnostics
 
-**Goal:** Make long-lived workers easy to locate, focus, inspect, and clean up.
+**Status:** `NOT STARTED`
 
-Tasks:
-
-- [ ] M5.1 Add `integrations/herdr/plugin/` using Herdr's plugin manifest.
+- [ ] M5.1 Add `integrations/herdr/plugin/` manifest.
 - [ ] M5.2 Add status/dashboard action.
 - [ ] M5.3 Add focus-workers/focus-failed-worker actions.
-- [ ] M5.4 Add cleanup controls for retained completed workers.
-- [ ] M5.5 Add startup reconciliation against `session.snapshot`.
+- [ ] M5.4 Add retained-worker cleanup controls.
+- [ ] M5.5 Add startup reconciliation using `session.snapshot`.
 - [ ] M5.6 Release stale lifecycle authority safely.
-- [ ] M5.7 Expose orphaned/missing-pane state clearly.
+- [ ] M5.7 Expose orphan/missing-pane state clearly.
 
 ### M6 — Durability and recovery
 
-**Goal:** Survive detach/reattach, pane closure, root crashes, and Herdr restarts without invisible work.
+**Status:** `NOT STARTED`
 
-Tasks:
-
-- [ ] M6.1 Persist run/worker records under a versioned GSD/Herdr runtime root.
-- [ ] M6.2 Add root/worker heartbeat semantics.
-- [ ] M6.3 Reconcile against `session.snapshot` after reconnect/restart.
-- [ ] M6.4 Detect pane closure/process loss while waiting.
+- [ ] M6.1 Persist versioned run/worker runtime records.
+- [ ] M6.2 Add root/worker heartbeats.
+- [ ] M6.3 Reconcile durable state with `session.snapshot`.
+- [ ] M6.4 Detect manual pane closure/process loss.
 - [ ] M6.5 Mark uncertain workers `orphaned` and retain evidence.
 - [ ] M6.6 Prevent duplicate launch during reload/reconnect.
-- [ ] M6.7 Add crash-injection and detach/reattach E2E tests.
-- [ ] M6.8 Define retention/cleanup policy.
+- [ ] M6.7 Add root-crash, worker-crash, Herdr restart, detach/reattach E2E.
+- [ ] M6.8 Finalize retention and cleanup policy.
 
-### M7 — Downstream release and upstream maintenance automation
+### M7 — Downstream release/upstream maintenance automation
 
-**Goal:** Make this fork easy to update, validate, and roll back.
+**Status:** `NOT STARTED`
 
-Tasks:
+- [ ] M7.1 Automate upstream-main change detection and impact reports.
+- [ ] M7.2 Automate supported/canary Herdr capability checks.
+- [ ] M7.3 Stamp downstream releases with exact upstream base metadata.
+- [ ] M7.4 Add canary builds before major upstream/Herdr adoption.
+- [ ] M7.5 Preserve prior known-good downstream release for rollback.
+- [ ] M7.6 Document downstream install/update/release identity.
 
-- [ ] M7.1 Automate upstream-main update detection and downstream compatibility reporting.
-- [ ] M7.2 Add Herdr capability checks against supported stable/canary versions.
-- [ ] M7.3 Add downstream release metadata identifying upstream base commit.
-- [ ] M7.4 Add canary builds before adopting significant upstream changes.
-- [ ] M7.5 Preserve at least one known-good downstream release for rollback.
-- [ ] M7.6 Document install/update behavior for the downstream distribution.
+## 7. Important findings to preserve
 
-## 9. Accepted decisions summary
+Current upstream subagent behavior at M0 completion:
 
-| ID | Decision | Status |
-|---|---|---|
-| D001 | Herdr core remains unpatched initially | Accepted |
-| D002 | Keep GSD child execution in JSON mode | Accepted |
-| D003 | Do not display raw JSON/token deltas in worker panes | Accepted |
-| D004 | Use a dedicated internal Node/GSD worker runner rather than shell `tee` pipelines | Accepted |
-| D005 | Separate root-pane and worker-pane authority | Accepted |
-| D006 | Monitoring failure is fatal in required mode | Accepted |
-| D007 | Use durable versioned worker artifacts | Accepted |
-| D008 | Target macOS arm64 first | Accepted |
-| D009 | Maintain this repository as the full downstream GSD distribution | Accepted |
-| D010 | Refactor subagent execution into Local/Cmux/Herdr backends | Accepted |
-| D011 | Track pristine upstream in `upstream-main`, downstream behavior in `main` | Accepted |
-| D012 | Prefer Herdr public API/CLI capabilities; no Herdr fork unless a reproduced gap exists | Accepted |
+| Operation | Runtime today |
+|---|---|
+| resume | local only |
+| background single | local only |
+| chain | local only |
+| parallel | local or cmux |
+| foreground single | local or cmux |
+| parallel retry | repeats selected local/cmux path |
 
-See `DECISIONS.md` for rationale and superseded historical decisions.
+Structural gaps discovered:
 
-## 10. Current risks
+- cmux duplicates result/launch/parsing/finalization logic;
+- cmux path skips the local phase-conflict guard;
+- local streams JSON events; cmux parses them only after completion;
+- cmux abort classification differs from local;
+- cmux raw JSON is currently `tee`d into the pane;
+- cmux can silently fall back to local;
+- `liveSubagentProcesses` tracks only direct local children;
+- chain currently does not apply the top-level `isolated` option;
+- an 8-task cmux batch may create more panes after the initially pre-created four rather than reusing slots;
+- current `main` still has the stale cmux CLI implementation; historical `fix/cmux-split-cli` is retained for M2.
+
+## 8. Current risks
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| Upstream subagent semantics change | Downstream integration compiles but behaves incorrectly | Backend abstraction + parity/E2E tests + semantic review on upstream sync |
-| Herdr API changes | Worker launch/state management breaks | Capability checks from actual installed schema and supported-version tests |
-| Parent Herdr vars leak to child | Worker reports against root pane | Strip/reapply Herdr-managed variables in internal runner |
-| High-frequency worker output | Rendering regressions and unreadable panes | Event filtering, dedupe, throttling, no token deltas |
-| Root crashes while worker continues | Orphaned code modification | Durable artifacts, heartbeats, explicit orphan state, reconciliation |
-| Pane is closed manually | Parent waits indefinitely | pane/process monitoring, exit artifact timeout, explicit failure |
-| Fork accumulates unrelated changes | Harder upstream merges | Focused commits, `upstream-main`, downstream decision log, strong CI |
-| AI resolves conflicts incorrectly | Semantic regression despite clean merge | Treat tests/parity as required evidence, not optional validation |
+| upstream subagent semantic changes | clean merge but broken downstream runtime | common backend abstraction + mode/parity/E2E tests |
+| Herdr API changes | launch/state/recovery failure | schema/capability tests against exact supported releases |
+| root Herdr IDs leak to worker child | worker overwrites root pane authority | strip/reapply worker-pane managed env |
+| high-frequency output | unreadable panes/render cost | filter/dedupe/throttle; no raw token events |
+| root dies while workers continue | unobserved/orphaned edits | durable state + heartbeat + explicit orphan reconciliation |
+| pane closes mid-run | parent waits forever | pane/process/artifact monitoring and bounded failure |
+| AI resolves upstream conflicts incorrectly | semantic regression | mandatory focused/parity tests and recorded evidence |
 
-## 11. Current execution queue
+## 9. Current execution queue
 
-1. **M0.9:** inspect the current post-sync subagent code and map every runtime-specific branch/mode into the proposed backend abstraction.
-2. Update `ARCHITECTURE.md`/`INTEGRATION_CONTRACT.md` with any findings from that inspection.
-3. **M0.10:** write final M0 spike summary and exact M1 implementation entry checklist.
-4. Begin M1 only after the M0 exit criteria are satisfied.
+1. **M1.1:** inspect existing preference schema/validation patterns and add the smallest Herdr configuration surface.
+2. **M1.2:** implement/test Herdr environment detection using injected `HERDR_*` variables.
+3. **M1.3:** implement a bounded, testable Herdr socket request client.
+4. Continue root reporter M1 tasks in order; do not start M2 structural refactor before root integration tests establish the Herdr client layer.
 
-## 12. Progress log
+## 10. Progress log
 
-### 2026-08-29 — Original integration planning
+### 2026-08-29 — Original planning and package investigation
 
-- Created `penggin/gsd-herdr` as a documentation-first overlay integration project.
-- Defined root/worker authority, filtered JSON-mode monitoring, durability, Herdr plugin operations, security, and test strategy.
-- Investigated GSD-Pi v1.16.2 package resource loading and established that `src/resources`-only overlaying would be unsafe for a published-package approach.
+- Built the original documentation-first `penggin/gsd-herdr` plan.
+- Defined root/worker authority, filtered JSON monitoring, worker artifacts, pane pooling, security, testing, and operations strategy.
+- Investigated GSD v1.16.2 package/resource loading and rejected `src/resources`-only overlaying as a safe published-package installation strategy.
 
-### 2026-08-29 — Move to managed downstream fork
+### 2026-08-29 — Migration into managed downstream fork
 
-- Selected `penggin/gsd-pi-herdr` as the long-term managed GSD distribution.
-- Confirmed the fork's `main` had no custom commits and was at upstream commit `c2e61def5d6d3d8c516d115a53654b229f658915`.
-- Confirmed the only custom historical branch was `fix/cmux-split-cli` at `5b74d301b6d1599df5fe0a385b90a28b48492b9a`.
-- Fast-forwarded `main` to current upstream commit `4b26a642c0121ae6161abbb6f2dc6937c78874dd`, a 29-commit upstream advance.
-- Established `upstream-main` at the same pristine upstream commit.
-- Migrated the Herdr planning/documentation set under `docs/herdr-integration/` and added repository-level agent instructions.
-- Validated Herdr v0.8.2 tag commit `9eb521456ac0d19d3ab3d9d7cea3cca10baa8a4c`, socket protocol 20, schema version 1, pane/tab/layout/session APIs, plugin APIs, semantic state reporting, metadata, and CLI atomic `pane run` behavior.
-- Superseded the old package-overlay distribution question because this fork will be built and released directly.
-- Next: M0.9, current subagent runtime-path/refactor mapping.
+- Chose `penggin/gsd-pi-herdr` as the long-term GSD distribution.
+- Verified old fork `main` had no custom commit and was at `c2e61def...`.
+- Fast-forwarded `main` by 29 upstream commits to `4b26a642...`.
+- Established/verified `upstream-main` at the same pristine upstream SHA.
+- Preserved `fix/cmux-split-cli` separately.
+- Migrated/adapted planning documents under `docs/herdr-integration/`.
+- Added root `AGENTS.md` with downstream synchronization and Herdr-plan workflow rules.
+
+### 2026-08-29 — M0.7 Herdr capability validation
+
+- Verified exact Herdr v0.8.2 tag target `9eb52145...`, protocol 20, schema version 1.
+- Verified tab/pane/layout, process inspection, input, semantic state/session/metadata, release, snapshot, event, and plugin capabilities.
+- Confirmed `pane run` is a CLI helper rather than a raw socket method in v0.8.2 and should be used for atomic shell command submission.
+- Concluded no Herdr core fork is required for M1–M4 initial scope.
+
+### 2026-08-29 — M0.9/M0.10 subagent refactor mapping and feasibility closeout
+
+- Traced current local and cmux single-child implementations and every top-level mode selection.
+- Identified runtime/semantic duplication and existing local-vs-cmux divergences.
+- Chose the common-semantic-runner / LocalBackend / CmuxBackend / HerdrBackend architecture.
+- Recorded exact call-site migration order and new parity/regression tests.
+- Completed the M0 feasibility summary with revised implementation estimates and first M1 tasks.
+- **M0 complete; M1 is now in progress.**
+
+## 11. Working-session protocol
+
+For every Herdr session:
+
+1. read this file;
+2. identify exact current task IDs;
+3. inspect relevant current upstream/downstream code;
+4. make the smallest coherent change;
+5. run required focused/contract/parity/security tests;
+6. update this plan before stopping;
+7. record the exact next task and any changed decisions/risks.
