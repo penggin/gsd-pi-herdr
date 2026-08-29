@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import net from "node:net";
 
 export interface HerdrEnvironment {
@@ -73,10 +74,20 @@ export function isHerdrSubagentChild(env: NodeJS.ProcessEnv = process.env): bool
 }
 
 export function shouldActivateHerdrRoot(
-  mode: string | undefined,
+  hasUI: boolean,
+  enabled: boolean,
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  return mode === "tui" && detectHerdrEnvironment(env).available && !isHerdrSubagentChild(env);
+  return hasUI && enabled && detectHerdrEnvironment(env).available && !isHerdrSubagentChild(env);
+}
+
+/**
+ * Herdr v0.8.2 retains a source's last accepted sequence watermark even after
+ * pane.release_agent. Give each loaded extension runtime a distinct source so
+ * a later runtime can safely restart its local sequence without stale reports.
+ */
+export function createHerdrRootSource(): string {
+  return `custom:gsd:${randomUUID()}`;
 }
 
 export class HerdrClient {
@@ -98,6 +109,13 @@ export class HerdrClient {
 
   isAvailable(): boolean {
     return this.env.available;
+  }
+
+  async probePane(): Promise<boolean> {
+    const paneId = this.env.paneId;
+    if (!paneId) return false;
+    const response = await this.request("pane.get", { pane_id: paneId });
+    return response !== null && !response.error;
   }
 
   async request(method: string, params: Record<string, unknown> = {}): Promise<HerdrResponse | null> {
@@ -211,16 +229,19 @@ export class HerdrClient {
       });
       socket.on("data", (chunk) => {
         buffer += chunk.toString("utf8");
-        const newline = buffer.indexOf("\n");
-        if (newline < 0) return;
-
-        const line = buffer.slice(0, newline).trim();
-        if (!line) return;
-        try {
-          const parsed = JSON.parse(line) as HerdrResponse;
-          if (parsed?.id === request.id) finish(parsed);
-        } catch {
-          finish(null);
+        while (!settled) {
+          const newline = buffer.indexOf("\n");
+          if (newline < 0) break;
+          const line = buffer.slice(0, newline).trim();
+          buffer = buffer.slice(newline + 1);
+          if (!line) continue;
+          try {
+            const parsed = JSON.parse(line) as HerdrResponse;
+            if (parsed?.id === request.id) finish(parsed);
+          } catch {
+            // Ignore unrelated/non-response lines. The request timeout remains
+            // the hard bound if no matching response arrives.
+          }
         }
       });
       socket.on("end", () => finish(null));

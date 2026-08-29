@@ -1,0 +1,12 @@
+{
+  "id": "herdr",
+  "name": "Herdr Integration",
+  "version": "1.0.0",
+  "description": "Downstream first-class Herdr root session integration and diagnostics",
+  "tier": "bundled",
+  "requires": { "platform": ">=2.29.0" },
+  "provides": {
+    "commands": ["herdr-status", "herdr-doctor"],
+    "hooks": ["session_start", "agent_start", "agent_end", "session_shutdown"]
+  }
+}

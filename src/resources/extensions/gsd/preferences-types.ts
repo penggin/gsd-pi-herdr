@@ -137,6 +137,7 @@ export const KNOWN_PREFERENCE_KEYS = new Set<string>([
   "context_pause_threshold",
   "notifications",
   "cmux",
+  "herdr",
   "remote_questions",
   "git",
   "post_unit_hooks",
@@ -393,6 +394,19 @@ export interface CmuxPreferences {
   browser?: boolean;
 }
 
+/**
+ * Downstream Herdr integration preferences.
+ *
+ * M1 deliberately keeps this surface small. Worker-pool/backend settings are
+ * introduced only when M2/M4 establish the shared runtime abstraction.
+ */
+export interface HerdrPreferences {
+  /** Opt in to Herdr integration. Default: false. */
+  enabled?: boolean;
+  /** Fail visibly rather than silently falling back once Herdr execution is selected. Default: true. */
+  required?: boolean;
+}
+
 export type UokTurnActionMode = "commit" | "snapshot" | "status-only";
 
 export interface UokPreferences {
@@ -507,6 +521,7 @@ export interface GSDPreferences {
   context_pause_threshold?: number;
   notifications?: NotificationPreferences;
   cmux?: CmuxPreferences;
+  herdr?: HerdrPreferences;
   remote_questions?: RemoteQuestionsConfig;
   git?: GitPreferences;
   post_unit_hooks?: PostUnitHookConfig[];

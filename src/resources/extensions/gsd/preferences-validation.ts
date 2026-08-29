@@ -645,6 +645,36 @@ export function validatePreferences(preferences: GSDPreferences): {
     }
   }
 
+  // ─── Herdr (downstream) ───────────────────────────────────────────────
+  if (preferences.herdr !== undefined) {
+    if (preferences.herdr && typeof preferences.herdr === "object") {
+      const herdr = preferences.herdr as Record<string, unknown>;
+      const validatedHerdr: NonNullable<GSDPreferences["herdr"]> = {};
+
+      if (herdr.enabled !== undefined) {
+        if (typeof herdr.enabled === "boolean") validatedHerdr.enabled = herdr.enabled;
+        else errors.push("herdr.enabled must be a boolean");
+      }
+      if (herdr.required !== undefined) {
+        if (typeof herdr.required === "boolean") validatedHerdr.required = herdr.required;
+        else errors.push("herdr.required must be a boolean");
+      }
+
+      const knownHerdrKeys = new Set(["enabled", "required"]);
+      for (const key of Object.keys(herdr)) {
+        if (!knownHerdrKeys.has(key)) {
+          warnings.push(`unknown herdr key "${key}" — ignored`);
+        }
+      }
+
+      if (Object.keys(validatedHerdr).length > 0) {
+        validated.herdr = validatedHerdr;
+      }
+    } else {
+      errors.push("herdr must be an object");
+    }
+  }
+
   // ─── Remote Questions ───────────────────────────────────────────────
   if (preferences.remote_questions !== undefined) {
     const remoteQuestions = preferences.remote_questions as unknown;

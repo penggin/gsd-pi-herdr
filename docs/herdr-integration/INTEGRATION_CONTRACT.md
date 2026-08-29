@@ -189,7 +189,9 @@ session mode is visible TUI
 GSD_SUBAGENT_CHILD != "1"
 ```
 
-Root state uses one stable `source` identifier and monotonically increasing `seq` values where ordering matters.
+Root state uses one stable `source` identifier for the lifetime of one loaded extension runtime and monotonically increasing `seq` values across reporter replacements inside that runtime. A newly loaded extension runtime uses a new `custom:gsd:<runtime-id>` source rather than reusing the prior source with `seq = 1`.
+
+This is required by Herdr v0.8.2 semantics: `pane.release_agent` accepts the release sequence but does **not** clear that source's last accepted sequence watermark. Reusing the same source after a runtime restart with a lower sequence can therefore return a successful API response while the state update is ignored as stale.
 
 Root shutdown/reload must release or safely replace lifecycle authority.
 

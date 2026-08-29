@@ -911,6 +911,9 @@ function mergePreferences(base: GSDPreferences, override: GSDPreferences): GSDPr
     cmux: (base.cmux || override.cmux)
       ? { ...(base.cmux ?? {}), ...(override.cmux ?? {}) }
       : undefined,
+    herdr: (base.herdr || override.herdr)
+      ? { ...(base.herdr ?? {}), ...(override.herdr ?? {}) }
+      : undefined,
     remote_questions: override.remote_questions
       ? { ...(base.remote_questions ?? {}), ...override.remote_questions }
       : base.remote_questions,

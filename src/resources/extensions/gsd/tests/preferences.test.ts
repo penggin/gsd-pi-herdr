@@ -753,6 +753,26 @@ test("cmux unknown keys produce warnings", () => {
   assert.ok(warnings.some((warning) => warning.includes('unknown cmux key "strange_mode"')));
 });
 
+test("herdr fields validate without changing upstream defaults", () => {
+  const { preferences, errors } = validatePreferences({
+    herdr: { enabled: true, required: false },
+  });
+  assert.equal(errors.length, 0);
+  assert.deepEqual(preferences.herdr, { enabled: true, required: false });
+
+  const disabledByDefault = validatePreferences({});
+  assert.equal(disabledByDefault.preferences.herdr, undefined);
+});
+
+test("herdr rejects non-boolean values and warns on unknown keys", () => {
+  const result = validatePreferences({
+    herdr: { enabled: "yes", required: true, future_mode: true } as any,
+  });
+  assert.ok(result.errors.some((error) => error.includes("herdr.enabled must be a boolean")));
+  assert.ok(result.warnings.some((warning) => warning.includes('unknown herdr key "future_mode"')));
+  assert.deepEqual(result.preferences.herdr, { required: true });
+});
+
 test("git fields comprehensive validation", () => {
   const { preferences, errors } = validatePreferences({
     git: {

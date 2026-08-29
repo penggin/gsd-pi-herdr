@@ -1,7 +1,7 @@
 # GSD–Herdr Living Plan
 
-> **Status:** M0 complete; M1 root integration ready/in progress  
-> **Last updated:** 2026-08-29  
+> **Status:** M0 complete; M1 implementation locally validated, real Herdr smoke pending
+> **Last updated:** 2026-08-30
 > **Current milestone:** M1 — Root GSD ↔ Herdr integration  
 > **Canonical rule:** Every Herdr-integration development session starts by reading this file and ends by updating it.
 
@@ -131,18 +131,18 @@ Exit assessment: all M0 criteria satisfied. No Herdr core fork is required for t
 
 **Goal:** Make the root GSD TUI a correctly reported Herdr agent and establish reusable Herdr client/capability infrastructure without yet moving subagents into Herdr panes.
 
-- [ ] M1.1 Define `HerdrPreferences` and validation/default behavior without changing non-Herdr execution.
-- [ ] M1.2 Implement Herdr environment detection and typed resolved config.
-- [ ] M1.3 Implement reusable Herdr socket client with bounded connect/request retry/timeouts.
-- [ ] M1.4 Implement CLI capability helper for operations that are CLI-only (`pane run` later).
-- [ ] M1.5 Add bundled `herdr` integration module/extension and packaging/discovery metadata.
-- [ ] M1.6 Gate root authority on visible TUI mode and `GSD_SUBAGENT_CHILD !== "1"`.
-- [ ] M1.7 Report root native session identity through `pane.report_agent_session` where available.
-- [ ] M1.8 Report semantic root `working` / `blocked` / `idle` lifecycle with ordered `seq` values.
-- [ ] M1.9 Project milestone/slice/task context into bounded Herdr metadata/message fields.
-- [ ] M1.10 Release/replace root lifecycle authority safely on shutdown/reload.
-- [ ] M1.11 Add GSD-native Herdr status/doctor diagnostics.
-- [ ] M1.12 Add unit/integration tests for detection, protocol requests, state ownership, ordering, and non-Herdr regression.
+- [x] M1.1 Define `HerdrPreferences` and validation/default behavior without changing non-Herdr execution.
+- [x] M1.2 Implement Herdr environment detection and typed resolved config.
+- [x] M1.3 Implement reusable Herdr socket client with bounded connect/request retry/timeouts.
+- [x] M1.4 Implement CLI capability helper for operations that are CLI-only (`pane run` later).
+- [x] M1.5 Add bundled `herdr` integration module/extension and packaging/discovery metadata.
+- [x] M1.6 Gate root authority on visible TUI mode and `GSD_SUBAGENT_CHILD !== "1"`.
+- [x] M1.7 Report root native session identity through `pane.report_agent_session` where available.
+- [x] M1.8 Report semantic root `working` / `blocked` / `idle` lifecycle with ordered `seq` values.
+- [x] M1.9 Project milestone/slice/task context into bounded Herdr metadata/message fields.
+- [x] M1.10 Release/replace root lifecycle authority safely on shutdown/reload.
+- [x] M1.11 Add GSD-native Herdr status/doctor diagnostics.
+- [x] M1.12 Add unit/integration tests for detection, protocol requests, state ownership, ordering, and non-Herdr regression.
 - [ ] M1.13 Validate the root reporter against real Herdr v0.8.2 in an isolated session.
 
 Exit criteria:
@@ -285,10 +285,9 @@ Structural gaps discovered:
 
 ## 9. Current execution queue
 
-1. **M1.1:** inspect existing preference schema/validation patterns and add the smallest Herdr configuration surface.
-2. **M1.2:** implement/test Herdr environment detection using injected `HERDR_*` variables.
-3. **M1.3:** implement a bounded, testable Herdr socket request client.
-4. Continue root reporter M1 tasks in order; do not start M2 structural refactor before root integration tests establish the Herdr client layer.
+1. **M1.13:** run the bundled downstream build inside a real Herdr v0.8.2 macOS session and verify root idle → working → idle, blocked/retry behavior, session identity, reload, and shutdown release.
+2. Verify `/herdr-status` and `/herdr-doctor` against the real pane/socket/CLI environment and record any v0.8.2 request-shape corrections.
+3. Close M1 only after the real Herdr smoke passes; do not start M2 structural refactor before that evidence exists.
 
 ## 10. Progress log
 
@@ -323,6 +322,31 @@ Structural gaps discovered:
 - Recorded exact call-site migration order and new parity/regression tests.
 - Completed the M0 feasibility summary with revised implementation estimates and first M1 tasks.
 - **M0 complete; M1 is now in progress.**
+
+### 2026-08-30 — M1 root integration implementation and local validation
+
+- Added the opt-in `herdr.enabled` / `herdr.required` preference surface, strict validation, effective preference merging, and environment overrides for diagnostics/required mode.
+- Reworked root authority detection around the actual extension contract (`ctx.hasUI`) plus `HERDR_ENV`, pane/socket identity, and `GSD_SUBAGENT_CHILD !== "1"`; non-Herdr execution remains inactive unless explicitly enabled.
+- Completed the bounded newline-framed Herdr socket client, including matching-response parsing, idempotent request retry with stable request IDs, `pane.get` probing, session/state/metadata/release wrappers, and monotonic source-local sequence reporting.
+- Added a shell-free bounded Herdr CLI helper using argv execution. This is the M4 seam for the v0.8.2 CLI-only `pane run` helper.
+- Added the bundled `src/resources/extensions/herdr/` extension, manifest, lifecycle wiring, `/herdr-status`, `/herdr-doctor`, and bounded milestone/slice/task + phase projection.
+- Root lifecycle now uses `agent_end.willRetry` when available: explicit retry remains `working`, explicit terminal provider errors become `blocked`, and only unknown retry intent uses the short compatibility grace window. Normal completion debounces back to `idle`.
+- Added a shutdown/reload race guard so a delayed `session_start` identity request cannot publish lifecycle state after `release_agent` relinquishes authority.
+- Verified Herdr v0.8.2 source semantics directly at tag `9eb52145...`: `pane.release_agent` advances but does not clear the source sequence watermark. Reporter replacements therefore share one monotonic allocator inside a loaded extension runtime, while each newly loaded runtime gets a unique `custom:gsd:<runtime-id>` source so a restarted local sequence cannot be rejected as stale.
+- Added focused Herdr tests for environment/root ownership, fake Unix socket request/retry behavior, CLI argv isolation, preferences, workflow labels, session identity, lifecycle ordering/retry/blocking, shutdown release ordering, and the delayed-start shutdown race.
+- Local validation evidence:
+  - `pnpm run typecheck:extensions` — pass after building required workspace packages;
+  - focused source suite (`herdr` tests + GSD preferences) — **153/153 pass**;
+  - compiled Herdr suite — **18/18 pass**;
+  - `pnpm run test:changed:src` — pass;
+  - `pnpm run verify:extension-coverage` — pass;
+  - bundled extension import smoke — pass;
+  - resource-loader bundled-extension manifest tracking test — pass;
+  - `pnpm run build:core` plus staged standalone web build — pass;
+  - `pnpm run validate-pack` — pass through isolated tarball install/global-install checks with final result `Package is installable. Safe to publish.`;
+  - `git diff --check` — pass.
+- `copy-resources` produced the expected compiled Herdr extension and `extension-manifest.json` under `dist/resources/extensions/herdr/`.
+- This Linux DevSpace does not currently provide a `herdr` executable and cannot satisfy the target macOS real-session requirement. **M1.13 remains the only open M1 task.**
 
 ## 11. Working-session protocol
 

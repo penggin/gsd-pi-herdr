@@ -16,21 +16,30 @@ interface RootReporterContext {
 interface RootReporterEvent {
   reason?: string;
   messages?: unknown[];
+  willRetry?: boolean;
 }
+
+type HerdrReporterClient = Pick<
+  HerdrClient,
+  "reportAgent" | "reportAgentSession" | "releaseAgent"
+>;
 
 export interface HerdrRootReporterOptions {
   idleDebounceMs?: number;
   errorGraceMs?: number;
+  nextSequence?: () => number;
 }
 
 export class HerdrRootReporter {
-  private readonly client: HerdrClient;
+  private readonly client: HerdrReporterClient;
   private readonly idleDebounceMs: number;
   private readonly errorGraceMs: number;
+  private readonly externalNextSequence: (() => number) | undefined;
   private rootSession = false;
   private agentActive = false;
   private failureBlocked = false;
   private failureMessage: string | undefined;
+  private workflowMessage: string | undefined;
   private lastState: HerdrAgentState | undefined;
   private lastMessage: string | undefined;
   private sessionRef: HerdrAgentSessionRef = {};
@@ -38,49 +47,82 @@ export class HerdrRootReporter {
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
   private errorTimer: ReturnType<typeof setTimeout> | undefined;
 
-  constructor(client: HerdrClient, options: HerdrRootReporterOptions = {}) {
+  constructor(client: HerdrReporterClient, options: HerdrRootReporterOptions = {}) {
     this.client = client;
     this.idleDebounceMs = options.idleDebounceMs ?? DEFAULT_IDLE_DEBOUNCE_MS;
     this.errorGraceMs = options.errorGraceMs ?? DEFAULT_ERROR_GRACE_MS;
+    this.externalNextSequence = options.nextSequence;
   }
 
   isRootSession(): boolean {
     return this.rootSession;
   }
 
-  async sessionStart(event: RootReporterEvent, ctx: RootReporterContext): Promise<void> {
+  updateWorkflowMessage(workflowMessage: string | undefined): void {
+    if (!this.rootSession || workflowMessage === this.workflowMessage) return;
+    this.workflowMessage = workflowMessage;
+    void this.publishState();
+  }
+
+  async sessionStart(
+    event: RootReporterEvent,
+    ctx: RootReporterContext,
+    workflowMessage?: string,
+  ): Promise<void> {
     this.rootSession = true;
     this.clearTimers();
     this.clearFailure();
+    this.lastState = undefined;
+    this.lastMessage = undefined;
+    this.workflowMessage = workflowMessage;
     this.updateSessionRef(ctx);
     await this.reportSession(event.reason);
+    // session_start reporting is intentionally asynchronous at the extension
+    // boundary. A reload/session replacement can therefore shut this reporter
+    // down while the session identity request is still in flight. Never publish
+    // a fresh lifecycle state after release_agent has relinquished authority.
+    if (!this.rootSession) return;
     this.agentActive = ctx.isIdle?.() === false;
     await this.publishState(true);
   }
 
-  agentStart(ctx: RootReporterContext): void {
+  agentStart(ctx: RootReporterContext, workflowMessage?: string): void {
     if (!this.rootSession) return;
     this.clearTimers();
     this.clearFailure();
+    if (workflowMessage !== undefined) this.workflowMessage = workflowMessage;
     this.updateSessionRef(ctx);
     this.agentActive = true;
     void this.reportSession();
     void this.publishState();
   }
 
-  agentEnd(event: RootReporterEvent): void {
+  agentEnd(event: RootReporterEvent, workflowMessage?: string): void {
     if (!this.rootSession) return;
+    if (workflowMessage !== undefined) this.workflowMessage = workflowMessage;
     this.agentActive = false;
     this.clearTimers();
 
     const errorMessage = findAssistantError(event.messages);
     if (errorMessage) {
+      this.failureMessage = truncate(errorMessage, MAX_ERROR_MESSAGE_CHARS);
+
+      if (event.willRetry === true) {
+        void this.publishState(true, "working", joinMessage(this.workflowMessage, "retrying"));
+        return;
+      }
+
+      if (event.willRetry === false) {
+        this.failureBlocked = true;
+        void this.publishState();
+        return;
+      }
+
       // GSD/provider retry loops can emit an error end immediately before a
       // replacement agent_start. Keep the pane working during a bounded grace
       // window; a new start cancels this timer. If no retry arrives, surface the
       // durable error as blocked instead of flashing idle.
-      this.failureMessage = truncate(errorMessage, MAX_ERROR_MESSAGE_CHARS);
-      void this.publishState(true, "working", "retry/error grace");
+      void this.publishState(true, "working", joinMessage(this.workflowMessage, "retry/error grace"));
       this.errorTimer = setTimeout(() => {
         this.errorTimer = undefined;
         this.failureBlocked = true;
@@ -106,12 +148,12 @@ export class HerdrRootReporter {
 
   private desiredState(): { state: HerdrAgentState; message?: string } {
     if (this.failureBlocked) {
-      return { state: "blocked", message: this.failureMessage };
+      return { state: "blocked", message: joinMessage(this.workflowMessage, this.failureMessage) };
     }
     if (this.agentActive) {
-      return { state: "working" };
+      return { state: "working", message: this.workflowMessage };
     }
-    return { state: "idle" };
+    return { state: "idle", message: this.workflowMessage };
   }
 
   private async publishState(
@@ -171,6 +213,7 @@ export class HerdrRootReporter {
   }
 
   private nextSeq(): number {
+    if (this.externalNextSequence) return this.externalNextSequence();
     this.reportSeq += 1;
     return this.reportSeq;
   }
@@ -207,4 +250,10 @@ function findAssistantError(messages: unknown[] | undefined): string | undefined
 function truncate(value: string, maxChars: number): string {
   if (value.length <= maxChars) return value;
   return `${value.slice(0, Math.max(0, maxChars - 1))}…`;
+}
+
+function joinMessage(left: string | undefined, right: string | undefined): string | undefined {
+  if (!left) return right;
+  if (!right) return left;
+  return truncate(`${left} · ${right}`, MAX_ERROR_MESSAGE_CHARS);
 }
