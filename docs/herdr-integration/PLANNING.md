@@ -1,8 +1,8 @@
 # GSD–Herdr Living Plan
 
-> **Status:** M0–M6 complete; M7 ready
+> **Status:** M0–M7 complete
 > **Last updated:** 2026-08-30
-> **Current milestone:** M7 — Downstream release/upstream maintenance automation
+> **Current milestone:** M7 complete — downstream promotion review ready
 > **Canonical rule:** Every Herdr-integration development session starts by reading this file and ends by updating it.
 
 ## 1. Mission
@@ -238,14 +238,14 @@ M4 exit = first practically usable monitored Herdr-subagent runtime proven in a 
 
 ### M7 — Downstream release/upstream maintenance automation
 
-**Status:** `READY`
+**Status:** `COMPLETE`
 
-- [ ] M7.1 Automate upstream-main change detection and impact reports.
-- [ ] M7.2 Automate supported/canary Herdr capability checks.
-- [ ] M7.3 Stamp downstream releases with exact upstream base metadata.
-- [ ] M7.4 Add canary builds before major upstream/Herdr adoption.
-- [ ] M7.5 Preserve prior known-good downstream release for rollback.
-- [ ] M7.6 Document downstream install/update/release identity.
+- [x] M7.1 Automate upstream-main change detection and impact reports.
+- [x] M7.2 Automate supported/canary Herdr capability checks.
+- [x] M7.3 Stamp downstream releases with exact upstream base metadata.
+- [x] M7.4 Add canary builds before major upstream/Herdr adoption.
+- [x] M7.5 Preserve prior known-good downstream release for rollback.
+- [x] M7.6 Document downstream install/update/release identity.
 
 ## 7. Important findings to preserve
 
@@ -287,9 +287,9 @@ Structural gaps discovered:
 
 ## 9. Current execution queue
 
-1. **M7.1–M7.2:** automate upstream impact reporting and stable/canary Herdr capability checks.
-2. M7.3–M7.5: stamp exact upstream/Herdr release identity, run canaries, and retain the prior known-good rollback target.
-3. M7.6: document install/update/release identity, then run the complete downstream release gate.
+1. **Promotion review:** inspect the generated upstream/capability/release evidence and decide whether to promote this feature branch through the normal reviewed downstream release workflow.
+2. Before any upstream sync, review the currently reported 9-commit/35-file `origin/upstream-main..upstream/main` high-risk delta; do not auto-merge it.
+3. Before public distribution, choose the public downstream package/version identity and run the credentialed real-Herdr E2E again on the exact release candidate. No merge, push, tag, or publish is authorized by this plan closeout.
 
 ## 10. Progress log
 
@@ -498,6 +498,26 @@ Structural gaps discovered:
 - Live validation exposed and fixed capacity accounting around retained failures: unavailable slots now include busy plus failure-retained panes, allowing the pool to expand to the four-pane cap instead of leaving a waiter stuck.
 - Focused validation after these fixes: Herdr/plugin/subagent compiled regression **154/154 pass**, plugin operations **7/7 pass**, and `typecheck:extensions` passes. `build:core` also passes with the durable runner changes.
 - **M6 is complete. M7 is ready. Exact next task: M7.1 — automate upstream-main change detection and semantic impact reports.**
+
+### 2026-08-30 — M7 downstream compatibility and release automation closeout
+
+- Added `scripts/herdr-integration/upstream-impact.mjs`. It resolves immutable comparison refs without fetching or moving branches, verifies ancestry, emits exact commits/name-status files in JSON/Markdown, classifies subagent/lifecycle/process/packaging/preferences impact, and selects the corresponding downstream gates. Non-linear refs fail visibly rather than being treated as a safe sync.
+- The current real report compares `origin/upstream-main` `4b26a642c0121ae6161abbb6f2dc6937c78874dd` with `upstream/main` `9555a0dc652e5942ba2f2185d7fe27ffdee9c893`: lineage is valid, the delta is 9 commits/35 files, risk is `high`, and Herdr parity is required. This is a review signal only; no upstream branch was changed or integrated.
+- Added capability-based stable/canary validation against the binary's bundled API schema plus CLI/plugin contract. Official installed Herdr v0.8.2 passed protocol 20, schema v1 SHA-256 `c48f1f54ee0150ca27e11fd44455fe94aeadb20fdf4e4a62393ed822a4e5b150`, all 13 required methods, atomic `pane run`, plugin link, and `min_herdr_version=0.8.2` checks.
+- Added schema-v1 `integrations/herdr/compatibility.json` and an exact release stamp that refuses dirty worktrees or an upstream base outside downstream ancestry. Clean implementation commit `166ad6b467d35d8e97bd2e94ecf1f3b4f2f45a2b` stamped upstream base `4b26a642…`, Herdr capability evidence, required gates, and prior known-good M6 commit `b7a12baae2ff4917fa0de0d6edc7ca5372d64a61` without mutating the rollback target.
+- Added the scheduled/manual/PR `Herdr downstream canary` workflow. It compares remote-tracking upstream refs without merge/rebase/push, tests exact supported v0.8.2 plus latest stable and allowed-failure preview assets from official `herdrdev/herdr` releases, builds the downstream tree, stamps evidence, and runs the full package gate for the supported matrix.
+- Documented downstream install/update/release/rollback identity in `integrations/herdr/README.md`, `OPERATIONS.md`, and `UPSTREAM_MAINTENANCE.md`. Release automation is observational until separately authorized promotion (ADR-H017); rollback preserves durable Herdr runtime evidence.
+- Final validation:
+  - M7 automation plus plugin operations: **14/14 pass**;
+  - complete Herdr/root/subagent/common-runner focused regression: **154/154 pass**;
+  - `pnpm run typecheck:extensions`: pass;
+  - `pnpm run test:changed:src`: pass (no additional focused source selection for the M7 script/docs-only commit);
+  - `pnpm run build:core`: pass;
+  - `pnpm run build:web-host`: pass with the existing non-fatal Next.js `module.createRequire` trace warning;
+  - `NPM_CONFIG_USERCONFIG=/dev/null pnpm run validate-pack`: pass with **`Package is installable. Safe to publish.`**;
+  - workflow YAML parse and `git diff --check`: pass.
+- Remaining risk: the upstream 9-commit delta is detected but intentionally not integrated, GitHub-hosted stable/preview jobs still need their first remote run after review, and public downstream package naming/version syntax remains a release decision rather than an implementation default.
+- **M7 is complete. Exact next task: review this feature branch and its generated evidence, run the remote canary plus one final credentialed live E2E on the exact release candidate, then authorize or reject downstream promotion. Do not merge, push, tag, or publish implicitly.**
 
 ## 11. Working-session protocol
 
