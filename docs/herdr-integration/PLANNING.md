@@ -162,7 +162,7 @@ Exit criteria:
 - [x] M2.1 Add deterministic tests around current local `runSingleAgent()` semantic output.
 - [x] M2.2 Define backend execution request/callback/evidence types.
 - [x] M2.3 Extract direct `spawn()` mechanics to `LocalBackend` with no caller-selection change.
-- [ ] M2.4 Introduce common `runSingleAgentWithBackend()` semantic runner and prove local parity.
+- [x] M2.4 Introduce common `runSingleAgentWithBackend()` semantic runner and prove local parity.
 - [ ] M2.5 Route resume through the common runner/backend resolver.
 - [ ] M2.6 Route background single through the common runner and execution registry.
 - [ ] M2.7 Route chain through the common runner while preserving `{previous}`/stop-on-error semantics.
@@ -285,9 +285,9 @@ Structural gaps discovered:
 
 ## 9. Current execution queue
 
-1. **M2.4:** introduce `runSingleAgentWithBackend()` as the common semantic runner around the already-extracted `LocalBackend`.
-2. Preserve the M2.1 characterization suite unchanged while moving only semantic ownership boundaries; foreground/caller backend selection remains local-only during this step.
-3. Prove exact local parity before routing resume/background/chain/parallel/single callers through a resolver in M2.5–M2.9.
+1. **M2.5:** add the backend resolver seam and route resume through `runSingleAgentWithBackend()` without enabling cmux/Herdr selection for resume yet.
+2. Preserve current local-only resume behavior while making the selected backend explicit and testable.
+3. Then migrate background single (M2.6), chain (M2.7), parallel/retry (M2.8), and foreground single (M2.9) through the same resolver/common-runner path before extracting CmuxBackend.
 
 ## 10. Progress log
 
@@ -389,7 +389,10 @@ Structural gaps discovered:
 - `runSingleAgent()` still owns agent lookup, phase guard, effective model/thinking, prompt/session launch planning, `SingleResult`, semantic JSON parsing, usage/update aggregation, abort-to-error mapping, missing-final validation, and prompt cleanup.
 - M2.1 characterization remained unchanged and passed **9/9** through the extracted backend; M2.2 contract tests remained **2/2**; new direct LocalBackend mechanics tests **2/2**; `typecheck:extensions` passed.
 - Added the nested `subagent/execution/tests/*.test.js` path to normal compiled unit and coverage test globs so backend contract/mechanics tests are part of the standard suite.
-- **M2.4 common semantic runner extraction is now the active work item.**
+- M2.4 generalized the semantic body to `runSingleAgentWithBackend(..., backend)` while retaining `runSingleAgent()` as a LocalBackend wrapper, so no caller/backend selection changed.
+- Added backend-neutral semantic tests proving a fake backend that supplies only stdout/stderr callbacks and execution evidence produces the same GSD-visible parsing/usage/update/finalization behavior, and that `{ aborted: true }` maps to the existing `Subagent was aborted` rejection.
+- M2.4 focused validation: M2.1 parity **9/9 unchanged**, backend contract/mechanics **4/4**, backend-neutral common-runner tests **2/2**, `typecheck:extensions` pass.
+- **M2.5 resume resolver migration is now the active work item.**
 
 ## 11. Working-session protocol
 

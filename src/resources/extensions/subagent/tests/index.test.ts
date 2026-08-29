@@ -6,6 +6,7 @@ import { afterEach, describe, it } from "node:test";
 
 import { activateGSD, deactivateGSD, setCurrentPhase } from "../../shared/gsd-phase-state.js";
 import type { AgentConfig } from "../agents.js";
+import type { SubagentExecutionBackend } from "../execution/types.js";
 import { __subagentLocalRunnerTestHooks } from "../index.js";
 
 const ZERO_USAGE = {
@@ -344,5 +345,116 @@ process.stderr.write('fixture stderr\\n');
 		} finally {
 			globalThis.setTimeout = realSetTimeout;
 		}
+	});
+});
+
+describe("runSingleAgentWithBackend semantic boundary", () => {
+	it("produces the same semantic result from backend stream/evidence without owning runtime mechanics", async (t) => {
+		const dir = mkdtempSync(join(tmpdir(), "gsd-common-runner-"));
+		t.after(() => rmSync(dir, { recursive: true, force: true }));
+		const assistant = makeAssistantMessage("backend-neutral final", {
+			model: "backend-model",
+			stopReason: "stop",
+			input: 5,
+			output: 8,
+			totalTokens: 13,
+			cost: 0.25,
+		});
+		const toolResult = makeToolResultMessage("backend tool output");
+		let receivedAgent = "";
+		let receivedTask = "";
+
+		const backend: SubagentExecutionBackend = {
+			id: "fixture-backend",
+			isAvailable: () => true,
+			async execute(request, callbacks) {
+				receivedAgent = request.identity.agent;
+				receivedTask = request.launch.args.at(-1) ?? "";
+				callbacks.onStdoutLine(JSON.stringify({ type: "message_end", message: assistant }));
+				callbacks.onStdoutLine(JSON.stringify({ type: "tool_result_end", message: toolResult }));
+				callbacks.onStderr("backend stderr\n");
+				return { exitCode: 0, aborted: false, metadata: { runtime: "fixture" } };
+			},
+		};
+		const updates: any[] = [];
+
+		const result = await __subagentLocalRunnerTestHooks.runSingleAgentWithBackend(
+			dir,
+			[makeAgent({ model: "configured-model", thinking: "high" })],
+			"worker",
+			"inspect backend neutrality",
+			undefined,
+			4,
+			undefined,
+			(partial) => updates.push(structuredClone(partial)),
+			(results) => ({
+				mode: "single",
+				agentScope: "both",
+				projectAgentsDir: null,
+				results,
+			}),
+			{
+				contextMode: "fresh",
+				trackingName: "backend-slot",
+			},
+			backend,
+		);
+
+		assert.equal(receivedAgent, "worker");
+		assert.equal(receivedTask, "Task: inspect backend neutrality");
+		assert.equal(result.exitCode, 0);
+		assert.equal(result.running, false);
+		assert.equal(result.model, "configured-model");
+		assert.equal(result.thinking, "high");
+		assert.equal(result.stopReason, "stop");
+		assert.equal(result.stderr, "backend stderr\n");
+		assert.deepEqual(result.usage, {
+			input: 5,
+			output: 8,
+			cacheRead: 0,
+			cacheWrite: 0,
+			cost: 0.25,
+			contextTokens: 13,
+			turns: 1,
+		});
+		assert.equal(result.messages.length, 2);
+		assert.deepEqual(updates.map((update) => update.content[0].text), [
+			"backend-neutral final",
+			"backend-neutral final",
+		]);
+	});
+
+	it("maps backend aborted evidence to the existing canonical runner rejection", async (t) => {
+		const dir = mkdtempSync(join(tmpdir(), "gsd-common-runner-abort-"));
+		t.after(() => rmSync(dir, { recursive: true, force: true }));
+		const backend: SubagentExecutionBackend = {
+			id: "aborted-fixture",
+			isAvailable: () => true,
+			async execute() {
+				return { exitCode: 143, aborted: true, signal: "SIGTERM" };
+			},
+		};
+
+		await assert.rejects(
+			__subagentLocalRunnerTestHooks.runSingleAgentWithBackend(
+				dir,
+				[makeAgent()],
+				"worker",
+				"abort fixture",
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				(results) => ({
+					mode: "single",
+					agentScope: "both",
+					projectAgentsDir: null,
+					results,
+				}),
+				{ contextMode: "fresh" },
+				backend,
+			),
+			/Subagent was aborted/,
+		);
 	});
 });

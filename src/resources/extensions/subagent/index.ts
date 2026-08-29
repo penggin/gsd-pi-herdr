@@ -60,6 +60,7 @@ import {
 	localSubagentBackend,
 	stopLocalSubagentProcesses,
 } from "./execution/local-backend.js";
+import type { SubagentExecutionBackend } from "./execution/types.js";
 
 export { buildSubagentProcessArgs } from "./launch.js";
 
@@ -401,7 +402,7 @@ interface SubagentRunOptions {
 	projectRootSourceCwd?: string;
 }
 
-async function runSingleAgent(
+async function runSingleAgentWithBackend(
 	defaultCwd: string,
 	agents: AgentConfig[],
 	agentName: string,
@@ -412,6 +413,7 @@ async function runSingleAgent(
 	onUpdate: OnUpdateCallback | undefined,
 	makeDetails: (results: SingleResult[]) => SubagentDetails,
 	options: SubagentRunOptions,
+	backend: SubagentExecutionBackend,
 ): Promise<SingleResult> {
 	const {
 		modelOverride,
@@ -514,7 +516,7 @@ async function runSingleAgent(
 			.map((value) => value.trim())
 			.filter(Boolean);
 		const extensionArgs = bundledPaths.flatMap((extensionPath) => ["--extension", extensionPath]);
-		const execution = await localSubagentBackend.execute(
+		const execution = await backend.execute(
 			{
 				launch,
 				extensionArgs,
@@ -554,6 +556,33 @@ async function runSingleAgent(
 	}
 }
 
+async function runSingleAgent(
+	defaultCwd: string,
+	agents: AgentConfig[],
+	agentName: string,
+	task: string,
+	cwd: string | undefined,
+	step: number | undefined,
+	signal: AbortSignal | undefined,
+	onUpdate: OnUpdateCallback | undefined,
+	makeDetails: (results: SingleResult[]) => SubagentDetails,
+	options: SubagentRunOptions,
+): Promise<SingleResult> {
+	return runSingleAgentWithBackend(
+		defaultCwd,
+		agents,
+		agentName,
+		task,
+		cwd,
+		step,
+		signal,
+		onUpdate,
+		makeDetails,
+		options,
+		localSubagentBackend,
+	);
+}
+
 /**
  * M2 characterization seam only. Keep this intentionally narrow so parity
  * tests can exercise the existing local runner through its real spawn/JSONL
@@ -563,6 +592,7 @@ async function runSingleAgent(
  */
 export const __subagentLocalRunnerTestHooks = {
 	runSingleAgent,
+	runSingleAgentWithBackend,
 	stopLiveSubagents: stopLocalSubagentProcesses,
 	getLiveProcessCount: getLiveLocalSubagentProcessCount,
 };
