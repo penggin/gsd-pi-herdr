@@ -28,6 +28,7 @@ import {
 import {
   _setLifecycleShadowRepairBeforeCommitForTest,
   repairLifecycleShadowForward,
+  repairMilestoneLifecycleShadowsForward,
 } from "../lifecycle-shadow-repair-domain-operation.ts";
 import type { ExecutionInvocation } from "../execution-invocation.ts";
 
@@ -74,6 +75,34 @@ function openFixture(t: TestContext): void {
       );
   `);
   t.after(closeDatabase);
+}
+
+function insertNonPassingVerificationTask(t: TestContext, verificationResult: string): void {
+  db().exec(`
+    INSERT INTO milestones (id, title, status, created_at)
+    VALUES ('M002', 'Isolated milestone', 'active', '2026-07-01T00:00:00.000Z');
+    INSERT INTO slices (milestone_id, id, title, status, created_at)
+    VALUES ('M002', 'S01', 'Isolated slice', 'active', '2026-07-01T00:00:00.000Z');
+  `);
+  db().prepare(`
+    INSERT INTO tasks (
+      milestone_id, slice_id, id, title, status, completed_at,
+      one_liner, narrative, verification_result, full_summary_md
+    ) VALUES (
+      'M002', 'S01', 'T04', 'Non-passing verification result', 'complete',
+      '2026-07-04T00:00:00.000Z', 'Finished', 'Historical completion', ?, '# T04 summary'
+    )
+  `).run(verificationResult);
+  t.after(closeDatabase);
+}
+
+function isolatedTask(taskId: string) {
+  return {
+    itemKind: "task" as const,
+    milestoneId: "M002",
+    sliceId: "S01",
+    taskId,
+  };
 }
 
 function invocation(idempotencyKey: string): ExecutionInvocation {
@@ -306,6 +335,52 @@ test("unsupported historical evidence commits an actionable unresolved receipt w
   assert.equal(rows("workflow_attempt_results").length, 0);
 });
 
+test("a non-passing verification_result must not be treated as durable completion evidence", (t) => {
+  openFixture(t);
+  insertNonPassingVerificationTask(t, "failed");
+  const receipt = repairLifecycleShadowForward({
+    invocation: invocation("shadow-repair/non-passing/T04"),
+    item: isolatedTask("T04"),
+  });
+
+  assert.equal(receipt.disposition, "unresolved");
+  assert.equal(receipt.targetStatus, null);
+  assert.equal(receipt.afterStatus, null);
+  assert.equal(db().prepare(`
+    SELECT COUNT(*) AS count FROM workflow_item_lifecycles WHERE task_id = 'T04'
+  `).get()?.["count"], 0);
+});
+
+for (const variant of ["PASSED", "  passed  ", "Passed"]) {
+  test(`a "${variant}" verification_result is still normalized as passing evidence`, (t) => {
+    openFixture(t);
+    insertNonPassingVerificationTask(t, variant);
+
+    const receipt = repairLifecycleShadowForward({
+      invocation: invocation(`shadow-repair/normalized-passing/T04/${variant}`),
+      item: isolatedTask("T04"),
+    });
+
+    assert.equal(receipt.disposition, "repaired");
+    assert.equal(receipt.afterStatus, "completed");
+  });
+}
+
+for (const variant of ["failed", "inconclusive", "needs-attention", "true", "banana", "NULL"]) {
+  test(`a "${variant}" verification_result is rejected as non-passing evidence`, (t) => {
+    openFixture(t);
+    insertNonPassingVerificationTask(t, variant);
+
+    const receipt = repairLifecycleShadowForward({
+      invocation: invocation(`shadow-repair/non-passing/T04/${variant}`),
+      item: isolatedTask("T04"),
+    });
+
+    assert.equal(receipt.disposition, "unresolved");
+    assert.equal(receipt.afterStatus, null);
+  });
+}
+
 test("records an extra canonical shadow as unresolved when its legacy row is missing", (t) => {
   openFixture(t);
   adoptReadyItem(task("T03"));
@@ -447,6 +522,83 @@ test("keeps a ready Milestone unresolved even when historical completion evidenc
   assert.equal(receipt.targetStatus, "completed");
 });
 
+test("FIXED: a milestone with one repairable and one unresolved descendant writes nothing and reports both as unresolved", (t) => {
+  openFixture(t);
+  db().exec(`
+    INSERT INTO milestones (id, title, status, created_at)
+    VALUES ('M003', 'Mixed repairable milestone', 'active', '2026-07-01T00:00:00.000Z');
+    INSERT INTO slices (milestone_id, id, title, status, created_at)
+    VALUES
+      ('M003', 'S01', 'Repairable slice', 'active', '2026-07-01T00:00:00.000Z'),
+      ('M003', 'S02', 'Unresolved slice', 'active', '2026-07-01T00:00:00.000Z');
+    INSERT INTO tasks (
+      milestone_id, slice_id, id, title, status, completed_at,
+      one_liner, narrative, verification_result, full_summary_md
+    ) VALUES
+      (
+        'M003', 'S01', 'T01', 'Repairable task', 'complete',
+        '2026-07-02T00:00:00.000Z', 'Finished', 'Historical completion', 'passed', '# T01 summary'
+      ),
+      (
+        'M003', 'S02', 'T02', 'Unresolved task', 'complete',
+        '2026-07-03T00:00:00.000Z', 'Finished', 'Historical completion', 'failed', '# T02 summary'
+      );
+  `);
+
+  const result = repairMilestoneLifecycleShadowsForward({
+    invocation: invocation("shadow-repair/mixed-order/M003"),
+    milestoneId: "M003",
+  });
+
+  assert.deepEqual(result.repaired, []);
+  assert.deepEqual([...result.unresolved].sort(), ["M003/S02/T02", "M003/S01/T01"].sort());
+  assert.equal(db().prepare(`
+    SELECT COUNT(*) AS count FROM workflow_item_lifecycles WHERE milestone_id = 'M003'
+  `).get()?.["count"], 0, "no descendant may be repaired while any sibling in the milestone is unresolved");
+  assert.equal(db().prepare(`
+    SELECT COUNT(*) AS count FROM workflow_operations WHERE operation_type = 'lifecycle.shadow.repair'
+  `).get()?.["count"], 0, "an unresolved sibling must block every write, not just its own");
+});
+
+test("FIXED: a milestone with multiple repairable single-step descendants commits them all in one shared Domain Operation", (t) => {
+  openFixture(t);
+  db().exec(`
+    INSERT INTO milestones (id, title, status, created_at)
+    VALUES ('M004', 'Fully repairable milestone', 'active', '2026-07-01T00:00:00.000Z');
+    INSERT INTO slices (milestone_id, id, title, status, created_at)
+    VALUES
+      ('M004', 'S01', 'Repairable slice one', 'active', '2026-07-01T00:00:00.000Z'),
+      ('M004', 'S02', 'Repairable slice two', 'active', '2026-07-01T00:00:00.000Z');
+    INSERT INTO tasks (
+      milestone_id, slice_id, id, title, status, completed_at,
+      one_liner, narrative, verification_result, full_summary_md
+    ) VALUES
+      (
+        'M004', 'S01', 'T01', 'Repairable task one', 'complete',
+        '2026-07-02T00:00:00.000Z', 'Finished', 'Historical completion', 'passed', '# T01 summary'
+      ),
+      (
+        'M004', 'S02', 'T02', 'Repairable task two', 'complete',
+        '2026-07-03T00:00:00.000Z', 'Finished', 'Historical completion', 'passed', '# T02 summary'
+      );
+  `);
+
+  const result = repairMilestoneLifecycleShadowsForward({
+    invocation: invocation("shadow-repair/all-repairable/M004"),
+    milestoneId: "M004",
+  });
+
+  assert.deepEqual([...result.repaired].sort(), ["M004/S01/T01", "M004/S02/T02"].sort());
+  assert.deepEqual(result.unresolved, []);
+  assert.equal(db().prepare(`
+    SELECT COUNT(*) AS count FROM workflow_item_lifecycles
+    WHERE milestone_id = 'M004' AND lifecycle_status = 'completed'
+  `).get()?.["count"], 2);
+  assert.equal(db().prepare(`
+    SELECT COUNT(*) AS count FROM workflow_operations WHERE operation_type = 'lifecycle.shadow.repair'
+  `).get()?.["count"], 1, "every single-step descendant must commit inside one shared Domain Operation");
+});
+
 test("a changed evidence digest is rejected inside the repair transaction", (t) => {
   openFixture(t);
   _setLifecycleShadowRepairBeforeCommitForTest(() => {
@@ -524,3 +676,51 @@ for (const edge of ["adopt", "advance", "complete"] as const) {
     assert.deepEqual(authoritySnapshot(), afterCommit);
   });
 }
+
+test("repairMilestoneLifecycleShadowsForward skips completed or cancelled milestones", (t) => {
+  openFixture(t);
+  db().exec(`
+    INSERT INTO milestones (id, title, status, created_at)
+    VALUES
+      ('M010', 'Completed milestone', 'completed', '2026-07-01T00:00:00.000Z'),
+      ('M010C', 'Cancelled milestone', 'cancelled', '2026-07-01T00:00:00.000Z');
+  `);
+  seedLifecycle({ itemKind: "milestone", milestoneId: "M010" }, "completed", "test/seed/m010");
+  seedLifecycle({ itemKind: "milestone", milestoneId: "M010C" }, "cancelled", "test/seed/m010c");
+
+  const resultCompleted = repairMilestoneLifecycleShadowsForward({
+    invocation: invocation("shadow-repair/completed-milestone/M010"),
+    milestoneId: "M010",
+  });
+  const resultCancelled = repairMilestoneLifecycleShadowsForward({
+    invocation: invocation("shadow-repair/cancelled-milestone/M010C"),
+    milestoneId: "M010C",
+  });
+
+  assert.deepEqual(resultCompleted, { repaired: [], unresolved: [] });
+  assert.deepEqual(resultCancelled, { repaired: [], unresolved: [] });
+});
+
+test("repairMilestoneLifecycleShadowsForward runs task repairs before slice repairs", (t) => {
+  openFixture(t);
+  db().exec(`
+    INSERT INTO milestones (id, title, status, created_at)
+    VALUES ('M011', 'Ordering milestone', 'active', '2026-07-01T00:00:00.000Z');
+    INSERT INTO slices (milestone_id, id, title, status, created_at, completed_at, full_summary_md)
+    VALUES ('M011', 'S01', 'Slice 1', 'complete', '2026-07-01T00:00:00.000Z', '2026-07-01T00:00:00.000Z', '# S01 summary');
+    INSERT INTO tasks (
+      milestone_id, slice_id, id, title, status, completed_at,
+      one_liner, narrative, verification_result, full_summary_md
+    ) VALUES (
+      'M011', 'S01', 'T01', 'Task 1', 'complete',
+      '2026-07-02T00:00:00.000Z', 'Finished', 'Historical', 'passed', '# T01 summary'
+    );
+  `);
+
+  const result = repairMilestoneLifecycleShadowsForward({
+    invocation: invocation("shadow-repair/task-before-slice/M011"),
+    milestoneId: "M011",
+  });
+
+  assert.deepEqual(result.repaired, ["M011/S01/T01", "M011/S01"]);
+});
