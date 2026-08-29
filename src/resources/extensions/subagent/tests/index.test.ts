@@ -414,6 +414,7 @@ describe("runSingleAgentWithBackend semantic boundary", () => {
 					slotIndex: 0,
 					tabId: "w1:t9",
 					workspaceId: "w1",
+					discard: () => {},
 					release: () => {},
 				};
 			},
@@ -581,6 +582,48 @@ describe("runSingleAgentWithBackend semantic boundary", () => {
 			),
 			/Subagent was aborted/,
 		);
+	});
+
+	it("suppresses late backend updates after the parent AbortSignal fires", async (t) => {
+		const dir = mkdtempSync(join(tmpdir(), "gsd-common-runner-late-abort-"));
+		t.after(() => rmSync(dir, { recursive: true, force: true }));
+		const controller = new AbortController();
+		let updates = 0;
+		const backend: SubagentExecutionBackend = {
+			id: "late-abort-fixture",
+			isAvailable: () => true,
+			async execute(_request, callbacks) {
+				controller.abort();
+				callbacks.onStdoutLine(JSON.stringify({
+					type: "message_end",
+					message: makeAssistantMessage("late buffered final"),
+				}));
+				return { exitCode: 130, aborted: true, signal: "SIGINT" };
+			},
+		};
+
+		await assert.rejects(
+			__subagentLocalRunnerTestHooks.runSingleAgentWithBackend(
+				dir,
+				[makeAgent()],
+				"worker",
+				"late abort fixture",
+				undefined,
+				undefined,
+				controller.signal,
+				() => { updates += 1; },
+				(results) => ({
+					mode: "single",
+					agentScope: "both",
+					projectAgentsDir: null,
+					results,
+				}),
+				{ contextMode: "fresh" },
+				backend,
+			),
+			/Subagent was aborted/,
+		);
+		assert.equal(updates, 0);
 	});
 
 	it("surfaces external backend runtime errors instead of inventing a local fallback", async (t) => {

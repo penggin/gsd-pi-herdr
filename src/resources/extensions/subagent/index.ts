@@ -490,6 +490,11 @@ async function runSingleAgentWithBackend(
 	};
 
 	const emitUpdate = () => {
+		// Pi invalidates a tool's update listener as soon as its AbortSignal
+		// fires, while external backends may still relay final buffered JSONL
+		// during bounded cancellation. Keep parsing that evidence, but never
+		// invoke a stale UI listener after cancellation.
+		if (signal?.aborted) return;
 		if (onUpdate) {
 			onUpdate({
 				content: [{ type: "text", text: getFinalOutput(currentResult.messages) || "(running...)" }],

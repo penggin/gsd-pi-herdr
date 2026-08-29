@@ -5,7 +5,7 @@ import {
   openSync,
   writeSync,
 } from "node:fs";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import type {
   HerdrWorkerActivityV1,
   HerdrWorkerArtifactPaths,
@@ -58,6 +58,9 @@ export interface HerdrWorkerTerminationOptions {
   terminateGraceMs?: number;
   platform?: NodeJS.Platform;
   sendSignal?: (pid: number, signal: NodeJS.Signals) => void;
+  sendDescendantSignal?: (pid: number, signal: NodeJS.Signals) => void;
+  listDescendants?: (pid: number) => readonly number[];
+  isProcessAlive?: (pid: number) => boolean;
   killWindowsTree?: (pid: number) => Promise<void>;
   wait?: (ms: number) => Promise<void>;
 }
@@ -276,18 +279,103 @@ export async function terminateHerdrWorkerProcessGroup(
     return;
   }
   const sendSignal = options.sendSignal ?? sendProcessGroupSignal;
+  const sendDescendantSignal = options.sendDescendantSignal ?? sendProcessSignal;
+  const listDescendants = options.listDescendants ?? listPosixDescendants;
+  const isProcessAlive = options.isProcessAlive ?? isPosixProcessAlive;
   const wait = options.wait ?? delay;
+  const knownDescendants = new Set<number>();
+  const refreshDescendants = () => {
+    try {
+      for (const descendant of listDescendants(pid)) {
+        if (Number.isSafeInteger(descendant) && descendant > 1 && descendant !== pid && descendant !== process.pid) {
+          knownDescendants.add(descendant);
+        }
+      }
+    } catch {
+      // Process-tree inspection is best effort. The detached root process
+      // group remains the minimum cancellation boundary.
+    }
+  };
+  const stillRunning = () => {
+    for (const descendant of knownDescendants) {
+      if (!isProcessAlive(descendant)) knownDescendants.delete(descendant);
+    }
+    return !isClosed() || knownDescendants.size > 0;
+  };
+  const signalTree = (signal: NodeJS.Signals) => {
+    // Snapshot descendants before signalling the leader. Some tool runtimes
+    // create their own process groups; once the JSON child exits those
+    // descendants are reparented and can no longer be discovered by PPID.
+    refreshDescendants();
+    for (const descendant of knownDescendants) {
+      if (!isProcessAlive(descendant)) continue;
+      try { sendDescendantSignal(descendant, signal); } catch { /* process may already be gone */ }
+    }
+    if (!isClosed()) {
+      try { sendSignal(pid, signal); } catch { /* process group may already be gone */ }
+    }
+  };
 
-  if (isClosed()) return;
-  try { sendSignal(pid, "SIGINT"); } catch { /* process may already be gone */ }
-  if (await waitUntilClosed(isClosed, interruptGraceMs, wait)) return;
-  try { sendSignal(pid, "SIGTERM"); } catch { /* process may already be gone */ }
-  if (await waitUntilClosed(isClosed, terminateGraceMs, wait)) return;
-  try { sendSignal(pid, "SIGKILL"); } catch { /* best effort final escalation */ }
+  refreshDescendants();
+  if (!stillRunning()) return;
+  signalTree("SIGINT");
+  if (await waitUntilClosed(stillRunning, interruptGraceMs, wait)) return;
+  signalTree("SIGTERM");
+  if (await waitUntilClosed(stillRunning, terminateGraceMs, wait)) return;
+  signalTree("SIGKILL");
+  await waitUntilClosed(stillRunning, Math.min(1000, terminateGraceMs), wait);
 }
 
 function sendProcessGroupSignal(pid: number, signal: NodeJS.Signals): void {
   process.kill(-pid, signal);
+}
+
+function sendProcessSignal(pid: number, signal: NodeJS.Signals): void {
+  process.kill(pid, signal);
+}
+
+function isPosixProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+function listPosixDescendants(rootPid: number): number[] {
+  const result = spawnSync("ps", ["-axo", "pid=,ppid="], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  if (result.status !== 0 || typeof result.stdout !== "string") return [];
+
+  const children = new Map<number, number[]>();
+  for (const line of result.stdout.split(/\r?\n/)) {
+    const match = line.trim().match(/^(\d+)\s+(\d+)$/);
+    if (!match) continue;
+    const childPid = Number(match[1]);
+    const parentPid = Number(match[2]);
+    const siblings = children.get(parentPid) ?? [];
+    siblings.push(childPid);
+    children.set(parentPid, siblings);
+  }
+
+  const descendants: Array<{ pid: number; depth: number }> = [];
+  const seen = new Set<number>([rootPid]);
+  const pending = (children.get(rootPid) ?? []).map((pid) => ({ pid, depth: 1 }));
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    if (seen.has(current.pid)) continue;
+    seen.add(current.pid);
+    descendants.push(current);
+    for (const childPid of children.get(current.pid) ?? []) {
+      pending.push({ pid: childPid, depth: current.depth + 1 });
+    }
+  }
+  return descendants
+    .sort((left, right) => right.depth - left.depth || right.pid - left.pid)
+    .map((entry) => entry.pid);
 }
 
 function forceKillWindowsProcessTree(pid: number): Promise<void> {
@@ -312,19 +400,19 @@ function forceKillWindowsProcessTree(pid: number): Promise<void> {
 }
 
 async function waitUntilClosed(
-  isClosed: () => boolean,
+  isRunning: () => boolean,
   timeoutMs: number,
   wait: (ms: number) => Promise<void>,
 ): Promise<boolean> {
   const step = Math.max(10, Math.min(100, timeoutMs));
   let elapsed = 0;
   while (elapsed < timeoutMs) {
-    if (isClosed()) return true;
+    if (!isRunning()) return true;
     const next = Math.min(step, timeoutMs - elapsed);
     await wait(next);
     elapsed += next;
   }
-  return isClosed();
+  return !isRunning();
 }
 
 function openPrivateOutput(path: string): number {

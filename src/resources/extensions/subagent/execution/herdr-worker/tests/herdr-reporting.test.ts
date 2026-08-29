@@ -53,6 +53,7 @@ describe("Herdr worker semantic reporting", () => {
     await reporter.reportFinal("completed");
     assert.deepEqual(calls.map((call) => call.method), ["metadata", "agent", "agent", "metadata"]);
     assert.ok(calls.every((call, index) => index === 0 || call.seq > calls[index - 1].seq));
+    assert.equal(((calls[0].value as any).tokens as any).outcome, null);
     assert.deepEqual((calls[1].value as any).state, "working");
     assert.deepEqual((calls[2].value as any).state, "idle");
   });

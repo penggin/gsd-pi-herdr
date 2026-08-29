@@ -20,6 +20,7 @@ import {
   readHerdrWorkerEnvAndDelete,
   readHerdrWorkerExit,
   readHerdrWorkerLaunchSpec,
+  readHerdrWorkerState,
   resolveHerdrWorkerArtifactPaths,
   writeHerdrWorkerExit,
   writeHerdrWorkerHeartbeat,
@@ -148,6 +149,13 @@ describe("Herdr worker artifact contract v1", () => {
       lastActivity: { kind: "tool", label: "read file" },
     });
     assert.equal(JSON.parse(readFileSync(paths.statePath, "utf8")).status, "working");
+    assert.deepEqual(readHerdrWorkerState(paths), {
+      schemaVersion: 1,
+      status: "working",
+      updatedAt: "2026-08-30T00:00:01.000Z",
+      pid: 10,
+      lastActivity: { kind: "tool", label: "read file" },
+    });
 
     writeHerdrWorkerHeartbeat(paths, {
       schemaVersion: 1,

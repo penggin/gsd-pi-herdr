@@ -31,7 +31,9 @@ export class HerdrWorkerReporter {
     return this.enqueue(async () => {
       if (!this.client.isAvailable()) return;
       const title = bounded(redactSensitiveText(`${this.spec.trackingName ?? this.spec.childId} / ${this.spec.agent}`), 96);
-      const tokens: Record<string, string> = {};
+      // Metadata tokens are merged by Herdr. Explicitly clear the prior
+      // execution's terminal outcome before a retained pane starts new work.
+      const tokens: Record<string, string | null> = { outcome: null };
       if (this.spec.model) tokens.model = bounded(redactSensitiveText(this.spec.model), 96);
       if (this.spec.thinking) tokens.thinking = bounded(redactSensitiveText(this.spec.thinking), 32);
       await this.client.reportMetadata(this.nextSeq(), {

@@ -281,6 +281,51 @@ export function readHerdrWorkerExit(paths: HerdrWorkerArtifactPaths): HerdrWorke
   };
 }
 
+export function readHerdrWorkerState(paths: HerdrWorkerArtifactPaths): HerdrWorkerStateV1 {
+  const runtimeRoot = resolve(paths.runtimeRoot);
+  assertSafeWorkerDirectoryChain(runtimeRoot, paths.workerDir);
+  if (dirname(resolve(paths.statePath)) !== resolve(paths.workerDir) || basename(paths.statePath) !== "state.json") {
+    throw new Error("Herdr worker state artifact must be the worker-local state.json");
+  }
+  assertRegularPrivateFile(paths.statePath, "state artifact");
+  const value = parseJsonFile(paths.statePath, "state artifact");
+  if (!isRecord(value)) throw new Error("Invalid Herdr worker state artifact");
+  assertSchemaVersion(value.schemaVersion, "state.json");
+  const statuses: readonly HerdrWorkerStatus[] = [
+    "queued", "starting", "working", "retrying", "blocked",
+    "completed", "failed", "aborted", "orphaned",
+  ];
+  if (typeof value.status !== "string" || !statuses.includes(value.status as HerdrWorkerStatus)) {
+    throw new Error("Invalid Herdr worker state status");
+  }
+  const updatedAt = requireString(value.updatedAt, "state.updatedAt");
+  assertIsoTimestamp(updatedAt, "state.updatedAt");
+  const pid = optionalPositivePid(value.pid, "state.pid");
+  const childPid = optionalPositivePid(value.childPid, "state.childPid");
+  const paneId = value.paneId === undefined ? undefined : requireString(value.paneId, "state.paneId");
+  let lastActivity: HerdrWorkerActivityV1 | undefined;
+  if (value.lastActivity !== undefined) {
+    if (!isRecord(value.lastActivity)) throw new Error("Invalid Herdr worker state activity");
+    const kinds: readonly HerdrWorkerActivityV1["kind"][] = ["status", "tool", "retry", "error"];
+    if (typeof value.lastActivity.kind !== "string" || !kinds.includes(value.lastActivity.kind as HerdrWorkerActivityV1["kind"])) {
+      throw new Error("Invalid Herdr worker state activity kind");
+    }
+    lastActivity = {
+      kind: value.lastActivity.kind as HerdrWorkerActivityV1["kind"],
+      label: requireString(value.lastActivity.label, "state.lastActivity.label"),
+    };
+  }
+  return {
+    schemaVersion: HERDR_WORKER_SCHEMA_VERSION,
+    status: value.status as HerdrWorkerStatus,
+    updatedAt,
+    ...(pid ? { pid } : {}),
+    ...(childPid ? { childPid } : {}),
+    ...(paneId ? { paneId } : {}),
+    ...(lastActivity ? { lastActivity } : {}),
+  };
+}
+
 export function readHerdrWorkerLaunchSpec(
   launchPath: string,
   runtimeRoot: string,
@@ -369,6 +414,14 @@ function validateLaunchSpec(value: unknown): HerdrWorkerLaunchSpecV1 {
     exitPath: requireString(value.exitPath, "exitPath"),
     envPath: requireString(value.envPath, "envPath"),
   };
+}
+
+function optionalPositivePid(value: unknown, label: string): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`Invalid ${label}`);
+  }
+  return value;
 }
 
 function optionalStringProperty(

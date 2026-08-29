@@ -241,6 +241,46 @@ describe("internal Herdr worker runner", () => {
     assert.equal(isPidAlive(pids.leader), false);
     assert.equal(isPidAlive(pids.grandchild), false);
   });
+
+  it("terminates a real descendant that creates a separate POSIX process group", { skip: process.platform === "win32" }, async () => {
+    tempRoot ??= mkdtempSync(join(tmpdir(), "gsd-herdr-worker-escaped-group-"));
+    const marker = join(tempRoot, "pids.json");
+    const scriptPath = join(tempRoot, "escaped-group.mjs");
+    writeFileSync(scriptPath, [
+      "import { spawn } from 'node:child_process';",
+      "import { writeFileSync } from 'node:fs';",
+      "const marker = process.argv[2];",
+      "process.on('SIGINT', () => {});",
+      "process.on('SIGTERM', () => {});",
+      "if (process.env.GSD_ESCAPED_GRANDCHILD === '1') { setInterval(() => {}, 1000); }",
+      "else {",
+      "  const grand = spawn(process.execPath, [process.argv[1], marker], { detached: true, env: { ...process.env, GSD_ESCAPED_GRANDCHILD: '1' }, stdio: 'ignore' });",
+      "  writeFileSync(marker, JSON.stringify({ leader: process.pid, grandchild: grand.pid }));",
+      "  setInterval(() => {}, 1000);",
+      "}",
+    ].join("\n"));
+    const leader = spawn(process.execPath, [scriptPath, marker], { detached: true, stdio: "ignore" });
+    let leaderClosed = false;
+    leader.once("close", () => { leaderClosed = true; });
+    await waitFor(() => existsSync(marker), 2000);
+    const pids = JSON.parse(readFileSync(marker, "utf8")) as { leader: number; grandchild: number };
+    assert.equal(pids.leader, leader.pid);
+
+    try {
+      await terminateHerdrWorkerProcessGroup(leader.pid!, () => leaderClosed, {
+        interruptGraceMs: 30,
+        terminateGraceMs: 30,
+      });
+      await waitFor(() => leaderClosed, 1000);
+      await waitFor(() => !isPidAlive(pids.grandchild), 2000);
+      assert.equal(isPidAlive(pids.leader), false);
+      assert.equal(isPidAlive(pids.grandchild), false);
+    } finally {
+      for (const target of [pids.grandchild, pids.leader]) {
+        try { process.kill(target, "SIGKILL"); } catch { /* already gone */ }
+      }
+    }
+  });
 });
 
 function noOpReporter() {

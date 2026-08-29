@@ -33,6 +33,14 @@ class FakeHerdrPoolClient {
 		for (const paneId of paneIds) this.panes.push({ pane_id: paneId, workspace_id: "w1", tab_id: tabId });
 	}
 
+	closePane(paneId: string): void {
+		const pane = this.panes.find((item) => item.pane_id === paneId);
+		this.panes = this.panes.filter((item) => item.pane_id !== paneId);
+		if (pane && !this.panes.some((item) => item.tab_id === pane.tab_id)) {
+			this.tabs = this.tabs.filter((item) => item.tab_id !== pane.tab_id);
+		}
+	}
+
 	getEnvironment(): HerdrEnvironment {
 		return this.environment;
 	}
@@ -154,6 +162,19 @@ describe("Herdr worker pane pool", () => {
 		second.release("completed");
 		const retry = await workers.reserve({ affinityKey: "dispatch:child-0" });
 		assert.equal(retry.paneId, first.paneId);
+	});
+
+	it("discards a vanished leased pane and recreates capacity on the next reservation", async () => {
+		const client = new FakeHerdrPoolClient();
+		const workers = pool(client);
+		const lost = await workers.reserve({ affinityKey: "lost" });
+		client.closePane(lost.paneId);
+		lost.discard();
+		assert.deepEqual(workers.getSnapshot().slots, []);
+
+		const replacement = await workers.reserve({ affinityKey: "replacement" });
+		assert.notEqual(replacement.paneId, lost.paneId);
+		assert.equal(client.requests.filter((request) => request.method === "tab.create").length, 2);
 	});
 
 	it("reuses an existing matching worker tab after a runtime/session reload", async () => {

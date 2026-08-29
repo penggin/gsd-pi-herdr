@@ -1,8 +1,8 @@
 # GSD–Herdr Living Plan
 
-> **Status:** M0–M3 complete; M4 implementation checkpoint awaiting live E2E validation
+> **Status:** M0–M4 complete; M5 ready
 > **Last updated:** 2026-08-30
-> **Current milestone:** M4 — Herdr backend and persistent worker pane pool validation
+> **Current milestone:** M5 — Herdr operations plugin and diagnostics
 > **Canonical rule:** Every Herdr-integration development session starts by reading this file and ends by updating it.
 
 ## 1. Mission
@@ -194,7 +194,7 @@ Deferred existing behavior: chain-mode `isolated` handling is tracked separately
 
 ### M4 — Herdr backend and persistent worker pane pool
 
-**Status:** `IN VALIDATION`
+**Status:** `COMPLETE`
 
 - [x] M4.1 Create/reuse one worker tab per root GSD session.
 - [x] M4.2 Create deterministic one/two/four-slot layouts.
@@ -207,13 +207,13 @@ Deferred existing behavior: chain-mode `isolated` handling is tracked separately
 - [x] M4.9 Fail visibly when required Herdr runtime is unavailable/ambiguous.
 - [x] M4.10 Add Local-vs-Herdr result parity, cancellation, pane-loss, and >4-task queue tests.
 
-Implementation checkpoint: M4.1–M4.10 are implemented and covered by focused tests, but M4 exit remains open until the complete parent-GSD → HerdrBackend → real Herdr pane → private worker path passes a live v0.8.2 E2E/canary. Do not start M5 as if M4 were complete before that validation.
+Live closeout: the complete parent-GSD → HerdrBackend → real Herdr pane → private worker path passed against official Herdr v0.8.2 on macOS arm64, including single result/usage parity, affinity reuse, five-task queueing at four-pane capacity, cancellation, pane loss, and post-loss capacity recovery. Detailed evidence is recorded in the 2026-08-30 M4 closeout progress entry below.
 
 M4 exit = first practically usable monitored Herdr-subagent runtime proven in a real Herdr session.
 
 ### M5 — Herdr operations plugin and diagnostics
 
-**Status:** `NOT STARTED`
+**Status:** `READY`
 
 - [ ] M5.1 Add `integrations/herdr/plugin/` manifest.
 - [ ] M5.2 Add status/dashboard action.
@@ -287,10 +287,9 @@ Structural gaps discovered:
 
 ## 9. Current execution queue
 
-1. **M4 live E2E:** run the actual downstream GSD TUI in official Herdr v0.8.2 with `herdr.enabled: true` and prove a real single subagent dispatch goes through `HerdrBackend`, creates/reuses the worker tab, runs `__herdr-worker`, relays JSONL into the common semantic parser, and returns the same user-visible result as LocalBackend.
-2. Validate root focus preservation and worker metadata/state while the real child is active, then confirm successful pane retention/reuse.
-3. Exercise real cancellation plus at least one parallel batch beyond four tasks to prove queueing/slot reuse against Herdr rather than only the fake API client.
-4. Re-run changed-source/compiled tests, `build:core`, and `validate-pack`; only then mark M4 `COMPLETE` and enter M5.
+1. **M5.1:** inspect the official Herdr v0.8.2 plugin manifest/schema plus existing repository integration packaging, then add the minimal `integrations/herdr/plugin/` manifest without moving worker execution or orchestration authority into the plugin.
+2. M5.2–M5.4: expose status/dashboard, focus-worker/focus-failed-worker, and explicit retained-worker cleanup actions over the existing backend/runtime state.
+3. M5.5–M5.7: add bounded `session.snapshot` reconciliation, stale-authority release, and explicit orphan/missing-pane presentation before beginning M6 durability work.
 
 ## 10. Progress log
 
@@ -452,6 +451,30 @@ Structural gaps discovered:
 - M3 exit publication was tightened so a pane is not considered reusable until final ordered Herdr reporting has settled.
 - Current focused validation for this checkpoint: **57/57 pass** across Herdr pane pool/backend/resolver, Local↔Herdr semantic parity, subagent characterization, launch, and changed M3 artifact/process tests; `typecheck:extensions` passes.
 - This is intentionally a checkpoint, not M4 closeout: the full parent GSD → HerdrBackend → real Herdr worker E2E has not yet been run. The next agent must perform that live v0.8.2 validation before marking M4 complete or starting M5.
+
+### 2026-08-30 — M4 real Herdr v0.8.2 live E2E and closeout
+
+- Ran the official local `herdr 0.8.2` binary (protocol 20) on macOS arm64 as a headless server with isolated XDG config/state/data/cache roots, a private socket, and an isolated `GSD_HOME`; no permanent Herdr or GSD preferences were modified.
+- Launched the actual downstream `dist/loader.js` TUI in root pane `w1:p1` with `herdr.enabled=true` / `required=true`. Herdr reported `agent=gsd`, root lifecycle `idle ↔ working`, and root focus remained on `w1:p1` through background worker-tab creation and every dispatch.
+- Public `subagent` single dispatch created `GSD Workers · 01f930be` and worker pane `w1:p2`, ran `dist/loader.js __herdr-worker <launch.json>`, returned exact `E2E_SINGLE_OK`, and surfaced the common runner's one-turn usage (`input=33219`, `output=9`, `cost=0.033273`, `contextTokens=33228`). The worker pane showed only bounded `working` / `turn settled` activity; raw JSON and token deltas remained in `stdout.jsonl`.
+- The single worker bundle had owner-only `0600` files, consumed/deleted `env.json`, and produced `launch.json`, `stdout.jsonl`, `stderr.log`, `state.json`, `heartbeat.json`, and immutable `exit.json`. Herdr finished the pane as effective `done` with `tokens.outcome=completed`.
+- A two-step public chain reused the same `w1:p2` affinity slot only after the preceding worker's final reporting/exit evidence settled. Step 1 returned `CHAIN_ONE`; step 2 received it through `{previous}` and returned `CHAIN_TWO`, with common aggregated usage in the parent.
+- A public five-task parallel batch held the worker tab at exactly four panes. At t+2/t+6 only four new launch artifacts existed and all four panes were active; the fifth launch artifact appeared 19 seconds after the first four, only after a successful slot became reclaimable. The parent returned `PARALLEL_1` through `PARALLEL_5`, 10 turns, and aggregated usage with no duplicate execution.
+- The first real cancellation exposed a macOS process-tree gap: a tool-created `sleep 120` moved to its own process group and survived the JSON child's detached group kill. Cancellation now snapshots and tracks the complete POSIX descendant tree before signalling the leader, re-signals escaped descendants across `SIGINT → SIGTERM → SIGKILL`, and waits boundedly for tracked PIDs. A new real-process regression covers a descendant that creates a separate process group.
+- Live cancellation also exposed two visibility/race issues and fixed both: retained-pane metadata now sends `tokens.outcome=null` at initialization so an old completed outcome is not shown during new work; the common semantic runner continues parsing late buffered JSONL after AbortSignal but suppresses its invalidated UI update callback, preventing `Agent listener invoked outside active run` crashes.
+- Corrected live cancellation on worker `w1:p7` terminated runner PID `41315`, JSON child PID `41316`, and escaped `sleep 120` PID `41787`; `exit.json` recorded `aborted=true`, the run store recorded canonical `Subagent was aborted` / `status=interrupted`, the parent TUI remained alive and `idle`, and no new crash log appeared.
+- The first real pane-close test exposed another detached-child gap: closing the PTY killed the internal runner but left its detached JSON child/tool process. `HerdrBackend` now validates owner-only `state.json`, terminates the recorded child tree on pane loss, and lease-safely discards the vanished pool slot while retaining failure artifacts/results.
+- Corrected pane loss on `w1:p8` terminated runner PID `53460`, JSON child PID `53465`, and escaped `sleep 120` PID `53778`; the parent returned explicit `Herdr worker pane disappeared before final exit evidence was produced` without hanging and remained alive/idle. A same-root follow-up recreated the worker tab/pane as `w1:t6` / `w1:p9` and returned exact `PANE_RECOVERY_OK`, proving capacity recovery after physical pane loss.
+- Final validation after the fixes:
+  - complete subagent/execution/worker source regression: **107/107 pass**;
+  - changed-source compiled gate: **48/48 pass**;
+  - `pnpm run typecheck:extensions`: pass;
+  - `pnpm run build:core`: pass;
+  - `pnpm run build:web-host`: pass (required to stage the standalone web artifact for a clean checkout);
+  - `NPM_CONFIG_USERCONFIG=/dev/null pnpm run validate-pack`: pass with **`Package is installable. Safe to publish.`**; the temporary config override only bypassed this machine's unrelated user-level npm `allow-scripts` setting;
+  - `git diff --check`: pass after the final documentation update.
+- Remaining unrelated behavior is unchanged: chain top-level `isolated` handling stays outside M4. No Herdr core fork or orchestration-authority transfer was introduced.
+- **M4 is complete. M5 is ready. Exact next task: M5.1 — validate the official v0.8.2 plugin manifest/schema and add the minimal `integrations/herdr/plugin/` manifest.**
 
 ## 11. Working-session protocol
 

@@ -15,6 +15,7 @@ import type { SubagentBackendExecutionRequest } from "../types.js";
 
 class FakePool {
 	released: HerdrWorkerReleaseOutcome[] = [];
+	discarded = 0;
 	reserved: string[] = [];
 	async reserve(request: { affinityKey?: string } = {}): Promise<HerdrPaneReservation> {
 		this.reserved.push(request.affinityKey ?? "");
@@ -24,6 +25,7 @@ class FakePool {
 			tabId: "w1:t9",
 			workspaceId: "w1",
 			affinityKey: request.affinityKey,
+			discard: () => { this.discarded += 1; },
 			release: (outcome) => this.released.push(outcome),
 		};
 	}
@@ -201,13 +203,25 @@ describe("HerdrBackend", () => {
 
 	it("fails visibly when the reserved worker pane disappears before exit evidence", async () => {
 		const { gsdHome, cwd, pool, client } = fixture();
+		const terminated: number[] = [];
 		const backend = createHerdrSubagentBackend({
 			rootSessionId: "root-session", cwd, gsdHome, client, pool,
 			gsdBinPath: "/opt/gsd/loader.js",
 			pollIntervalMs: 5,
 			paneProbeIntervalMs: 10,
 			waitTimeoutMs: 500,
-			runCli: async () => {
+			terminateProcessTree: async (pid) => { terminated.push(pid); },
+			runCli: async (args) => {
+				const launchPath = String(args.at(-1));
+				const spec = JSON.parse(readFileSync(launchPath, "utf8"));
+				writeFileSync(spec.statePath, JSON.stringify({
+					schemaVersion: 1,
+					status: "working",
+					updatedAt: new Date().toISOString(),
+					pid: 31337,
+					childPid: 424242,
+					paneId: "w1:p9",
+				}), { mode: 0o600 });
 				setTimeout(() => { client.paneAvailable = false; }, 15);
 				return cliResult(true);
 			},
@@ -216,5 +230,7 @@ describe("HerdrBackend", () => {
 		assert.equal(result.exitCode, 1);
 		assert.match(result.runtimeError ?? "", /pane disappeared/);
 		assert.deepEqual(pool.released, ["failed"]);
+		assert.deepEqual(terminated, [424242]);
+		assert.equal(pool.discarded, 1);
 	});
 });

@@ -46,6 +46,7 @@ export interface HerdrPaneReservation {
 	workspaceId: string;
 	affinityKey?: string;
 	release(outcome: HerdrWorkerReleaseOutcome): void;
+	discard(): void;
 }
 
 interface MutableSlot {
@@ -243,6 +244,15 @@ export class HerdrWorkerPanePool {
 			tabId,
 			workspaceId,
 			...(slot.affinityKey ? { affinityKey: slot.affinityKey } : {}),
+			discard: () => {
+				if (released || slot.leaseId !== leaseId) return;
+				released = true;
+				const slotIndex = this.slots.indexOf(slot);
+				if (slotIndex >= 0) this.slots.splice(slotIndex, 1);
+				this.slots.forEach((item, index) => { item.index = index; });
+				if (this.slots.length === 0) this.tabId = undefined;
+				this.scheduleDrain();
+			},
 			release: (outcome) => {
 				if (released || slot.leaseId !== leaseId) return;
 				released = true;

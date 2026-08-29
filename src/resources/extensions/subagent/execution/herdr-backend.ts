@@ -20,11 +20,13 @@ import {
 	createHerdrWorkerLaunchSpec,
 	herdrWorkerRuntimeRoot,
 	readHerdrWorkerExit,
+	readHerdrWorkerState,
 	resolveHerdrWorkerArtifactPaths,
 	writeHerdrWorkerLaunchBundle,
 	type HerdrWorkerArtifactPaths,
 } from "./herdr-worker/artifacts.js";
 import { JsonlLineFramer } from "./herdr-worker/jsonl.js";
+import { terminateHerdrWorkerProcessGroup } from "./herdr-worker/runner.js";
 import type {
 	SubagentBackendCallbacks,
 	SubagentBackendExecutionRequest,
@@ -59,6 +61,7 @@ export interface HerdrBackendOptions {
 	pollIntervalMs?: number;
 	cancelEvidenceTimeoutMs?: number;
 	paneProbeIntervalMs?: number;
+	terminateProcessTree?: typeof terminateHerdrWorkerProcessGroup;
 }
 
 interface LiveHerdrExecution {
@@ -252,11 +255,13 @@ async function waitForWorkerEvidence(
 			nextPaneProbeAt = now + paneProbeIntervalMs;
 			const pane = await probePane(client, reservation.paneId);
 			if (!pane) {
+				const cleanupError = await terminateDetachedWorkerAfterPaneLoss(paths, options);
+				reservation.discard();
 				finalizeRelays();
 				return {
 					exitCode: 1,
 					aborted: false,
-					runtimeError: "Herdr worker pane disappeared before final exit evidence was produced",
+					runtimeError: `Herdr worker pane disappeared before final exit evidence was produced${cleanupError ? `; detached worker cleanup failed: ${cleanupError}` : ""}`,
 				};
 			}
 		}
@@ -283,6 +288,32 @@ async function waitForWorkerEvidence(
 		}
 
 		await delay(pollIntervalMs);
+	}
+}
+
+async function terminateDetachedWorkerAfterPaneLoss(
+	paths: HerdrWorkerArtifactPaths,
+	options: HerdrBackendOptions,
+): Promise<string | undefined> {
+	if (!existsSync(paths.statePath)) return undefined;
+	try {
+		const state = readHerdrWorkerState(paths);
+		if (!state.childPid) return undefined;
+		const childPid = state.childPid;
+		const terminate = options.terminateProcessTree ?? terminateHerdrWorkerProcessGroup;
+		await terminate(childPid, () => !isProcessAlive(childPid));
+		return isProcessAlive(childPid) ? `process ${childPid} remained alive after bounded termination` : undefined;
+	} catch (error) {
+		return errorMessage(error);
+	}
+}
+
+function isProcessAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (error) {
+		return (error as NodeJS.ErrnoException).code === "EPERM";
 	}
 }
 
