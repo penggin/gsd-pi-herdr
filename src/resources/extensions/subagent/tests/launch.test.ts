@@ -1,8 +1,7 @@
 // gsd-pi + Subagent launch module regression tests.
 
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, afterEach } from "node:test";
@@ -14,28 +13,12 @@ import {
 	SUBAGENT_CHILD_ENV_VAR,
 	SUBAGENT_CHILD_ENV_VALUE,
 	SUBAGENT_RUNTIME_CONTRACT_ROOT_ENV_VAR,
-	buildShellEnvAssignments,
 	buildSubagentProcessEnv,
 	createSubagentLaunchPlan,
 	isSubagentChildProcess,
 	resolveSubagentProjectRoot,
 	resolveSubagentSessionArgs,
 } from "../launch.js";
-
-// The shell-escaping test shells out to an external `bash` binary, which is
-// commonly absent on Windows CI (and would throw ENOENT). Resolve a skip
-// reason once so the suite stays portable without depending on bash.
-function resolveBashSkipReason(): string | undefined {
-	if (process.platform === "win32") return "bash is not available on Windows";
-	try {
-		execFileSync("bash", ["-c", "true"], { stdio: "ignore" });
-		return undefined;
-	} catch {
-		return "bash binary is not available";
-	}
-}
-
-const BASH_SKIP_REASON = resolveBashSkipReason();
 
 function makeAgent(overrides: Partial<AgentConfig> = {}): AgentConfig {
 	return {
@@ -110,10 +93,6 @@ describe("subagent launch module", () => {
 
 		assert.equal(plan.env.GSD_PROJECT_ROOT, undefined);
 		assert.equal(plan.env[SUBAGENT_RUNTIME_CONTRACT_ROOT_ENV_VAR], dir);
-		assert.deepEqual(buildShellEnvAssignments(plan.env), [
-			`${SUBAGENT_CHILD_ENV_VAR}='${SUBAGENT_CHILD_ENV_VALUE}'`,
-			`${SUBAGENT_RUNTIME_CONTRACT_ROOT_ENV_VAR}='${dir}'`,
-		]);
 	});
 
 	it("does not propagate parent authority through a symlinked child path", () => {
@@ -174,25 +153,6 @@ describe("subagent launch module", () => {
 
 		assert.equal(plan.cwd, externalRepo);
 		assert.equal(plan.env[SUBAGENT_RUNTIME_CONTRACT_ROOT_ENV_VAR], undefined);
-	});
-
-	it("shell-escapes cmux environment values without command execution", { skip: BASH_SKIP_REASON }, () => {
-		dir = mkdtempSync(join(tmpdir(), "gsd-subagent-shell-env-"));
-		const marker = join(dir, "injected");
-		const projectRoot = `space $HOME $(touch ${marker}) \`touch ${marker}\` 'quote'\nnext`;
-		const assignments = buildShellEnvAssignments({
-			[SUBAGENT_CHILD_ENV_VAR]: SUBAGENT_CHILD_ENV_VALUE,
-			[SUBAGENT_RUNTIME_CONTRACT_ROOT_ENV_VAR]: projectRoot,
-		});
-
-		const output = execFileSync(
-			"bash",
-			["-lc", `env ${assignments.join(" ")} printenv ${SUBAGENT_RUNTIME_CONTRACT_ROOT_ENV_VAR}`],
-			{ encoding: "utf-8" },
-		);
-
-		assert.equal(output, `${projectRoot}\n`);
-		assert.equal(existsSync(marker), false);
 	});
 
 	it("propagates explicit authority to an isolated child checkout", () => {

@@ -457,4 +457,86 @@ describe("runSingleAgentWithBackend semantic boundary", () => {
 			/Subagent was aborted/,
 		);
 	});
+
+	it("surfaces external backend runtime errors instead of inventing a local fallback", async (t) => {
+		const dir = mkdtempSync(join(tmpdir(), "gsd-common-runner-runtime-error-"));
+		t.after(() => rmSync(dir, { recursive: true, force: true }));
+		const backend: SubagentExecutionBackend = {
+			id: "cmux-fixture",
+			isAvailable: () => true,
+			async execute() {
+				return {
+					exitCode: 1,
+					aborted: false,
+					runtimeError: "cmux submission is ambiguous; local fallback disabled",
+				};
+			},
+		};
+
+		const result = await __subagentLocalRunnerTestHooks.runSingleAgentWithBackend(
+			dir,
+			[makeAgent()],
+			"worker",
+			"external failure fixture",
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			(results) => ({
+				mode: "single",
+				agentScope: "both",
+				projectAgentsDir: null,
+				results,
+			}),
+			{ contextMode: "fresh" },
+			backend,
+		);
+
+		assert.equal(result.exitCode, 1);
+		assert.equal(result.stopReason, "error");
+		assert.equal(result.errorMessage, "cmux submission is ambiguous; local fallback disabled");
+		assert.equal(result.stderr, "cmux submission is ambiguous; local fallback disabled");
+	});
+
+	it("applies the phase-conflict guard before an external backend can execute", async (t) => {
+		const dir = mkdtempSync(join(tmpdir(), "gsd-common-runner-phase-external-"));
+		t.after(() => {
+			deactivateGSD();
+			rmSync(dir, { recursive: true, force: true });
+		});
+		activateGSD();
+		assert.equal(setCurrentPhase("plan-slice"), true);
+		let executeCalls = 0;
+		const backend: SubagentExecutionBackend = {
+			id: "cmux-fixture",
+			isAvailable: () => true,
+			async execute() {
+				executeCalls += 1;
+				return { exitCode: 0, aborted: false };
+			},
+		};
+
+		const result = await __subagentLocalRunnerTestHooks.runSingleAgentWithBackend(
+			dir,
+			[makeAgent({ conflictsWith: ["plan-slice"] })],
+			"worker",
+			"must not run",
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			(results) => ({
+				mode: "single",
+				agentScope: "both",
+				projectAgentsDir: null,
+				results,
+			}),
+			{ contextMode: "fresh" },
+			backend,
+		);
+
+		assert.equal(executeCalls, 0);
+		assert.equal(result.exitCode, 1);
+		assert.match(result.stderr, /conflicts with the active GSD phase "plan-slice"/);
+	});
 });

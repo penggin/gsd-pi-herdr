@@ -26,3 +26,16 @@ test("resolver accepts an injected local backend so caller routing is testable w
 
 	assert.equal(resolveSubagentExecutionBackend("resume", { local: fixture }), fixture);
 });
+
+test("resolver selects an explicitly preferred external backend without changing the local default", () => {
+	const preferred: SubagentExecutionBackend = {
+		id: "cmux-fixture",
+		isAvailable: () => true,
+		async execute() {
+			return { exitCode: 0, aborted: false };
+		},
+	};
+
+	assert.equal(resolveSubagentExecutionBackend("parallel", { preferred }), preferred);
+	assert.equal(resolveSubagentExecutionBackend("parallel"), localSubagentBackend);
+});

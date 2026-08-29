@@ -1,8 +1,8 @@
 # GSD–Herdr Living Plan
 
-> **Status:** M0–M1 complete; M2 subagent backend parity/refactor in progress
+> **Status:** M0–M2 complete; M3 internal Herdr worker runner ready
 > **Last updated:** 2026-08-30
-> **Current milestone:** M1 — Root GSD ↔ Herdr integration  
+> **Current milestone:** M3 — Internal Herdr worker runner
 > **Canonical rule:** Every Herdr-integration development session starts by reading this file and ends by updating it.
 
 ## 1. Mission
@@ -155,7 +155,7 @@ Exit criteria:
 
 ### M2 — Subagent execution backend abstraction
 
-**Status:** `IN PROGRESS`
+**Status:** `COMPLETE`
 
 **Goal:** Replace duplicated local/cmux execution semantics with one common child runner and runtime backends before Herdr worker execution is introduced.
 
@@ -168,17 +168,17 @@ Exit criteria:
 - [x] M2.7 Route chain through the common runner while preserving `{previous}`/stop-on-error semantics.
 - [x] M2.8 Route parallel/retry through the common runner while preserving concurrency/retry policy.
 - [x] M2.9 Route foreground single through resolver/common runner.
-- [ ] M2.10 Extract `CmuxBackend` and remove duplicate result/parsing pipeline.
-- [ ] M2.11 Reapply/revalidate `fix/cmux-split-cli` against the new backend.
-- [ ] M2.12 Remove raw JSON `tee`, normalize abort classification, and prevent runtime-specific silent fallback.
-- [ ] M2.13 Move cmux shell escaping/env composition out of general `launch.ts`.
-- [ ] M2.14 Add mode-to-backend, local parity, cmux regression, phase-conflict, shutdown, and cancellation tests.
+- [x] M2.10 Extract `CmuxBackend` and remove duplicate result/parsing pipeline.
+- [x] M2.11 Reapply/revalidate `fix/cmux-split-cli` against the new backend.
+- [x] M2.12 Remove raw JSON `tee`, normalize abort classification, and prevent runtime-specific silent fallback.
+- [x] M2.13 Move cmux shell escaping/env composition out of general `launch.ts`.
+- [x] M2.14 Add mode-to-backend, local parity, cmux regression, phase-conflict, shutdown, and cancellation tests.
 
 Deferred existing behavior: chain-mode `isolated` handling is tracked separately after pure parity extraction unless the refactor makes a fix unavoidable.
 
 ### M3 — Internal Herdr worker runner
 
-**Status:** `NOT STARTED`
+**Status:** `READY`
 
 - [ ] M3.1 Define versioned launch/state/heartbeat/exit artifacts.
 - [ ] M3.2 Add private/internal GSD Herdr-worker entrypoint receiving a validated spec path.
@@ -285,9 +285,9 @@ Structural gaps discovered:
 
 ## 9. Current execution queue
 
-1. **M2.10:** extract the existing cmux runtime mechanics into `CmuxBackend`, incorporating/revalidating the downstream cmux CLI fix instead of preserving stale command forms.
-2. Replace the remaining three `runSingleAgent()` calls, which now exist only inside legacy cmux create/send failure fallback, with explicit resolver/policy behavior; no backend may silently launch local after an ambiguous external launch.
-3. Once Local and Cmux both implement the common backend contract, run semantic parity/regression tests through both runtime fixtures before starting preference migration in M2.11.
+1. **M3.1:** define the versioned launch/state/heartbeat/exit artifact contract for one Herdr worker execution.
+2. **M3.2:** add the private/internal worker entrypoint that receives only a validated spec path and owns artifact lifecycle.
+3. Keep pane creation/backend policy out of M3.1–M3.2; M4 remains responsible for Herdr pane pooling and `herdr pane run` submission.
 
 ## 10. Progress log
 
@@ -398,7 +398,19 @@ Structural gaps discovered:
 - M2.8 parallel/retry and M2.9 foreground single now route their **local branches** through the common runner/resolver. Existing cmux-enabled branches remain the pre-M2 special pipeline until M2.10 extracts CmuxBackend; this is the only intentional exception to full backend convergence at this checkpoint.
 - After migration, the only remaining `runSingleAgent()` production calls are three legacy cmux fallback sites inside `runSingleAgentInCmuxSplit()` (split creation/command-submission failure paths). They are explicitly queued for M2.10 because silent fallback after external-launch ambiguity must be resolved as backend policy, not preserved accidentally.
 - Resolver/common-runner validation: all subagent + execution source tests **52/52 pass**, including M2.1 parity **9/9 unchanged**, resolver tests **2/2**, and `typecheck:extensions` pass.
-- **M2.10 CmuxBackend extraction and downstream CLI-fix integration is now the active work item.**
+- M2.10 extracted `CmuxBackend` and deleted the duplicate `runSingleAgentInCmuxSplit()` semantic pipeline. Foreground single and parallel/retry cmux execution now use the same `runSingleAgentWithBackend()` parser/usage/finalization path as LocalBackend.
+- M2.11 revalidated and absorbed the retained `fix/cmux-split-cli` behavior against current cmux CLI forms:
+  - surface enumeration uses `cmux tree` rather than removed `list-surfaces`;
+  - `new-split` consumes its returned `surface:N` identity directly rather than diffing surface lists;
+  - command submission uses `cmux send` rather than removed `send-surface`;
+  - cancellation uses `cmux send-key ... ctrl+c` rather than manually sending ETX.
+- M2.12 removed raw child JSON/stderr `tee` output from cmux panes. CmuxBackend writes machine output only to artifacts and shows bounded lifecycle text in the pane. Split creation failure and ambiguous command submission now fail visibly through `runtimeError`; no path silently launches a second local worker. Ambiguous submission triggers a best-effort interrupt of the reserved surface. AbortSignal cancellation returns backend `{ aborted: true }` and is normalized by the common runner to the existing `Subagent was aborted` rejection.
+- M2.13 moved cmux-specific shell environment quoting/composition out of general `launch.ts` and into `execution/cmux-backend.ts`; general launch planning no longer imports cmux runtime helpers.
+- M2.14 added/extended regression coverage for resolver preference, current cmux CLI command names, real-bash cmux artifact execution, no-`tee` pane commands, no-silent-fallback failures, abort normalization, external-backend phase-conflict gating, Local/Cmux execution registries, and session-shutdown cmux interrupt behavior.
+- The original M2.1 local characterization remains **9/9 unchanged** after Local/Cmux convergence. Focused M2/cmux tests are **52/52 pass**; the complete subagent + execution + cmux source suite is **76/76 pass**; the same compiled suite is **76/76 pass**; staged `test:changed:src` is **48/48 pass**; `typecheck:extensions` and `verify:extension-coverage` pass.
+- This Linux DevSpace does not provide a real `cmux` binary. M2 cmux mechanics are therefore validated with the current CLI contract fake plus a real bash execution fixture; real macOS cmux surface behavior remains a canary/E2E concern rather than an unverified claim here.
+- Existing chain-mode `isolated` behavior remains intentionally deferred; M2 did not mix that unrelated behavior fix into backend parity extraction.
+- **M2 is complete. M3.1 worker artifact contract is the next task.**
 
 ## 11. Working-session protocol
 

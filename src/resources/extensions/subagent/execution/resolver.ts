@@ -10,6 +10,7 @@ export type SubagentExecutionOperation =
 
 export interface SubagentBackendResolverOverrides {
 	local?: SubagentExecutionBackend;
+	preferred?: SubagentExecutionBackend;
 }
 
 /**
@@ -24,5 +25,5 @@ export function resolveSubagentExecutionBackend(
 	_operation: SubagentExecutionOperation,
 	overrides: SubagentBackendResolverOverrides = {},
 ): SubagentExecutionBackend {
-	return overrides.local ?? localSubagentBackend;
+	return overrides.preferred ?? overrides.local ?? localSubagentBackend;
 }

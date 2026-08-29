@@ -289,7 +289,9 @@ describe("CmuxClient stdio isolation", () => {
         "#!/usr/bin/env node",
         "const fs = require('node:fs');",
         `fs.appendFileSync(${JSON.stringify(logPath)}, JSON.stringify(process.argv.slice(2)) + '\\n');`,
-        "if (process.argv.includes('--json')) process.stdout.write(JSON.stringify({surfaces:[{id:'surface-1'}]}));",
+        "const args = process.argv.slice(2);",
+        "if (args[0] === 'tree') process.stdout.write('workspace:1\\n  surface:1\\n');",
+        "else if (args[0] === 'new-split') process.stdout.write('OK surface:17 workspace:1');",
         "else process.stdout.write('ok');",
       ].join("\n"),
       "utf-8",
@@ -311,18 +313,24 @@ describe("CmuxClient stdio isolation", () => {
       });
 
       client.setStatus("M001", "executing");
-      await client.listSurfaceIds();
+      assert.deepEqual(await client.listSurfaceIds(), ["surface:1"]);
+      assert.equal(await client.createSplit("right"), "surface:17");
+      assert.equal(await client.sendSurface("surface:17", "echo hello"), true);
+      assert.equal(await client.sendInterrupt("surface:17"), true);
 
       const calls = fs.readFileSync(logPath, "utf-8").trim().split("\n").map((line) => JSON.parse(line));
+      const commands = calls.map((call) => call[0]);
       const commandPrefixes = calls.map((call) => call.slice(0, 2));
       assert.ok(
         commandPrefixes.some((prefix) => JSON.stringify(prefix) === JSON.stringify(["set-status", "gsd"])),
         "set-status command should be invoked",
       );
-      assert.ok(
-        commandPrefixes.some((prefix) => JSON.stringify(prefix) === JSON.stringify(["list-surfaces", "--json"])),
-        "list-surfaces command should be invoked",
-      );
+      assert.ok(commands.includes("tree"), "tree command should be invoked");
+      assert.ok(commands.includes("new-split"), "new-split command should be invoked");
+      assert.ok(commands.includes("send"), "send command should be invoked");
+      assert.ok(commands.includes("send-key"), "send-key command should be invoked");
+      assert.ok(!commands.includes("list-surfaces"), "stale list-surfaces command must not be invoked");
+      assert.ok(!commands.includes("send-surface"), "stale send-surface command must not be invoked");
     } finally {
       process.env.PATH = originalPath;
       fs.rmSync(binDir, { recursive: true, force: true });
