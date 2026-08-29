@@ -232,6 +232,11 @@ export async function runHerdrWorker(
       ? "completed"
       : "failed";
   writeRuntimeArtifacts(finalStatus, lastActivity);
+  // Exit evidence is the backend's release/reuse boundary. Publish it only
+  // after the final Herdr lifecycle/metadata report has settled so a reusable
+  // pane cannot start a replacement worker while the previous source is still
+  // finishing its visibility updates.
+  await safeReporterCall(() => reporter.reportFinal(finalStatus));
   writeHerdrWorkerExit(paths, {
     schemaVersion: HERDR_WORKER_SCHEMA_VERSION,
     exitCode: childExitCode,
@@ -239,7 +244,6 @@ export async function runHerdrWorker(
     aborted,
     completedAt: now().toISOString(),
   });
-  await safeReporterCall(() => reporter.reportFinal(finalStatus));
 
   if (aborted) return receivedSignal === "SIGTERM" ? 143 : 130;
   return normalizeProcessExitCode(childExitCode);

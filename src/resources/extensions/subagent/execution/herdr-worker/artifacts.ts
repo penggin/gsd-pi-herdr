@@ -253,6 +253,34 @@ export function writeHerdrWorkerExit(paths: HerdrWorkerArtifactPaths, exit: Herd
   writePrivateJsonImmutable(paths.exitPath, exit);
 }
 
+export function readHerdrWorkerExit(paths: HerdrWorkerArtifactPaths): HerdrWorkerExitV1 {
+  const runtimeRoot = resolve(paths.runtimeRoot);
+  assertSafeWorkerDirectoryChain(runtimeRoot, paths.workerDir);
+  if (dirname(resolve(paths.exitPath)) !== resolve(paths.workerDir) || basename(paths.exitPath) !== "exit.json") {
+    throw new Error("Herdr worker exit artifact must be the worker-local exit.json");
+  }
+  assertRegularPrivateFile(paths.exitPath, "exit artifact");
+  const value = parseJsonFile(paths.exitPath, "exit artifact");
+  if (!isRecord(value)) throw new Error("Invalid Herdr worker exit artifact");
+  assertSchemaVersion(value.schemaVersion, "exit.json");
+  if (typeof value.exitCode !== "number" || !Number.isInteger(value.exitCode)) {
+    throw new Error("Invalid Herdr worker exit code");
+  }
+  if (value.signal !== null && typeof value.signal !== "string") {
+    throw new Error("Invalid Herdr worker exit signal");
+  }
+  if (typeof value.aborted !== "boolean") throw new Error("Invalid Herdr worker aborted flag");
+  const completedAt = requireString(value.completedAt, "completedAt");
+  assertIsoTimestamp(completedAt, "exit.completedAt");
+  return {
+    schemaVersion: HERDR_WORKER_SCHEMA_VERSION,
+    exitCode: value.exitCode,
+    signal: value.signal as NodeJS.Signals | null,
+    aborted: value.aborted,
+    completedAt,
+  };
+}
+
 export function readHerdrWorkerLaunchSpec(
   launchPath: string,
   runtimeRoot: string,

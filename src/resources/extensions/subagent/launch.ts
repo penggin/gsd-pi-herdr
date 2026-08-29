@@ -16,6 +16,7 @@ export type SubagentSessionArgs =
 	| { mode: "fork"; sessionFile: string; sessionDir?: string };
 
 export interface SubagentParentSessionManager {
+	getSessionId?(): string;
 	getSessionFile(): string | undefined;
 	getLeafId(): string | null;
 	getSessionDir(): string;

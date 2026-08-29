@@ -18,6 +18,7 @@ import {
   ensureHerdrWorkerArtifactDirectory,
   herdrWorkerRuntimeRoot,
   readHerdrWorkerEnvAndDelete,
+  readHerdrWorkerExit,
   readHerdrWorkerLaunchSpec,
   resolveHerdrWorkerArtifactPaths,
   writeHerdrWorkerExit,
@@ -163,7 +164,7 @@ describe("Herdr worker artifact contract v1", () => {
       aborted: false,
       completedAt: "2026-08-30T00:00:03.000Z",
     });
-    assert.equal(JSON.parse(readFileSync(paths.exitPath, "utf8")).exitCode, 0);
+    assert.equal(readHerdrWorkerExit(paths).exitCode, 0);
     assert.throws(
       () => writeHerdrWorkerExit(paths, {
         schemaVersion: 1,

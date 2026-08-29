@@ -147,6 +147,29 @@ describe("internal Herdr worker runner", () => {
     assert.equal(await run, 0);
   });
 
+  it("does not publish reusable exit evidence before final Herdr reporting settles", async () => {
+    const { paths, spec } = fixture("process.exit(0);");
+    let releaseFinal!: () => void;
+    const finalGate = new Promise<void>((resolve) => { releaseFinal = resolve; });
+    let finalStarted = false;
+    const run = runHerdrWorker(spec, paths, {
+      activityWrite: () => {},
+      reporter: {
+        initialize: async () => {},
+        reportStatus: async () => {},
+        reportFinal: async () => {
+          finalStarted = true;
+          await finalGate;
+        },
+      },
+    });
+    await waitFor(() => finalStarted, 1000);
+    assert.equal(existsSync(paths.exitPath), false);
+    releaseFinal();
+    assert.equal(await run, 0);
+    assert.equal(existsSync(paths.exitPath), true);
+  });
+
   it("escalates cancellation SIGINT → SIGTERM → SIGKILL when the child group does not exit", async () => {
     const signals: NodeJS.Signals[] = [];
     await terminateHerdrWorkerProcessGroup(123, () => false, {

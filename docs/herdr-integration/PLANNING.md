@@ -1,8 +1,8 @@
 # GSD–Herdr Living Plan
 
-> **Status:** M0–M3 complete; M4 Herdr backend/pane pool ready
+> **Status:** M0–M3 complete; M4 implementation checkpoint awaiting live E2E validation
 > **Last updated:** 2026-08-30
-> **Current milestone:** M4 — Herdr backend and persistent worker pane pool
+> **Current milestone:** M4 — Herdr backend and persistent worker pane pool validation
 > **Canonical rule:** Every Herdr-integration development session starts by reading this file and ends by updating it.
 
 ## 1. Mission
@@ -194,20 +194,22 @@ Deferred existing behavior: chain-mode `isolated` handling is tracked separately
 
 ### M4 — Herdr backend and persistent worker pane pool
 
-**Status:** `READY`
+**Status:** `IN VALIDATION`
 
-- [ ] M4.1 Create/reuse one worker tab per root GSD session.
-- [ ] M4.2 Create deterministic one/two/four-slot layouts.
-- [ ] M4.3 Implement bounded slot reservation, queueing, reuse, and retention.
-- [ ] M4.4 Launch the internal worker with Herdr CLI `pane run`.
-- [ ] M4.5 Tail/relay worker JSONL into the common GSD parser.
-- [ ] M4.6 Use Herdr semantic state/session/metadata APIs for worker visibility.
-- [ ] M4.7 Keep retry/chain work in stable slots where safe.
-- [ ] M4.8 Preserve root-pane focus.
-- [ ] M4.9 Fail visibly when required Herdr runtime is unavailable/ambiguous.
-- [ ] M4.10 Add Local-vs-Herdr result parity, cancellation, pane-loss, and >4-task queue tests.
+- [x] M4.1 Create/reuse one worker tab per root GSD session.
+- [x] M4.2 Create deterministic one/two/four-slot layouts.
+- [x] M4.3 Implement bounded slot reservation, queueing, reuse, and retention.
+- [x] M4.4 Launch the internal worker with Herdr CLI `pane run`.
+- [x] M4.5 Tail/relay worker JSONL into the common GSD parser.
+- [x] M4.6 Use Herdr semantic state/session/metadata APIs for worker visibility.
+- [x] M4.7 Keep retry/chain work in stable slots where safe.
+- [x] M4.8 Preserve root-pane focus.
+- [x] M4.9 Fail visibly when required Herdr runtime is unavailable/ambiguous.
+- [x] M4.10 Add Local-vs-Herdr result parity, cancellation, pane-loss, and >4-task queue tests.
 
-M4 exit = first practically usable monitored Herdr-subagent runtime.
+Implementation checkpoint: M4.1–M4.10 are implemented and covered by focused tests, but M4 exit remains open until the complete parent-GSD → HerdrBackend → real Herdr pane → private worker path passes a live v0.8.2 E2E/canary. Do not start M5 as if M4 were complete before that validation.
+
+M4 exit = first practically usable monitored Herdr-subagent runtime proven in a real Herdr session.
 
 ### M5 — Herdr operations plugin and diagnostics
 
@@ -285,10 +287,10 @@ Structural gaps discovered:
 
 ## 9. Current execution queue
 
-1. **M4.1:** create/reuse one worker tab per root GSD session without stealing root-pane focus.
-2. **M4.2/M4.3:** introduce deterministic 1/2/4-slot topology plus bounded reservation/queue/reuse policy.
-3. **M4.4/M4.5:** connect `HerdrBackend` to the M3 launch bundle, submit the private runner with CLI `pane run`, and relay artifact JSONL into the common semantic runner.
-4. Keep retry/chain topology and retention policy additive; do not move GSD orchestration authority into Herdr.
+1. **M4 live E2E:** run the actual downstream GSD TUI in official Herdr v0.8.2 with `herdr.enabled: true` and prove a real single subagent dispatch goes through `HerdrBackend`, creates/reuses the worker tab, runs `__herdr-worker`, relays JSONL into the common semantic parser, and returns the same user-visible result as LocalBackend.
+2. Validate root focus preservation and worker metadata/state while the real child is active, then confirm successful pane retention/reuse.
+3. Exercise real cancellation plus at least one parallel batch beyond four tasks to prove queueing/slot reuse against Herdr rather than only the fake API client.
+4. Re-run changed-source/compiled tests, `build:core`, and `validate-pack`; only then mark M4 `COMPLETE` and enter M5.
 
 ## 10. Progress log
 
@@ -439,6 +441,17 @@ Structural gaps discovered:
 - `pnpm run validate-pack` passes isolated install and global-install verification with final result **`Package is installable. Safe to publish.`**
 - Detailed implementation/evidence: [`spikes/M3-INTERNAL-WORKER.md`](spikes/M3-INTERNAL-WORKER.md).
 - **M3 is complete. M4.1 worker-tab ownership is the next task.**
+
+### 2026-08-30 — M4 backend/pane-pool implementation checkpoint
+
+- Added `execution/herdr-pane-pool.ts` with one worker tab per root session, deterministic 1/2/4-pane expansion, `focus:false` creation/splits, bounded four-slot capacity, fifth-task queueing, successful-slot reclamation, failure retention, explicit cleanup, and affinity reuse for retry/chain continuity.
+- Added `execution/herdr-backend.ts`. It reserves a pane, writes the M3 launch/env bundle, submits only the private worker invocation through `herdr pane run`, tails private stdout/stderr artifacts into the common backend callbacks, consumes immutable exit evidence, probes pane existence, and records pane/tab/workspace/runtime metadata.
+- Herdr runtime selection is now policy-driven: enabled+available Herdr wins over cmux; required-but-unavailable Herdr remains selected so dispatch fails visibly; optional unavailable Herdr may fall back before any external launch begins.
+- All subagent operation paths carry backend execution identity/affinity so resume, chain, retry, parallel, background, and foreground single can use the common semantic runner without moving orchestration authority into Herdr.
+- Session shutdown now interrupts live Local, Cmux, and Herdr executions. Herdr cancellation targets the exact reserved pane and waits for bounded M3 exit evidence rather than assuming Ctrl+C succeeded.
+- M3 exit publication was tightened so a pane is not considered reusable until final ordered Herdr reporting has settled.
+- Current focused validation for this checkpoint: **57/57 pass** across Herdr pane pool/backend/resolver, Local↔Herdr semantic parity, subagent characterization, launch, and changed M3 artifact/process tests; `typecheck:extensions` passes.
+- This is intentionally a checkpoint, not M4 closeout: the full parent GSD → HerdrBackend → real Herdr worker E2E has not yet been run. The next agent must perform that live v0.8.2 validation before marking M4 complete or starting M5.
 
 ## 11. Working-session protocol
 

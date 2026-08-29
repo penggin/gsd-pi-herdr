@@ -34,8 +34,11 @@ import {
 } from "./isolation.js";
 import { registerWorker, updateWorker } from "./worker-registry.js";
 import { loadEffectiveGSDPreferences } from "../gsd/preferences.js";
+import { gsdHome } from "../gsd/gsd-home.js";
 import { emitJournalEvent } from "../gsd/journal.js";
 import { CmuxClient } from "../cmux/index.js";
+import { detectHerdrEnvironment } from "../herdr/client.js";
+import { resolveHerdrPreferences } from "../herdr/preferences.js";
 import {
 	buildSubagentProcessArgs,
 	createSubagentLaunchPlan,
@@ -64,8 +67,16 @@ import {
 	localSubagentBackend,
 	stopLocalSubagentProcesses,
 } from "./execution/local-backend.js";
-import { resolveSubagentExecutionBackend } from "./execution/resolver.js";
-import type { SubagentExecutionBackend } from "./execution/types.js";
+import {
+	createHerdrSubagentBackend,
+	getLiveHerdrSubagentExecutionCount,
+	stopLiveHerdrSubagentExecutions,
+} from "./execution/herdr-backend.js";
+import {
+	resolveSubagentExecutionBackend,
+	resolveSubagentRuntimePreference,
+} from "./execution/resolver.js";
+import type { SubagentExecutionBackend, SubagentExecutionIdentity } from "./execution/types.js";
 
 export { buildSubagentProcessArgs } from "./launch.js";
 
@@ -395,6 +406,7 @@ interface SubagentRunOptions {
 	thinkingOverride?: string;
 	projectRoot?: string;
 	projectRootSourceCwd?: string;
+	executionIdentity?: Partial<SubagentExecutionIdentity>;
 }
 
 async function runSingleAgentWithBackend(
@@ -419,6 +431,7 @@ async function runSingleAgentWithBackend(
 		thinkingOverride,
 		projectRoot,
 		projectRootSourceCwd,
+		executionIdentity,
 	} = options;
 	const agent = agents.find((a) => a.name === agentName);
 
@@ -516,9 +529,14 @@ async function runSingleAgentWithBackend(
 				launch,
 				extensionArgs,
 				identity: {
+					...executionIdentity,
+					rootSessionId: executionIdentity?.rootSessionId ?? parentSessionManager?.getSessionId?.(),
 					agent: agentName,
 					trackingName,
 					step,
+					taskPreview: task,
+					model: currentResult.model,
+					thinking: effectiveThinking,
 				},
 				signal,
 			},
@@ -679,6 +697,7 @@ export default function (pi: ExtensionAPI) {
 		await Promise.all([
 			stopLocalSubagentProcesses(),
 			stopLiveCmuxSubagentExecutions(),
+			stopLiveHerdrSubagentExecutions(),
 		]);
 	});
 
@@ -718,8 +737,32 @@ export default function (pi: ExtensionAPI) {
 			const discovery = discoverAgents(ctx.cwd, agentScope);
 			const agents = discovery.agents;
 			const confirmProjectAgents = params.confirmProjectAgents ?? false;
-			const cmuxClient = CmuxClient.fromPreferences(loadEffectiveGSDPreferences()?.preferences);
+			const effectivePreferences = loadEffectiveGSDPreferences(ctx.cwd)?.preferences;
+			const cmuxClient = CmuxClient.fromPreferences(effectivePreferences);
 			const cmuxSplitsEnabled = cmuxClient.getConfig().splits;
+			const herdrPreferences = resolveHerdrPreferences(effectivePreferences);
+			const herdrEnvironment = detectHerdrEnvironment();
+			const rootSessionId = ctx.sessionManager.getSessionId();
+			const runtimePreference = resolveSubagentRuntimePreference({
+				herdrEnabled: herdrPreferences.enabled,
+				herdrRequired: herdrPreferences.required,
+				herdrAvailable: herdrEnvironment.available,
+				cmuxSplitsEnabled,
+			});
+			const herdrPreferredBackend = runtimePreference === "herdr"
+				? createHerdrSubagentBackend({
+					rootSessionId,
+					cwd: ctx.cwd,
+					gsdHome: gsdHome(),
+				})
+				: undefined;
+			const cmuxRuntimeSelected = runtimePreference === "cmux";
+			const resolveBackend = (
+				operation: Parameters<typeof resolveSubagentExecutionBackend>[0],
+				fallbackPreferred?: SubagentExecutionBackend,
+			) => resolveSubagentExecutionBackend(operation, {
+				preferred: herdrPreferredBackend ?? fallbackPreferred,
+			});
 			const runStore = new SubagentRunStore();
 			const action = params.action ?? "launch";
 			const contextMode: SubagentContextMode = params.context ?? "fresh";
@@ -817,8 +860,14 @@ export default function (pi: ExtensionAPI) {
 						sessionOverride: { mode: "fork", sessionFile: selected.sessionFile, sessionDir: path.dirname(selected.sessionFile) },
 						trackingName: selected.trackingName,
 						thinkingOverride: params.thinking,
+						executionIdentity: {
+							runId: params.runId,
+							mode: "single",
+							childIndex: Math.max(0, record.children.indexOf(selected)),
+							affinityKey: `resume:${params.runId}:${selected.trackingName ?? selected.agent}`,
+						},
 					},
-					resolveSubagentExecutionBackend("resume"),
+					resolveBackend("resume"),
 				);
 				return {
 					content: [{ type: "text", text: getFinalOutput(result.messages) || result.errorMessage || result.stderr || "(no output)" }],
@@ -1152,8 +1201,14 @@ export default function (pi: ExtensionAPI) {
 								thinkingOverride: params.thinking,
 								projectRoot,
 								projectRootSourceCwd: isolation ? effectiveCwd : undefined,
+								executionIdentity: {
+									dispatchId,
+									mode: "single",
+									childIndex: 0,
+									affinityKey: `${dispatchId}:single:0`,
+								},
 							},
-							resolveSubagentExecutionBackend("background"),
+							resolveBackend("background"),
 						);
 						if (isolation && result.exitCode === 0) {
 							const patches = await isolation.captureDelta();
@@ -1229,8 +1284,14 @@ export default function (pi: ExtensionAPI) {
 							parentSessionManager: ctx.sessionManager,
 							trackingName: dispatchTrackingNames[i],
 							thinkingOverride: step.thinking ?? params.thinking,
+							executionIdentity: {
+								dispatchId,
+								mode: "chain",
+								childIndex: i,
+								affinityKey: `${dispatchId}:chain`,
+							},
 						},
-						resolveSubagentExecutionBackend("chain"),
+						resolveBackend("chain"),
 					);
 					results.push(result);
 					persistRunResults(results);
@@ -1305,7 +1366,7 @@ export default function (pi: ExtensionAPI) {
 				const batchId = crypto.randomUUID();
 				const batchSize = taskParams.length;
 				// Pre-create a grid layout for cmux splits so agents get a clean tiled arrangement
-				const gridSurfaces = cmuxSplitsEnabled
+				const gridSurfaces = cmuxRuntimeSelected
 					? await cmuxClient.createGridLayout(Math.min(batchSize, MAX_CONCURRENCY))
 					: [];
 				const results = await mapWithConcurrencyLimit(taskParams, MAX_CONCURRENCY, async (t, index) => {
@@ -1332,8 +1393,14 @@ export default function (pi: ExtensionAPI) {
 							thinkingOverride: taskThinking,
 							projectRoot,
 							projectRootSourceCwd,
+							executionIdentity: {
+								dispatchId,
+								mode: "parallel",
+								childIndex: index,
+								affinityKey: `${dispatchId}:parallel:${index}`,
+							},
 						};
-						const preferredBackend = cmuxSplitsEnabled
+						const preferredBackend = cmuxRuntimeSelected
 							? createCmuxSubagentBackend(
 								cmuxClient,
 								gridSurfaces[index] ?? (index % 2 === 0 ? "right" : "down"),
@@ -1350,7 +1417,7 @@ export default function (pi: ExtensionAPI) {
 							updateParallelResult,
 							makeDetails("parallel"),
 							runOptions,
-							resolveSubagentExecutionBackend("parallel", { preferred: preferredBackend }),
+							resolveBackend("parallel", preferredBackend),
 						);
 					};
 					const runTask = async () => {
@@ -1450,8 +1517,14 @@ export default function (pi: ExtensionAPI) {
 						thinkingOverride: params.thinking,
 						projectRoot,
 						projectRootSourceCwd: isolation ? effectiveCwd : undefined,
+						executionIdentity: {
+							dispatchId,
+							mode: "single",
+							childIndex: 0,
+							affinityKey: `${dispatchId}:single:0`,
+						},
 					};
-					const preferredBackend = cmuxSplitsEnabled
+					const preferredBackend = cmuxRuntimeSelected
 						? createCmuxSubagentBackend(cmuxClient, "right")
 						: undefined;
 					const result = await runSingleAgentWithBackend(
@@ -1465,7 +1538,7 @@ export default function (pi: ExtensionAPI) {
 						singleUpdate,
 						makeDetails("single"),
 						runOptions,
-						resolveSubagentExecutionBackend("single", { preferred: preferredBackend }),
+						resolveBackend("single", preferredBackend),
 					);
 					finalResults = [result];
 

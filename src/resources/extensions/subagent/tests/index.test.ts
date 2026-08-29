@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, it } from "node:test";
 
 import { activateGSD, deactivateGSD, setCurrentPhase } from "../../shared/gsd-phase-state.js";
 import type { AgentConfig } from "../agents.js";
+import { createHerdrSubagentBackend } from "../execution/herdr-backend.js";
+import type { HerdrPaneReservation } from "../execution/herdr-pane-pool.js";
 import type { SubagentExecutionBackend } from "../execution/types.js";
 import { __subagentLocalRunnerTestHooks } from "../index.js";
 
@@ -349,6 +351,129 @@ process.stderr.write('fixture stderr\\n');
 });
 
 describe("runSingleAgentWithBackend semantic boundary", () => {
+	it("produces Local-vs-Herdr semantic parity for the same deterministic JSONL and exit evidence", async (t) => {
+		const dir = mkdtempSync(join(tmpdir(), "gsd-local-herdr-parity-"));
+		const gsdHome = join(dir, "home");
+		mkdirSync(gsdHome, { recursive: true });
+		const previousBinPath = process.env.GSD_BIN_PATH;
+		const previousBundledPaths = process.env.GSD_BUNDLED_EXTENSION_PATHS;
+		t.after(async () => {
+			await __subagentLocalRunnerTestHooks.stopLiveSubagents();
+			if (previousBinPath === undefined) delete process.env.GSD_BIN_PATH;
+			else process.env.GSD_BIN_PATH = previousBinPath;
+			if (previousBundledPaths === undefined) delete process.env.GSD_BUNDLED_EXTENSION_PATHS;
+			else process.env.GSD_BUNDLED_EXTENSION_PATHS = previousBundledPaths;
+			rmSync(dir, { recursive: true, force: true });
+		});
+
+		const assistant = makeAssistantMessage("parity final", {
+			model: "parity-model",
+			stopReason: "stop",
+			input: 7,
+			output: 9,
+			cacheRead: 2,
+			cacheWrite: 3,
+			totalTokens: 21,
+			cost: 0.42,
+		});
+		const rawLine = JSON.stringify({ type: "message_end", message: assistant });
+		const localScript = join(dir, "local-child.mjs");
+		writeFileSync(localScript, `process.stdout.write(${JSON.stringify(`${rawLine}\n`)});`, "utf8");
+		process.env.GSD_BIN_PATH = localScript;
+		process.env.GSD_BUNDLED_EXTENSION_PATHS = "";
+		const agent = makeAgent({ model: "configured-model", thinking: "high" });
+		const makeDetails = (results: any[]) => ({ mode: "single" as const, agentScope: "both" as const, projectAgentsDir: null, results });
+
+		const local = await __subagentLocalRunnerTestHooks.runSingleAgent(
+			dir,
+			[agent],
+			"worker",
+			"parity task",
+			undefined,
+			1,
+			undefined,
+			undefined,
+			makeDetails,
+			{ contextMode: "fresh", trackingName: "falcon" },
+		);
+
+		const client = {
+			getEnvironment: () => ({
+				available: true,
+				socketPath: "/tmp/herdr.sock",
+				workspaceId: "w1",
+				tabId: "w1:t1",
+				paneId: "w1:p1",
+			}),
+			request: async () => ({ id: "fake", result: { type: "ok" } }),
+		};
+		const pool = {
+			async reserve(): Promise<HerdrPaneReservation> {
+				return {
+					paneId: "w1:p9",
+					slotIndex: 0,
+					tabId: "w1:t9",
+					workspaceId: "w1",
+					release: () => {},
+				};
+			},
+		};
+		const herdr = createHerdrSubagentBackend({
+			rootSessionId: "root-parity",
+			cwd: dir,
+			gsdHome,
+			client,
+			pool,
+			gsdBinPath: "/fixture/gsd-loader.js",
+			pollIntervalMs: 5,
+			runCli: async (args) => {
+				const launchPath = String(args.at(-1));
+				const spec = JSON.parse(readFileSync(launchPath, "utf8"));
+				setTimeout(() => {
+					writeFileSync(spec.stdoutPath, `${rawLine}\n`);
+					writeFileSync(spec.stderrPath, "");
+					writeFileSync(spec.exitPath, JSON.stringify({
+						schemaVersion: 1,
+						exitCode: 0,
+						signal: null,
+						aborted: false,
+						completedAt: new Date().toISOString(),
+					}), { mode: 0o600 });
+				}, 10);
+				return { ok: true, stdout: "", stderr: "", exitCode: 0, timedOut: false, notFound: false };
+			},
+		});
+		const herdrResult = await __subagentLocalRunnerTestHooks.runSingleAgentWithBackend(
+			dir,
+			[agent],
+			"worker",
+			"parity task",
+			undefined,
+			1,
+			undefined,
+			undefined,
+			makeDetails,
+			{ contextMode: "fresh", trackingName: "falcon" },
+			herdr,
+		);
+
+		const semantic = (result: typeof local) => ({
+			agent: result.agent,
+			trackingName: result.trackingName,
+			agentSource: result.agentSource,
+			task: result.task,
+			exitCode: result.exitCode,
+			messages: result.messages,
+			usage: result.usage,
+			model: result.model,
+			thinking: result.thinking,
+			stopReason: result.stopReason,
+			errorMessage: result.errorMessage,
+			step: result.step,
+		});
+		assert.deepEqual(semantic(herdrResult), semantic(local));
+	});
+
 	it("produces the same semantic result from backend stream/evidence without owning runtime mechanics", async (t) => {
 		const dir = mkdtempSync(join(tmpdir(), "gsd-common-runner-"));
 		t.after(() => rmSync(dir, { recursive: true, force: true }));

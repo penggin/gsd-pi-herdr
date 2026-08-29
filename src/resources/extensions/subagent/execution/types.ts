@@ -6,6 +6,7 @@ import type { SubagentRunMode } from "../run-store.js";
  * ownership only. Backends must not derive orchestration policy from it.
  */
 export interface SubagentExecutionIdentity {
+	rootSessionId?: string;
 	runId?: string;
 	dispatchId?: string;
 	childIndex?: number;
@@ -13,6 +14,10 @@ export interface SubagentExecutionIdentity {
 	agent: string;
 	trackingName?: string;
 	step?: number;
+	affinityKey?: string;
+	taskPreview?: string;
+	model?: string;
+	thinking?: string;
 }
 
 /**
