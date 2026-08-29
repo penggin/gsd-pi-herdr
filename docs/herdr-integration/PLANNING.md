@@ -163,11 +163,11 @@ Exit criteria:
 - [x] M2.2 Define backend execution request/callback/evidence types.
 - [x] M2.3 Extract direct `spawn()` mechanics to `LocalBackend` with no caller-selection change.
 - [x] M2.4 Introduce common `runSingleAgentWithBackend()` semantic runner and prove local parity.
-- [ ] M2.5 Route resume through the common runner/backend resolver.
-- [ ] M2.6 Route background single through the common runner and execution registry.
-- [ ] M2.7 Route chain through the common runner while preserving `{previous}`/stop-on-error semantics.
-- [ ] M2.8 Route parallel/retry through the common runner while preserving concurrency/retry policy.
-- [ ] M2.9 Route foreground single through resolver/common runner.
+- [x] M2.5 Route resume through the common runner/backend resolver.
+- [x] M2.6 Route background single through the common runner and execution registry.
+- [x] M2.7 Route chain through the common runner while preserving `{previous}`/stop-on-error semantics.
+- [x] M2.8 Route parallel/retry through the common runner while preserving concurrency/retry policy.
+- [x] M2.9 Route foreground single through resolver/common runner.
 - [ ] M2.10 Extract `CmuxBackend` and remove duplicate result/parsing pipeline.
 - [ ] M2.11 Reapply/revalidate `fix/cmux-split-cli` against the new backend.
 - [ ] M2.12 Remove raw JSON `tee`, normalize abort classification, and prevent runtime-specific silent fallback.
@@ -285,9 +285,9 @@ Structural gaps discovered:
 
 ## 9. Current execution queue
 
-1. **M2.5:** add the backend resolver seam and route resume through `runSingleAgentWithBackend()` without enabling cmux/Herdr selection for resume yet.
-2. Preserve current local-only resume behavior while making the selected backend explicit and testable.
-3. Then migrate background single (M2.6), chain (M2.7), parallel/retry (M2.8), and foreground single (M2.9) through the same resolver/common-runner path before extracting CmuxBackend.
+1. **M2.10:** extract the existing cmux runtime mechanics into `CmuxBackend`, incorporating/revalidating the downstream cmux CLI fix instead of preserving stale command forms.
+2. Replace the remaining three `runSingleAgent()` calls, which now exist only inside legacy cmux create/send failure fallback, with explicit resolver/policy behavior; no backend may silently launch local after an ambiguous external launch.
+3. Once Local and Cmux both implement the common backend contract, run semantic parity/regression tests through both runtime fixtures before starting preference migration in M2.11.
 
 ## 10. Progress log
 
@@ -392,7 +392,13 @@ Structural gaps discovered:
 - M2.4 generalized the semantic body to `runSingleAgentWithBackend(..., backend)` while retaining `runSingleAgent()` as a LocalBackend wrapper, so no caller/backend selection changed.
 - Added backend-neutral semantic tests proving a fake backend that supplies only stdout/stderr callbacks and execution evidence produces the same GSD-visible parsing/usage/update/finalization behavior, and that `{ aborted: true }` maps to the existing `Subagent was aborted` rejection.
 - M2.4 focused validation: M2.1 parity **9/9 unchanged**, backend contract/mechanics **4/4**, backend-neutral common-runner tests **2/2**, `typecheck:extensions` pass.
-- **M2.5 resume resolver migration is now the active work item.**
+- M2.5 added `execution/resolver.ts` as an explicit, testable backend-selection seam. At this stage it intentionally resolves every migrated operation to LocalBackend and does not invent the final public cmux/Herdr preference shape early.
+- Resume now calls `runSingleAgentWithBackend(..., resolveSubagentExecutionBackend("resume"))` directly, preserving its existing local-only runtime while removing the hidden direct-runner dependency.
+- M2.6 background single and M2.7 chain were migrated the same way with no isolation/chain orchestration changes.
+- M2.8 parallel/retry and M2.9 foreground single now route their **local branches** through the common runner/resolver. Existing cmux-enabled branches remain the pre-M2 special pipeline until M2.10 extracts CmuxBackend; this is the only intentional exception to full backend convergence at this checkpoint.
+- After migration, the only remaining `runSingleAgent()` production calls are three legacy cmux fallback sites inside `runSingleAgentInCmuxSplit()` (split creation/command-submission failure paths). They are explicitly queued for M2.10 because silent fallback after external-launch ambiguity must be resolved as backend policy, not preserved accidentally.
+- Resolver/common-runner validation: all subagent + execution source tests **52/52 pass**, including M2.1 parity **9/9 unchanged**, resolver tests **2/2**, and `typecheck:extensions` pass.
+- **M2.10 CmuxBackend extraction and downstream CLI-fix integration is now the active work item.**
 
 ## 11. Working-session protocol
 

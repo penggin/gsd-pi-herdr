@@ -60,6 +60,7 @@ import {
 	localSubagentBackend,
 	stopLocalSubagentProcesses,
 } from "./execution/local-backend.js";
+import { resolveSubagentExecutionBackend } from "./execution/resolver.js";
 import type { SubagentExecutionBackend } from "./execution/types.js";
 
 export { buildSubagentProcessArgs } from "./launch.js";
@@ -969,7 +970,7 @@ export default function (pi: ExtensionAPI) {
 						isError: true,
 					};
 				}
-				const result = await runSingleAgent(
+				const result = await runSingleAgentWithBackend(
 					ctx.cwd,
 					agents,
 					selected.agent,
@@ -987,6 +988,7 @@ export default function (pi: ExtensionAPI) {
 						trackingName: selected.trackingName,
 						thinkingOverride: params.thinking,
 					},
+					resolveSubagentExecutionBackend("resume"),
 				);
 				return {
 					content: [{ type: "text", text: getFinalOutput(result.messages) || result.errorMessage || result.stderr || "(no output)" }],
@@ -1300,7 +1302,7 @@ export default function (pi: ExtensionAPI) {
 						const projectRoot = isolation
 							? resolveSubagentProjectRoot(ctx.cwd, effectiveCwd)
 							: undefined;
-						const result = await runSingleAgent(
+						const result = await runSingleAgentWithBackend(
 							ctx.cwd,
 							agents,
 							params.agent!,
@@ -1321,6 +1323,7 @@ export default function (pi: ExtensionAPI) {
 								projectRoot,
 								projectRootSourceCwd: isolation ? effectiveCwd : undefined,
 							},
+							resolveSubagentExecutionBackend("background"),
 						);
 						if (isolation && result.exitCode === 0) {
 							const patches = await isolation.captureDelta();
@@ -1380,7 +1383,7 @@ export default function (pi: ExtensionAPI) {
 					};
 
 					const stepCwd = resolveSubagentWorktreeCwd(ctx.cwd, step.cwd);
-					const result = await runSingleAgent(
+					const result = await runSingleAgentWithBackend(
 						ctx.cwd,
 						agents,
 						step.agent,
@@ -1397,6 +1400,7 @@ export default function (pi: ExtensionAPI) {
 							trackingName: dispatchTrackingNames[i],
 							thinkingOverride: step.thinking ?? params.thinking,
 						},
+						resolveSubagentExecutionBackend("chain"),
 					);
 					results.push(result);
 					persistRunResults(results);
@@ -1514,7 +1518,7 @@ export default function (pi: ExtensionAPI) {
 								makeDetails("parallel"),
 								runOptions,
 							)
-							: runSingleAgent(
+							: runSingleAgentWithBackend(
 								ctx.cwd,
 								agents,
 								t.agent,
@@ -1525,6 +1529,7 @@ export default function (pi: ExtensionAPI) {
 								updateParallelResult,
 								makeDetails("parallel"),
 								runOptions,
+								resolveSubagentExecutionBackend("parallel"),
 							);
 					};
 					const runTask = async () => {
@@ -1640,7 +1645,7 @@ export default function (pi: ExtensionAPI) {
 							makeDetails("single"),
 							runOptions,
 						)
-						: await runSingleAgent(
+						: await runSingleAgentWithBackend(
 							ctx.cwd,
 							agents,
 							params.agent,
@@ -1651,6 +1656,7 @@ export default function (pi: ExtensionAPI) {
 							singleUpdate,
 							makeDetails("single"),
 							runOptions,
+							resolveSubagentExecutionBackend("single"),
 						);
 					finalResults = [result];
 
