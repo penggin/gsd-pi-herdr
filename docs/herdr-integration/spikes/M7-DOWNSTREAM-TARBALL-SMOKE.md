@@ -84,6 +84,12 @@ installed downstream GSD
 → parent semantic final + usage
 ```
 
-A clean-commit tarball must still be stamped and package-gated after these
-changes are committed. Publishing, tagging, pushing, and merging remain outside
-this validation.
+The implementation checkpoint `8aee21c142982517d02fc748881cebd7f580d1b4`
+was subsequently packed from a clean tree. Installed `gsd --build-info`
+reported that exact commit with `dirty=false`,
+`buildKind=release-candidate`, and `capabilityVerified=true`. The complete
+package gate accepted 9,418 entries (51.1 MB compressed, 204.4 MB unpacked),
+including isolated local/global installation and explicit `--ignore-scripts`
+repair, and ended with `Package is installable. Safe to publish.`
+
+Publishing, tagging, pushing, and merging remain outside this validation.
