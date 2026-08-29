@@ -1,0 +1,163 @@
+name: Herdr downstream canary
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 7 * * 1"
+  pull_request:
+    paths:
+      - ".github/workflows/herdr-canary.yml"
+      - "integrations/herdr/**"
+      - "scripts/herdr-integration/**"
+      - "scripts/__tests__/herdr-*.test.mjs"
+      - "src/resources/extensions/herdr/**"
+      - "src/resources/extensions/subagent/**"
+      - "package.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: herdr-canary-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  upstream-impact:
+    name: upstream impact
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Fetch comparison refs without modifying branches
+        run: |
+          git remote add upstream-watch https://github.com/open-gsd/gsd-pi.git
+          git fetch --no-tags upstream-watch main:refs/remotes/upstream-watch/main
+          git fetch --no-tags origin upstream-main:refs/remotes/origin/upstream-main
+
+      - name: Generate semantic impact report
+        run: |
+          mkdir -p build/herdr-canary
+          node scripts/herdr-integration/upstream-impact.mjs \
+            --base origin/upstream-main \
+            --head upstream-watch/main \
+            --output build/herdr-canary/upstream-impact.json \
+            --markdown > build/herdr-canary/upstream-impact.md
+          cat build/herdr-canary/upstream-impact.md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: herdr-upstream-impact
+          path: build/herdr-canary/upstream-impact.*
+          if-no-files-found: error
+          retention-days: 14
+
+  compatibility:
+    name: ${{ matrix.channel }} compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - channel: supported
+            release: v0.8.2
+            mode: supported
+            experimental: false
+          - channel: latest-stable
+            release: latest
+            mode: canary
+            experimental: false
+          - channel: latest-preview
+            release: preview
+            mode: canary
+            experimental: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Fetch immutable upstream-base tracking ref
+        run: git fetch --no-tags origin upstream-main:refs/remotes/origin/upstream-main
+
+      - name: Resolve official Herdr release asset
+        id: herdr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_RELEASE: ${{ matrix.release }}
+        run: |
+          if [ "$REQUESTED_RELEASE" = "latest" ]; then
+            TAG=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/herdrdev/herdr/releases/latest | jq -r .tag_name)
+          elif [ "$REQUESTED_RELEASE" = "preview" ]; then
+            TAG=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" 'https://api.github.com/repos/herdrdev/herdr/releases?per_page=30' | jq -r '[.[] | select(.prerelease)][0].tag_name')
+          else
+            TAG="$REQUESTED_RELEASE"
+          fi
+          test -n "$TAG" && test "$TAG" != "null"
+          RELEASE=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/herdrdev/herdr/releases/tags/$TAG")
+          URL=$(printf '%s' "$RELEASE" | jq -r '.assets[] | select(.name == "herdr-linux-x86_64") | .browser_download_url' | head -1)
+          test -n "$URL" && test "$URL" != "null"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Install exact resolved Herdr binary
+        run: |
+          mkdir -p "$RUNNER_TEMP/herdr-bin" build/herdr-canary
+          curl -fsSL "${{ steps.herdr.outputs.url }}" -o "$RUNNER_TEMP/herdr-bin/herdr"
+          chmod +x "$RUNNER_TEMP/herdr-bin/herdr"
+          "$RUNNER_TEMP/herdr-bin/herdr" --version
+
+      - name: Check API, CLI, and plugin capabilities
+        run: |
+          node scripts/herdr-integration/capability-check.mjs \
+            --binary "$RUNNER_TEMP/herdr-bin/herdr" \
+            --mode "${{ matrix.mode }}" \
+            --output "build/herdr-canary/capability-${{ matrix.channel }}.json"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.1
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - name: Install workspace dependencies
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+          GSD_SKIP_RTK_INSTALL: "1"
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Run downstream Herdr gates
+        run: |
+          pnpm run typecheck:extensions
+          pnpm run test:herdr-integration
+          pnpm run test:changed:src
+          pnpm run build:core
+
+      - name: Stamp exact canary release identity
+        run: |
+          node scripts/herdr-integration/release-stamp.mjs \
+            --upstream-ref origin/upstream-main \
+            --capability "build/herdr-canary/capability-${{ matrix.channel }}.json" \
+            --output "build/herdr-canary/release-${{ matrix.channel }}.json"
+
+      - name: Validate supported package
+        if: matrix.channel == 'supported'
+        env:
+          NPM_CONFIG_USERCONFIG: /dev/null
+        run: |
+          pnpm run build:web-host
+          pnpm run validate-pack
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: herdr-${{ matrix.channel }}-evidence
+          path: build/herdr-canary/*.json
+          if-no-files-found: error
+          retention-days: 14

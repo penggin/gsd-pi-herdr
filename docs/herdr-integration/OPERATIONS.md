@@ -35,7 +35,7 @@ Herdr integration E2E needs a supported Herdr binary and should use isolated nam
 
 ## Herdr capability preflight
 
-A diagnostic helper should validate:
+The automated preflight validates:
 
 ```text
 herdr --version
@@ -45,6 +45,14 @@ herdr api schema --json
 and confirm the initial capability set documented in `INTEGRATION_CONTRACT.md`.
 
 Do not treat a compatible version string alone as sufficient proof.
+
+```bash
+pnpm run herdr:capability-check -- --mode supported --output build/herdr-capability.json
+```
+
+`supported` requires the exact production version/protocol. `canary` permits a
+newer version/protocol only when every required API method and CLI helper remains
+present.
 
 ## Runtime operator workflow
 
@@ -135,6 +143,18 @@ verification commands/results
 
 A later release process may use a downstream-specific version suffix or separate package identity. That packaging decision is independent from the integration architecture and should be made before public distribution.
 
+Generate the machine-readable identity with:
+
+```bash
+pnpm run herdr:release-stamp -- \
+  --upstream-ref origin/upstream-main \
+  --capability build/herdr-capability.json \
+  --output dist/herdr-release.json
+```
+
+The command is read-only except for its explicit output file. It never advances
+branches, fetches, merges, publishes, or promotes the known-good rollback file.
+
 ## Canary policy
 
 Before adopting substantial upstream changes or a new Herdr stable release:
@@ -149,6 +169,11 @@ Before adopting substantial upstream changes or a new Herdr stable release:
 ## Rollback
 
 Keep at least one prior known-good downstream build/tag. Rollback should restore the prior GSD binary/version without deleting durable Herdr worker evidence until the operator explicitly cleans it.
+
+The exact retained tuple lives in
+`integrations/herdr/release/known-good.json`. Replace it only after a candidate
+passes the complete promotion gate; release stamping embeds but does not mutate
+that prior target.
 
 ## Separate Herdr plugin
 

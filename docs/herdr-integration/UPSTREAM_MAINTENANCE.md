@@ -134,7 +134,7 @@ A Herdr core fork becomes justified only if:
 
 ## Automated upstream watch
 
-Future CI should regularly report:
+The scheduled/manual `Herdr downstream canary` workflow and local helper report:
 
 ```text
 current upstream-main SHA
@@ -146,6 +146,20 @@ Herdr latest stable/version/schema capability result
 ```
 
 Do not auto-merge upstream solely because text conflicts are absent.
+
+Run the same analysis locally without fetching or moving refs:
+
+```bash
+pnpm run herdr:upstream-impact -- \
+  --base origin/upstream-main \
+  --head upstream/main \
+  --output build/herdr-upstream-impact.json \
+  --markdown
+```
+
+The report verifies ancestry, lists exact commits/files, classifies semantic
+impact, and selects downstream gates. CI only fetches remote-tracking refs; it
+does not update local branches or integrate changes.
 
 ## Release metadata
 
@@ -165,7 +179,10 @@ Every downstream release should record the exact upstream base, for example:
 }
 ```
 
-The exact packaging/version syntax will be decided before public downstream releases.
+`scripts/herdr-integration/release-stamp.mjs` now emits this identity together
+with downstream commit/version, capability evidence, required verification, and
+the prior known-good rollback target. Public package naming/versioning remains a
+separate release decision.
 
 ## The old patch-queue strategy
 

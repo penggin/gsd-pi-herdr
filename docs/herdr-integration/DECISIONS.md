@@ -196,3 +196,22 @@ alive, the out-of-process plugin writes an identity-bound, owner-only
 bounded process-tree cancellation, and publishes final orphan/abort evidence.
 This preserves GSD's orchestration authority while making root crash recovery
 work across process and Herdr restart boundaries.
+
+---
+
+## ADR-H017 — Make compatibility/release automation observational until promotion
+
+**Status:** Accepted
+**Date:** 2026-08-30
+
+Upstream impact checks operate on remote-tracking refs and produce review
+artifacts; they never advance `upstream-main`, merge, rebase, or push. Herdr
+canaries resolve exact official release assets, capability-check their bundled
+schema/CLI/plugin contract, and build/test the downstream checkout without
+promoting it.
+
+Release stamping is likewise observational except for its explicit output file.
+It refuses dirty worktrees and upstream bases outside downstream ancestry, embeds
+the prior known-good tuple, and never rewrites that rollback target. A human or a
+separately authorized release workflow promotes a candidate only after the live
+E2E and package gates are recorded.
