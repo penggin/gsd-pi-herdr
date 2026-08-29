@@ -13,6 +13,19 @@ GSD Pi is a local-first coding agent for planning, implementing, verifying, and 
 
 It combines a terminal agent, project workflow tools, worktree-aware Git automation, and optional UI integrations so a project can move from idea to reviewed implementation with less manual coordination.
 
+## Downstream Herdr Edition
+
+> This repository is the `penggin/gsd-pi-herdr` managed downstream distribution. It tracks `open-gsd/gsd-pi` while developing a first-class Herdr runtime for persistent, observable subagents.
+
+The Herdr work is currently in planning and feasibility validation; it is not yet a production installation. All integration planning, architecture records, migration evidence, and progress tracking live under [`integrations/herdr/`](./integrations/herdr/README.md).
+
+- [Herdr integration overview](./integrations/herdr/README.md)
+- [Canonical living plan](./integrations/herdr/PLANNING.md)
+- [Architecture decisions](./integrations/herdr/docs/DECISIONS.md)
+- [Planning migration and fork baseline](./integrations/herdr/docs/MIGRATION.md)
+
+The exact upstream mirror is maintained on `upstream-main`; downstream release work is maintained on `main` through reviewed feature and synchronization branches.
+
 ## Feature Roll-Up
 
 - **Guided terminal agent** — Start with `gsd`, configure providers, and run planned or quick coding sessions from your shell.
@@ -203,6 +216,8 @@ gsd quick --output-format json "Describe the task"
 | `packages/` | Workspace packages used by the CLI, agent, TUI, RPC, and native bridge |
 | `native/` | Native engine packaging and platform binaries |
 | `web/` | Web UI and API surface |
+| `integrations/herdr/` | Downstream Herdr runtime planning, plugin/worker assets, and integration tests |
+| `integrations/hermes/` | Hermes integration package and documentation |
 | `docs/` | User and developer documentation |
 | `scripts/` | Build, release, migration, and maintenance scripts |
 
@@ -221,6 +236,8 @@ pnpm run verify:fast    # CI fast-gates locally (scans + policy)
 pnpm run verify:pr      # Fast loop: build + typecheck + unit tests
 pnpm run verify:merge   # Before PR review: full CI blocking parity
 ```
+
+Herdr integration changes must also follow [`integrations/herdr/AGENTS.md`](./integrations/herdr/AGENTS.md) and update the living plan before the session ends.
 
 ## Versioning
 
