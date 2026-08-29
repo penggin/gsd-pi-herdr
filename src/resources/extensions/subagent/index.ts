@@ -12,7 +12,6 @@
  * Uses JSON mode to capture structured output from subagents.
  */
 
-import { spawn, type ChildProcess } from "node:child_process";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -56,50 +55,17 @@ import {
 	type SubagentRunMode,
 	type SubagentRunStatus,
 } from "./run-store.js";
+import {
+	getLiveLocalSubagentProcessCount,
+	localSubagentBackend,
+	stopLocalSubagentProcesses,
+} from "./execution/local-backend.js";
 
 export { buildSubagentProcessArgs } from "./launch.js";
 
 const MAX_PARALLEL_TASKS = 8;
 const MAX_CONCURRENCY = 4;
 const COLLAPSED_ITEM_COUNT = 10;
-const liveSubagentProcesses = new Set<ChildProcess>();
-
-async function stopLiveSubagents(): Promise<void> {
-	const active = Array.from(liveSubagentProcesses);
-	if (active.length === 0) return;
-
-	for (const proc of active) {
-		try {
-			proc.kill("SIGTERM");
-		} catch {
-			/* ignore */
-		}
-	}
-
-	await Promise.all(
-		active.map(
-			(proc) =>
-				new Promise<void>((resolve) => {
-					const done = () => resolve();
-					const timer = setTimeout(done, 500);
-					proc.once("exit", () => {
-						clearTimeout(timer);
-						resolve();
-					});
-				}),
-		),
-	);
-
-	for (const proc of active) {
-		if (proc.exitCode === null) {
-			try {
-				proc.kill("SIGKILL");
-			} catch {
-				/* ignore */
-			}
-		}
-	}
-}
 
 function formatUsageStats(
 	usage: {
@@ -543,57 +509,33 @@ async function runSingleAgent(
 			projectRootSourceCwd,
 		});
 		if (launch.session.mode === "fork") currentResult.sessionFile = launch.session.sessionFile;
-		let wasAborted = false;
+		const bundledPaths = (process.env.GSD_BUNDLED_EXTENSION_PATHS ?? "")
+			.split(path.delimiter)
+			.map((value) => value.trim())
+			.filter(Boolean);
+		const extensionArgs = bundledPaths.flatMap((extensionPath) => ["--extension", extensionPath]);
+		const execution = await localSubagentBackend.execute(
+			{
+				launch,
+				extensionArgs,
+				identity: {
+					agent: agentName,
+					trackingName,
+					step,
+				},
+				signal,
+			},
+			{
+				onStdoutLine: (line) => processSubagentEventLine(line, currentResult, emitUpdate),
+				onStderr: (chunk) => {
+					currentResult.stderr += chunk;
+				},
+			},
+		);
 
-		const exitCode = await new Promise<number>((resolve) => {
-			const bundledPaths = (process.env.GSD_BUNDLED_EXTENSION_PATHS ?? "").split(path.delimiter).map(s => s.trim()).filter(Boolean);
-			const extensionArgs = bundledPaths.flatMap(p => ["--extension", p]);
-			const proc = spawn(
-				process.execPath,
-				[process.env.GSD_BIN_PATH!, ...extensionArgs, ...launch.args],
-				{ cwd: launch.cwd, env: launch.env, shell: false, stdio: ["ignore", "pipe", "pipe"] },
-			);
-			liveSubagentProcesses.add(proc);
-			let buffer = "";
-
-			proc.stdout.on("data", (data) => {
-				buffer += data.toString();
-				const lines = buffer.split("\n");
-				buffer = lines.pop() || "";
-				for (const line of lines) processSubagentEventLine(line, currentResult, emitUpdate);
-			});
-
-			proc.stderr.on("data", (data) => {
-				currentResult.stderr += data.toString();
-			});
-
-			proc.on("close", (code) => {
-				liveSubagentProcesses.delete(proc);
-				if (buffer.trim()) processSubagentEventLine(buffer, currentResult, emitUpdate);
-				resolve(code ?? 0);
-			});
-
-			proc.on("error", () => {
-				liveSubagentProcesses.delete(proc);
-				resolve(1);
-			});
-
-			if (signal) {
-				const killProc = () => {
-					wasAborted = true;
-					proc.kill("SIGTERM");
-					setTimeout(() => {
-						if (!proc.killed) proc.kill("SIGKILL");
-					}, 5000);
-				};
-				if (signal.aborted) killProc();
-				else signal.addEventListener("abort", killProc, { once: true });
-			}
-		});
-
-		currentResult.exitCode = exitCode;
+		currentResult.exitCode = execution.exitCode;
 		currentResult.running = false;
-		if (wasAborted) throw new Error("Subagent was aborted");
+		if (execution.aborted) throw new Error("Subagent was aborted");
 		markMissingFinalResponse(currentResult);
 		return currentResult;
 	} finally {
@@ -621,8 +563,8 @@ async function runSingleAgent(
  */
 export const __subagentLocalRunnerTestHooks = {
 	runSingleAgent,
-	stopLiveSubagents,
-	getLiveProcessCount: () => liveSubagentProcesses.size,
+	stopLiveSubagents: stopLocalSubagentProcesses,
+	getLiveProcessCount: getLiveLocalSubagentProcessCount,
 };
 
 async function runSingleAgentInCmuxSplit(
@@ -876,7 +818,7 @@ export default function (pi: ExtensionAPI) {
 	if (isSubagentChildProcess()) return;
 
 	pi.on("session_shutdown", async () => {
-		await stopLiveSubagents();
+		await stopLocalSubagentProcesses();
 	});
 
 	// /subagent command - list available agents

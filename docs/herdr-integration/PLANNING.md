@@ -161,7 +161,7 @@ Exit criteria:
 
 - [x] M2.1 Add deterministic tests around current local `runSingleAgent()` semantic output.
 - [x] M2.2 Define backend execution request/callback/evidence types.
-- [ ] M2.3 Extract direct `spawn()` mechanics to `LocalBackend` with no caller-selection change.
+- [x] M2.3 Extract direct `spawn()` mechanics to `LocalBackend` with no caller-selection change.
 - [ ] M2.4 Introduce common `runSingleAgentWithBackend()` semantic runner and prove local parity.
 - [ ] M2.5 Route resume through the common runner/backend resolver.
 - [ ] M2.6 Route background single through the common runner and execution registry.
@@ -285,9 +285,9 @@ Structural gaps discovered:
 
 ## 9. Current execution queue
 
-1. **M2.3:** extract only the current direct `spawn()` / stdout-line framing / stderr / process-registry / termination mechanics into `LocalBackend`.
-2. Keep `runSingleAgent()` as the semantic owner during M2.3; do not move agent lookup, phase guard, JSON event parsing, usage aggregation, missing-final validation, or abort-result mapping yet.
-3. Re-run the M2.1 characterization suite unchanged against the extracted LocalBackend path before starting M2.4 common-runner extraction.
+1. **M2.4:** introduce `runSingleAgentWithBackend()` as the common semantic runner around the already-extracted `LocalBackend`.
+2. Preserve the M2.1 characterization suite unchanged while moving only semantic ownership boundaries; foreground/caller backend selection remains local-only during this step.
+3. Prove exact local parity before routing resume/background/chain/parallel/single callers through a resolver in M2.5–M2.9.
 
 ## 10. Progress log
 
@@ -383,7 +383,13 @@ Structural gaps discovered:
 - Added `src/resources/extensions/subagent/execution/types.ts` for M2.2. The runtime-neutral contract carries resolved `SubagentLaunchPlan`, child/run identity, AbortSignal, complete stdout-line/stderr callbacks, opaque backend handles, and explicit `{ exitCode, aborted, signal?, runtimeError?, metadata? }` evidence.
 - The backend contract explicitly excludes retry/chain/parallel policy, model selection, JSON semantic parsing, usage aggregation, final-response validation, run-store truth, and isolation merge policy.
 - M2.2 contract tests **2/2 pass** together with the M2.1 suite and `typecheck:extensions`.
-- **M2.3 LocalBackend extraction is now the active work item.**
+- M2.3 extracted the existing direct process mechanics into `src/resources/extensions/subagent/execution/local-backend.ts` while leaving `runSingleAgent()` responsible for all GSD semantic behavior.
+- `LocalBackend` now owns only process spawn, complete stdout-line framing (including final-buffer flush), stderr forwarding, direct local process registry/shutdown, and the existing AbortSignal termination behavior. It returns runtime evidence through the M2.2 contract.
+- The pre-existing SIGTERM/SIGKILL fallback check was deliberately preserved rather than fixed during parity extraction; cancellation hardening remains a later M2 regression task.
+- `runSingleAgent()` still owns agent lookup, phase guard, effective model/thinking, prompt/session launch planning, `SingleResult`, semantic JSON parsing, usage/update aggregation, abort-to-error mapping, missing-final validation, and prompt cleanup.
+- M2.1 characterization remained unchanged and passed **9/9** through the extracted backend; M2.2 contract tests remained **2/2**; new direct LocalBackend mechanics tests **2/2**; `typecheck:extensions` passed.
+- Added the nested `subagent/execution/tests/*.test.js` path to normal compiled unit and coverage test globs so backend contract/mechanics tests are part of the standard suite.
+- **M2.4 common semantic runner extraction is now the active work item.**
 
 ## 11. Working-session protocol
 
