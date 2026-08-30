@@ -104,29 +104,19 @@ GSD's own Pi Providers, including Codex and non-Claude harnesses, do not need `.
 
 **Manual setup:**
 
-If you prefer to configure it yourself, add GSD to your project's `.mcp.json`:
+The generated absolute-path configuration is the most reliable manual template:
+run `/gsd mcp init .`, then inspect the resulting `.mcp.json`. If the downstream
+root package is installed globally and `gsd-mcp-server` is on `PATH`, this shorter
+equivalent also works:
 
 ```json
 {
   "mcpServers": {
     "gsd": {
-      "command": "npx",
-      "args": ["gsd-mcp-server"],
+      "command": "gsd-mcp-server",
       "env": {
         "GSD_CLI_PATH": "/path/to/gsd"
       }
-    }
-  }
-}
-```
-
-Or if `gsd-mcp-server` is installed globally:
-
-```json
-{
-  "mcpServers": {
-    "gsd": {
-      "command": "gsd-mcp-server"
     }
   }
 }

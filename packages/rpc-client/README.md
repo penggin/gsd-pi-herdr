@@ -4,11 +4,12 @@ Standalone RPC client SDK for GSD. Spawn the agent process, perform a v2 protoco
 
 Public protocol types are shared through `@opengsd/contracts` and re-exported from this package for compatibility.
 
-## Installation
+## Distribution
 
-```bash
-npm install @opengsd/rpc-client
-```
+This is a private compatibility workspace bundled inside
+`@penggin/gsd-pi-herdr`; it is not published as a standalone npm package.
+Repository consumers import it through the pnpm workspace. External consumers
+should install the downstream root package and use its CLI/MCP surfaces.
 
 ## Quick Start
 

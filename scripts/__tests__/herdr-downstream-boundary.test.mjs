@@ -28,10 +28,12 @@ const activeDistributionFiles = [
   "docs/user-docs/getting-started.md",
   "docs/user-docs/multi-repo-workspace.md",
   "docs/user-docs/node-lts-macos.md",
+  "docs/user-docs/providers.md",
   "docs/user-docs/switching-between-gsd-tools.md",
   "docs/user-docs/troubleshooting.md",
   "docs/zh-CN/user-docs/getting-started.md",
   "docs/zh-CN/user-docs/node-lts-macos.md",
+  "docs/zh-CN/user-docs/providers.md",
   "docs/zh-CN/user-docs/troubleshooting.md",
   "gitbook/README.md",
   "gitbook/getting-started/installation.md",
@@ -78,7 +80,10 @@ const activeDistributionFiles = [
   "packages/contracts/package.json",
   "packages/daemon/package.json",
   "packages/mcp-server/package.json",
+  "packages/mcp-server/README.md",
   "packages/rpc-client/package.json",
+  "packages/rpc-client/README.md",
+  "src/resources/extensions/gsd/commands-pr-branch.ts",
   "vscode-extension/README.md",
   "vscode-extension/package.json",
   "vscode-extension/src/chat-participant.ts",
@@ -100,6 +105,23 @@ const forbiddenTargets = [
   "upstream/main",
 ];
 
+function collectOperationalFiles(relativeDirectory) {
+  const files = [];
+  const visit = (relativePath) => {
+    for (const entry of readdirSync(join(root, relativePath), { withFileTypes: true })) {
+      const child = join(relativePath, entry.name).replaceAll("\\", "/");
+      if (entry.isDirectory()) {
+        if (["archive", "__tests__", "tests", "test-fixtures", "fixtures"].includes(entry.name)) continue;
+        visit(child);
+      } else if (/\.(?:[cm]?js|ts|json|ya?ml|sh|ps1)$/.test(entry.name) && !/\.(?:test|spec)\./.test(entry.name)) {
+        files.push(child);
+      }
+    }
+  };
+  visit(relativeDirectory);
+  return files;
+}
+
 test("active distribution and automation paths never target the original gsd-pi project", () => {
   for (const relativePath of activeDistributionFiles) {
     const source = readFileSync(join(root, relativePath), "utf8");
@@ -109,6 +131,28 @@ test("active distribution and automation paths never target the original gsd-pi 
         false,
         `${relativePath} must not contain active original-project target ${forbidden}`,
       );
+    }
+  }
+});
+
+test("executable source and automation contain no uncommented original-project target", () => {
+  const operationalFiles = [
+    ...collectOperationalFiles(".github/workflows"),
+    ...collectOperationalFiles("scripts"),
+    ...collectOperationalFiles("src"),
+  ];
+  for (const relativePath of operationalFiles) {
+    const lines = readFileSync(join(root, relativePath), "utf8").split(/\r?\n/);
+    for (const [index, line] of lines.entries()) {
+      const trimmed = line.trimStart();
+      if (/^(?:\/\/|\/\*|\*|#)/.test(trimmed)) continue;
+      for (const forbidden of forbiddenTargets) {
+        assert.equal(
+          line.includes(forbidden),
+          false,
+          `${relativePath}:${index + 1} contains active original-project target ${forbidden}`,
+        );
+      }
     }
   }
 });

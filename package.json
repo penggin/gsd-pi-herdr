@@ -15,7 +15,8 @@
   "bin": {
     "gsd": "dist/loader.js",
     "gsd-cli": "dist/loader.js",
-    "gsd-pi": "scripts/install.js"
+    "gsd-pi": "scripts/install.js",
+    "gsd-mcp-server": "packages/mcp-server/bin/gsd-mcp-server.js"
   },
   "files": [
     "dist",

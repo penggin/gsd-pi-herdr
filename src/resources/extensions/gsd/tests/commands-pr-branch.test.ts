@@ -1,8 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-// Test the filtering logic used by /gsd pr-branch.
-// Full integration requires git operations, so we test the path filtering.
+import { resolvePrBranchBaseRef } from "../commands-pr-branch.js";
+
+// Test the filtering logic and downstream base resolution used by /gsd pr-branch.
 
 test("pr-branch: identifies .gsd/ paths", () => {
   const files = [
@@ -65,4 +70,22 @@ test("pr-branch: default branch name", () => {
   const currentBranch = "feat/add-auth";
   const prBranch = `pr/${currentBranch}`;
   assert.equal(prBranch, "pr/feat/add-auth");
+});
+
+test("pr-branch: downstream origin wins even when a historical upstream ref exists", () => {
+  const repo = mkdtempSync(join(tmpdir(), "gsd-pr-branch-base-"));
+  const git = (...args: string[]) => execFileSync("git", args, { cwd: repo, stdio: "pipe" });
+  try {
+    git("init", "-b", "main");
+    git("config", "user.name", "GSD Test");
+    git("config", "user.email", "gsd-test@example.invalid");
+    git("commit", "--allow-empty", "-m", "downstream base");
+    git("update-ref", "refs/remotes/origin/main", "HEAD");
+    git("commit", "--allow-empty", "-m", "historical source ref");
+    git("update-ref", "refs/remotes/upstream/main", "HEAD");
+
+    assert.equal(resolvePrBranchBaseRef(repo, "main"), "origin/main");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
 });

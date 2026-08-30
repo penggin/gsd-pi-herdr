@@ -579,6 +579,38 @@ this session does not merge, push, tag, or publish.
   and explicitly authorize a downstream merge/release action. No source-project
   request, merge, push, tag, or publish was performed.
 
+### 2026-08-30 — Completion re-audit: downstream PR base and bundled MCP executable
+
+- Re-ran the completion audit over all executable workflow, script, and runtime
+  files rather than relying only on the earlier curated distribution list. This
+  found one live source-lineage leak: `/gsd pr-branch` preferred a historical
+  `upstream/main` ref whenever it existed. It now resolves `origin/main` first
+  and otherwise uses the repository's detected main branch; historical remotes
+  cannot influence downstream PR construction.
+- Added an integration regression with both `origin/main` and
+  `upstream/main` refs present. The resolver selected `origin/main`, proving the
+  fix against the exact ambiguous checkout shape.
+- Exposed the bundled private MCP workspace as the root package executable
+  `gsd-mcp-server`. A global `@penggin/gsd-pi-herdr` install now provides the
+  command documented for external MCP clients, while `/gsd mcp init .` remains
+  the recommended absolute-path configuration. Removed stale instructions to
+  install the now-private MCP/RPC workspaces from npm.
+- Expanded the downstream boundary regression to recursively scan uncommented
+  executable source and automation for original-project targets. The broad scan
+  passes in addition to the explicit distribution-file assertions.
+- Focused evidence: PR-base regression **7/7 pass**; installer/boundary
+  regression **12/12 pass** plus broad boundary **5/5 pass**;
+  `typecheck:extensions`, changed-source regression **7/7**, `build:core`, and
+  `validate-pack` all pass. The package gate confirmed the installed root
+  tarball imports and handshakes with the bundled MCP server and that its global
+  install exposes `gsd-mcp-server`; it again ended with
+  **`Package is installable. Safe to publish.`**
+- No new architecture decision was required: these changes enforce ADR-H019's
+  existing downstream-only operational boundary. No request or modification was
+  made against the source project. Exact next task remains an explicitly
+  authorized downstream merge/release action; no push, merge, tag, or publish
+  was performed.
+
 ## 11. Working-session protocol
 
 For every Herdr session:

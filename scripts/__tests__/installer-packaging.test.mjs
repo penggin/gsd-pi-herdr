@@ -77,6 +77,11 @@ test("installer tarball declares extension-critical externals at the package roo
   }
 });
 
+test("downstream root package exposes its bundled workflow MCP executable", () => {
+  assert.equal(pkg.bin?.["gsd-mcp-server"], "packages/mcp-server/bin/gsd-mcp-server.js");
+  assert.ok(existsSync(pkg.bin["gsd-mcp-server"]));
+});
+
 test("workspace package bins point to checked-in shims instead of ignored dist output", () => {
   const packages = [
     "packages/pi-ai/package.json",

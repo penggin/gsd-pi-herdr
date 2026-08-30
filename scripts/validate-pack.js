@@ -746,6 +746,14 @@ try {
       }),
     }).trim();
     const globalRoot = join(globalNodeModules, ...rootPkg.name.split('/'));
+    const globalMcpBin = process.platform === 'win32'
+      ? join(globalPrefix, 'gsd-mcp-server.cmd')
+      : join(globalPrefix, 'bin', 'gsd-mcp-server');
+    if (!existsSync(globalMcpBin)) {
+      console.log('ERROR: Global downstream install did not expose gsd-mcp-server on its bin path.');
+      console.log(`    Expected: ${globalMcpBin}`);
+      process.exit(1);
+    }
 
     // Workspace packages ship under packages/*/dist and are symlinked into
     // node_modules by the postinstall script, which `--ignore-scripts` skipped.
@@ -864,7 +872,7 @@ try {
       },
     );
     console.log('    Copied /gsd workflow handler resolves hoisted yaml.');
-    console.log('    Global --ignore-scripts install + repair resolves externals and pi-ai/pi-coding-agent.');
+    console.log('    Global --ignore-scripts install exposes gsd-mcp-server and repair resolves externals and pi-ai/pi-coding-agent.');
   } catch (err) {
     console.log('ERROR: Global install smoke test failed.');
     if (err.stdout) console.log(err.stdout);

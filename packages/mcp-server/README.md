@@ -11,48 +11,36 @@ This package always exposes two bridge-independent tool surfaces:
 
 When workflow bridges are available, it also exposes headless-safe workflow tools for planning, completion, validation, reassessment, metadata persistence, and journal reads.
 
-## Installation
+## Distribution
+
+This is a private compatibility workspace bundled inside
+`@penggin/gsd-pi-herdr`; it is not published as a standalone npm package.
+Installing the downstream root package exposes the `gsd-mcp-server` executable.
+
+For normal setup, start GSD and run `/gsd mcp init .`. That command writes a
+project-local configuration using the exact bundled executable path.
+
+From this repository checkout:
 
 ```bash
-npm install @opengsd/mcp-server
-```
-
-The published package installs without the bundled-only `@gsd/pi-ai` package. A standalone process starts with the bridge-independent tool surfaces; see [Workflow tools](#workflow-tools) to enable workflow mutation tools.
-
-Or with the monorepo workspace:
-
-```bash
-# Already available as a workspace package
-npx gsd-mcp-server
+pnpm exec gsd-mcp-server
 ```
 
 ## Configuration
 
 ### Claude Code
 
-Add to your project's `.mcp.json`:
+Prefer `/gsd mcp init .`. For a global downstream install, the equivalent
+manual entry is:
 
 ```json
 {
   "mcpServers": {
     "gsd": {
-      "command": "npx",
-      "args": ["gsd-mcp-server"],
+      "command": "gsd-mcp-server",
       "env": {
         "GSD_CLI_PATH": "/path/to/gsd"
       }
-    }
-  }
-}
-```
-
-Or if installed globally:
-
-```json
-{
-  "mcpServers": {
-    "gsd": {
-      "command": "gsd-mcp-server"
     }
   }
 }
@@ -66,8 +54,7 @@ Add to `.cursor/mcp.json`:
 {
   "mcpServers": {
     "gsd": {
-      "command": "npx",
-      "args": ["gsd-mcp-server"],
+      "command": "gsd-mcp-server",
       "env": {
         "GSD_CLI_PATH": "/path/to/gsd"
       }

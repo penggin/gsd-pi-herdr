@@ -101,29 +101,18 @@ GSD 会检测你本地的 Claude Code 安装，并把它作为已认证的 Anthr
 
 **手动配置**
 
-如果你更希望自己配置，可以把 GSD 加到项目的 `.mcp.json` 中：
+最可靠的手动模板是先运行 `/gsd mcp init .`，再查看生成的
+`.mcp.json`。如果 downstream 根包已全局安装并且
+`gsd-mcp-server` 位于 `PATH`，也可以使用下面的简写配置：
 
 ```json
 {
   "mcpServers": {
     "gsd": {
-      "command": "npx",
-      "args": ["gsd-mcp-server"],
+      "command": "gsd-mcp-server",
       "env": {
         "GSD_CLI_PATH": "/path/to/gsd"
       }
-    }
-  }
-}
-```
-
-如果 `gsd-mcp-server` 已经全局安装：
-
-```json
-{
-  "mcpServers": {
-    "gsd": {
-      "command": "gsd-mcp-server"
     }
   }
 }

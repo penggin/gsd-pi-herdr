@@ -3,7 +3,7 @@
  *
  * Creates a clean PR branch by cherry-picking commits while stripping
  * any changes to .gsd/, .planning/, and PLAN.md paths. Useful for
- * upstream PRs where planning artifacts should not be included.
+ * downstream PRs where planning artifacts should not be included.
  */
 
 import type { ExtensionCommandContext } from "@gsd/pi-coding-agent";
@@ -76,6 +76,16 @@ function getCodeOnlyCommits(basePath: string, base: string, head: string): strin
   }
 }
 
+/** Resolve the downstream PR base without consulting historical source remotes. */
+export function resolvePrBranchBaseRef(basePath: string, mainBranch: string): string {
+  try {
+    git(basePath, ["rev-parse", "--verify", "origin/main"]);
+    return "origin/main";
+  } catch {
+    return mainBranch;
+  }
+}
+
 /**
  * Cherry-pick a commit while stripping excluded paths from the resulting
  * commit. Returns true if a commit was produced, false if nothing remained
@@ -133,14 +143,9 @@ export async function handlePrBranch(
   const currentBranch = nativeGetCurrentBranch(basePath);
   const mainBranch = nativeDetectMainBranch(basePath);
 
-  // Determine base ref (prefer upstream/main if available)
-  let baseRef: string;
-  try {
-    git(basePath, ["rev-parse", "--verify", "upstream/main"]);
-    baseRef = "upstream/main";
-  } catch {
-    baseRef = mainBranch;
-  }
+  // Downstream PRs are always based on this repository's origin. Historical
+  // source remotes are lineage-only and must never influence branch creation.
+  const baseRef = resolvePrBranchBaseRef(basePath, mainBranch);
 
   // Find commits with code changes
   const commits = getCodeOnlyCommits(basePath, baseRef, "HEAD");
