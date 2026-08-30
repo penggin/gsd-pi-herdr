@@ -37,7 +37,7 @@ function writeHermesVersionFiles(root, version) {
 function createVersionSyncFixture(root, version) {
   const optionalDependencies = Object.fromEntries(
     PLATFORM_PACKAGE_DIRS.map((dir) => [
-      `@opengsd/engine-${dir.replace("native/npm/", "")}`,
+      `@penggin/gsd-pi-herdr-engine-${dir.replace("native/npm/", "")}`,
       version,
     ]),
   );

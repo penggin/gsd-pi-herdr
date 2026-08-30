@@ -335,5 +335,5 @@ Write-Host "  4. Clean up after verifying:"
 Write-Host "     git branch -D $recoveryBranch"
 Write-Host ""
 Write-Host "Note: update GSD to v2.40.1+ to prevent this from recurring." -ForegroundColor DarkGray
-Write-Host "      PR: https://github.com/open-gsd/gsd-pi/pull/1669" -ForegroundColor DarkGray
+Write-Host "      Historical recovery procedure; no upstream network target is used." -ForegroundColor DarkGray
 Write-Host ""

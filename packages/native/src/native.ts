@@ -7,7 +7,7 @@
  *      local build is present (or when GSD_NATIVE_PREFER_LOCAL=1 forces it).
  *      The pinned npm binary is documented to lag the Rust source, so a
  *      present local build is always the better match for the source tree.
- *   2. @opengsd/engine-{platform} npm optional dependency (production install,
+ *   2. @penggin/gsd-pi-herdr-engine-{platform} npm optional dependency (production install,
  *      where no native/addon directory exists)
  *   3. local builds retried as a last resort (covers a local build that
  *      appeared between the existence check and here)
@@ -40,7 +40,7 @@ const platformPackageMap: Record<string, string> = {
 
 let _loadedSuccessfully = false;
 
-// Exports the source tree expects that the pinned @opengsd/engine-* binary is
+// Exports the source tree expects that the pinned @penggin/gsd-pi-herdr-engine-* binary is
 // documented to lag (CI builds from source for exactly this reason). Used to
 // flag a stale-but-loadable addon so the failure detail names the real cause
 // instead of surfacing later as a bare "unavailable" error.
@@ -51,7 +51,7 @@ function warnIfStale(loaded: Record<string, unknown>, source: string): void {
   if (missing.length === 0) return;
   process.stderr.write(
     `[gsd] Native addon from ${source} is stale: it lacks exports the source tree expects (${missing.join(", ")}). ` +
-      `Build the local addon (pnpm run build:native:dev) or update the pinned @opengsd/engine-* package.\n`,
+      `Build the local addon (pnpm run build:native:dev) or update the pinned @penggin/gsd-pi-herdr-engine-* package.\n`,
   );
 }
 
@@ -92,13 +92,13 @@ function loadNative(): Record<string, unknown> {
     const packageSuffix = platformPackageMap[platformTag];
     if (packageSuffix) {
       try {
-        const loaded = _require(`@opengsd/engine-${packageSuffix}`) as Record<string, unknown>;
+        const loaded = _require(`@penggin/gsd-pi-herdr-engine-${packageSuffix}`) as Record<string, unknown>;
         _loadedSuccessfully = true;
-        warnIfStale(loaded, `@opengsd/engine-${packageSuffix}`);
+        warnIfStale(loaded, `@penggin/gsd-pi-herdr-engine-${packageSuffix}`);
         return loaded;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        errors.push(`@opengsd/engine-${packageSuffix}: ${message}`);
+        errors.push(`@penggin/gsd-pi-herdr-engine-${packageSuffix}: ${message}`);
       }
     }
 

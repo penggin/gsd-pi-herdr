@@ -1,19 +1,19 @@
 # gsd-pi — VS Code Extension
 
-Control the [gsd-pi coding agent](https://github.com/open-gsd/gsd-pi) directly from VS Code. Run autonomous coding sessions, chat with `@gsd`, monitor agent activity in real-time, review and accept/reject changes, and manage your workflow — all without leaving the editor.
+Control the [gsd-pi coding agent](https://github.com/penggin/gsd-pi-herdr) directly from VS Code. Run autonomous coding sessions, chat with `@gsd`, monitor agent activity in real-time, review and accept/reject changes, and manage your workflow — all without leaving the editor.
 
 ![GSD Extension Overview](docs/images/overview.png)
 
 ## Requirements
 
-- **gsd-pi** installed globally: `npm install -g @opengsd/gsd-pi`
+- **gsd-pi** installed globally: `npm install -g @penggin/gsd-pi-herdr`
 - **Node.js** >= 22.18.0
 - **Git** installed and on PATH
 - **VS Code** >= 1.95.0
 
 ## Quick Start
 
-1. Install GSD: `npm install -g @opengsd/gsd-pi`
+1. Install GSD: `npm install -g @penggin/gsd-pi-herdr`
 2. Install this extension
 3. Open a project folder in VS Code
 4. Click the **GSD icon** in the Activity Bar (left sidebar)
@@ -197,6 +197,6 @@ The extension spawns `gsd --mode rpc` and communicates over JSON-RPC via stdin/s
 
 ## Links
 
-- [GSD Documentation](https://github.com/open-gsd/gsd-pi/tree/main/docs)
-- [Getting Started](https://github.com/open-gsd/gsd-pi/blob/main/docs/getting-started.md)
-- [Issue Tracker](https://github.com/open-gsd/gsd-pi/issues)
+- [GSD Documentation](https://github.com/penggin/gsd-pi-herdr/tree/main/docs)
+- [Getting Started](https://github.com/penggin/gsd-pi-herdr/blob/main/docs/getting-started.md)
+- [Issue Tracker](https://github.com/penggin/gsd-pi-herdr/issues)

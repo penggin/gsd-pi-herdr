@@ -2,7 +2,7 @@
 
 # Getting Started With GSD Pi
 
-GSD Pi, published from this repository as `@opengsd/gsd-pi`, is a local-first coding agent for planning, implementing, and verifying project work from your terminal.
+GSD Pi, published from this repository as `@penggin/gsd-pi-herdr`, is a local-first coding agent for planning, implementing, and verifying project work from your terminal.
 
 This guide gets you from a clean machine to your first GSD session.
 
@@ -27,16 +27,30 @@ git --version
 
 ## Install GSD Pi
 
-Recommended — guided installer (installs globally and walks through provider setup):
+The source checkout is the currently verified installation path:
 
 ```bash
-npx @opengsd/gsd-pi@latest
+git clone https://github.com/penggin/gsd-pi-herdr.git
+cd gsd-pi-herdr
+pnpm install --frozen-lockfile
+pnpm run build:core
+pnpm run build:web-host
+npm pack
+npm install -g ./penggin-gsd-pi-herdr-*.tgz
+gsd --build-info
 ```
 
-Alternative — direct global install from the scoped npm package:
+After a registry release, the guided installer installs globally and walks
+through provider setup:
 
 ```bash
-npm install -g @opengsd/gsd-pi@latest
+npx @penggin/gsd-pi-herdr@latest
+```
+
+Alternatively, install directly from the released scoped npm package:
+
+```bash
+npm install -g @penggin/gsd-pi-herdr@latest
 ```
 
 Using pnpm globally:
@@ -44,13 +58,13 @@ Using pnpm globally:
 ```bash
 pnpm setup
 exec $SHELL -l
-pnpm add -g @opengsd/gsd-pi@latest
+pnpm add -g @penggin/gsd-pi-herdr@latest
 ```
 
 Non-interactive install (CI/scripts):
 
 ```bash
-npx @opengsd/gsd-pi@latest --yes
+npx @penggin/gsd-pi-herdr@latest --yes
 ```
 
 Confirm the command is available:

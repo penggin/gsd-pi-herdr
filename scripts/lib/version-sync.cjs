@@ -48,7 +48,7 @@ const STABLE_SEMVER_PATTERN = /^\d+\.\d+\.\d+$/;
 
 /**
  * Prerelease publishes (dev AND next channels) reuse the stable
- * @opengsd/engine-* packages already on npm — the prerelease workflow does not
+ * @penggin/gsd-pi-herdr-engine-* packages already on npm — the prerelease workflow does not
  * build or publish per-platform engines. Strip any prerelease suffix back to
  * the base X.Y.Z so optionalDependencies pin to a version that actually exists.
  */
@@ -292,7 +292,7 @@ function verifyVersionSync(root) {
   const expectedOptionalDepVersion = resolveEngineOptionalDependencyVersion(expectedVersion);
   for (const platformDir of PLATFORM_PACKAGE_DIRS) {
     const platform = platformDir.replace("native/npm/", "");
-    const depName = `@opengsd/engine-${platform}`;
+    const depName = `@penggin/gsd-pi-herdr-engine-${platform}`;
     const pinned = rootPkg.optionalDependencies?.[depName];
     if (pinned === undefined) {
       issues.push(`package.json optionalDependencies.${depName} is missing, expected ${expectedOptionalDepVersion}`);

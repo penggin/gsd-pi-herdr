@@ -52,7 +52,7 @@ for (const platform of platformPackages) {
     console.log(`  ${platform}: already ${version}`);
   }
 
-  const dependencyName = `@opengsd/engine-${platform}`;
+  const dependencyName = `@penggin/gsd-pi-herdr-engine-${platform}`;
   if (rootPkg.optionalDependencies?.[dependencyName] !== optionalDependencyVersion) {
     rootPkg.optionalDependencies = rootPkg.optionalDependencies || {};
     rootPkg.optionalDependencies[dependencyName] = optionalDependencyVersion;

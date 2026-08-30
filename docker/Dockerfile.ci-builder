@@ -1,6 +1,6 @@
 # ──────────────────────────────────────────────
 # CI Builder
-# Image: ghcr.io/open-gsd/gsd-ci-builder
+# Image: ghcr.io/penggin/gsd-pi-herdr-ci-builder
 # Used by: pipeline.yml Dev stage
 # ──────────────────────────────────────────────
 FROM node:24-bookworm

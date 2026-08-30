@@ -2,15 +2,13 @@
 // Single source of truth for WHICH packages must reach npm for a release.
 //
 // Why this exists: the publish list used to be hardcoded in build-native.yml as
-// "@opengsd/contracts @opengsd/rpc-client @opengsd/mcp-server", which silently
-// omitted publishable workspace packages — so two releases went
-// out with those packages missing from npm. This module derives the set from
-// each package's own manifest so adding a publishable package can never again be
-// forgotten by an out-of-date list.
+// Historically this list included source-project-scoped workspace packages.
+// This downstream distribution ships those packages inside the root tarball and
+// keeps them private; only explicitly downstream-owned packages may be emitted.
 //
 // The required npm set for a release is:
 //   1. the root package (@penggin/gsd-pi-herdr)
-//   2. the native platform packages (@opengsd/engine-*), one per platform
+//   2. the native platform packages (@penggin/gsd-pi-herdr-engine-*), one per platform
 //   3. every pnpm workspace package that opts in via "publishConfig"
 //      (the @gsd/* packages have no publishConfig — they ship bundled inside the
 //      gsd-pi tarball and are linked at install time, so they are NOT published)
@@ -96,7 +94,7 @@ function getRootPackageName() {
 
 /** Native platform package names, derived from version-sync's platform list. */
 function getEnginePackageNames() {
-  return PLATFORM_PACKAGE_DIRS.map((dir) => `@opengsd/engine-${dir.replace('native/npm/', '')}`);
+  return PLATFORM_PACKAGE_DIRS.map((dir) => `@penggin/gsd-pi-herdr-engine-${dir.replace('native/npm/', '')}`);
 }
 
 /**
@@ -111,7 +109,9 @@ function getPublishableWorkspacePackages(repoRoot = REPO_ROOT) {
     const dir = path.dirname(manifest).replaceAll('\\', '/');
     return { dir, name: pkg.name, pkg };
   }).filter(({ name }) => name);
-  const pkgs = workspaces.filter(({ pkg }) => pkg.private !== true && pkg.publishConfig);
+  const pkgs = workspaces.filter(({ dir, pkg }) =>
+    !dir.startsWith('native/npm/') && pkg.private !== true && pkg.publishConfig,
+  );
   const workspaceNames = new Set(workspaces.map((p) => p.name));
   const names = new Set(pkgs.map((p) => p.name));
   return pkgs.map(({ dir, name, pkg }) => {

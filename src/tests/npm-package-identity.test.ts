@@ -16,7 +16,7 @@ function readPackageJson(path: string): {
 	return JSON.parse(readFileSync(join(projectRoot, path), "utf8"));
 }
 
-test("the downstream root package is distinct while native engines retain their published scope", () => {
+test("the downstream root and native engine packages use the downstream scope", () => {
 	const rootPackage = readPackageJson("package.json");
 	assert.equal(rootPackage.name, "@penggin/gsd-pi-herdr");
 
@@ -30,7 +30,7 @@ test("the downstream root package is distinct while native engines retain their 
 
 	for (const platform of platforms) {
 		const nativePackage = readPackageJson(`native/npm/${platform}/package.json`);
-		const expectedName = `@opengsd/engine-${platform}`;
+		const expectedName = `@penggin/gsd-pi-herdr-engine-${platform}`;
 		assert.equal(nativePackage.name, expectedName);
 		const engineSpec = rootPackage.optionalDependencies?.[expectedName];
 		assert.ok(

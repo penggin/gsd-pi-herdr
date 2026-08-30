@@ -70,6 +70,6 @@ After pinning:
 
 ```bash
 node --version   # v24.x.x
-npm install -g @opengsd/gsd-pi
+npm install -g @penggin/gsd-pi-herdr
 gsd --version
 ```

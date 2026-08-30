@@ -3,7 +3,6 @@
 # GSD Pi Herdr
 
 [![CI](https://img.shields.io/github/actions/workflow/status/penggin/gsd-pi-herdr/ci.yml?branch=main&label=tests&logo=github)](https://github.com/penggin/gsd-pi-herdr/actions/workflows/ci.yml)
-[![Discord](https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/vY2bv3FrzX)
 [![GitHub stars](https://img.shields.io/github/stars/penggin/gsd-pi-herdr?label=stars&logo=github)](https://github.com/penggin/gsd-pi-herdr/stargazers)
 [![License: MIT](https://img.shields.io/github/license/penggin/gsd-pi-herdr?label=license)](https://github.com/penggin/gsd-pi-herdr/blob/main/LICENSE)
 

@@ -7,7 +7,7 @@ Manual validation before releasing `open-gsd-hermes` 1.2.x. Complete **local pre
 ## Quick start
 
 ```bash
-# End-user path after installing/upgrading @opengsd/gsd-pi
+# End-user path after installing/upgrading @penggin/gsd-pi-herdr
 gsd hermes install --project /absolute/path/to/your/project
 hermes plugins list                                  # open-gsd-hermes should be enabled
 hermes gateway restart                               # or restart your Hermes CLI/gateway process
@@ -58,10 +58,10 @@ hermes plugins list   # should show open-gsd-hermes enabled
 Manual source-checkout path:
 
 ```bash
-pip install -e /path/to/gsd-pi/integrations/hermes
+pip install -e /path/to/gsd-pi-herdr/integrations/hermes
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 mkdir -p "$HERMES_HOME/plugins"
-cp -R /path/to/gsd-pi/integrations/hermes "$HERMES_HOME/plugins/open-gsd-hermes"
+cp -R /path/to/gsd-pi-herdr/integrations/hermes "$HERMES_HOME/plugins/open-gsd-hermes"
 hermes plugins enable open-gsd-hermes
 hermes plugins list   # should show open-gsd-hermes enabled
 ```

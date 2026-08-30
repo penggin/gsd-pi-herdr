@@ -98,4 +98,4 @@ Parent workspace mode is being completed incrementally. The following are tracke
 - **Per-repository git isolation** (worktree/branch per child repo). Isolation still operates at the project root; see ADR-044 for the design.
 - **Per-repository push policy.** Push is resolved at the project root.
 
-For the current status of each piece, see the parent-workspace epic ([#818](https://github.com/open-gsd/gsd-pi/issues/818)).
+For the current status of each piece, see the parent-workspace epic ([#818](https://github.com/penggin/gsd-pi-herdr/issues/818)).

@@ -33,7 +33,7 @@
     "links": [
       {
         "label": "GitHub",
-        "href": "https://github.com/open-gsd/gsd-pi"
+        "href": "https://github.com/penggin/gsd-pi-herdr"
       }
     ],
     "primary": {
@@ -44,7 +44,7 @@
   },
   "footer": {
     "socials": {
-      "github": "https://github.com/open-gsd/gsd-pi"
+      "github": "https://github.com/penggin/gsd-pi-herdr"
     }
   },
   "navigation": {

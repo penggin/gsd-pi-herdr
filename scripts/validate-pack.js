@@ -495,6 +495,90 @@ try {
     console.log(`    Expected: ${bundledWorkflowMcpCliPath}`);
     process.exit(1);
   }
+
+  // The inherited MCP workspace is private and bundled into the downstream
+  // root package. Validate its public API and stdio transport from the actual
+  // installed root tarball rather than packing or publishing it separately.
+  console.log('==> Verifying bundled MCP server import and handshake...');
+  try {
+    const publicApiScript = `
+      import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+      import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+      import { createMcpServer } from "@opengsd/mcp-server";
+
+      delete process.env.GSD_WORKFLOW_EXECUTORS_MODULE;
+      delete process.env.GSD_WORKFLOW_WRITE_GATE_MODULE;
+      const { server } = await createMcpServer({});
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      const client = new Client({ name: "bundled-mcp-validator", version: "1.0.0" });
+      try {
+        await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+        const { tools } = await client.listTools();
+        if (!tools.some((tool) => tool.name === "gsd_execute")) {
+          throw new Error("bundled MCP public API did not advertise gsd_execute");
+        }
+      } finally {
+        await client.close();
+        await server.close();
+      }
+    `;
+    execFileSync(process.execPath, ['--input-type=module', '--eval', publicApiScript], {
+      cwd: installedRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'inherit', 'inherit'],
+      timeout: 30000,
+      maxBuffer: DEFAULT_MAX_BUFFER,
+    });
+
+    const installedMcpManifestPath = join(installedRoot, 'node_modules', '@opengsd', 'mcp-server', 'package.json');
+    const installedMcpManifest = JSON.parse(readFileSync(installedMcpManifestPath, 'utf8'));
+    const mcpBinEntry = installedMcpManifest.bin?.['gsd-mcp-server'];
+    if (typeof mcpBinEntry !== 'string') throw new Error('bundled MCP package has no gsd-mcp-server bin');
+    const mcpBinPath = resolve(dirname(installedMcpManifestPath), mcpBinEntry);
+    const handshakeScript = `
+      import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+      import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+
+      const transport = new StdioClientTransport({
+        command: process.execPath,
+        args: [${JSON.stringify(mcpBinPath)}],
+        cwd: ${JSON.stringify(installDir)},
+        env: {
+          GSD_CODING_AGENT_DIR: ${JSON.stringify(join(installDir, 'agent'))},
+          GSD_HOME: ${JSON.stringify(join(installDir, '.gsd'))},
+          GSD_MCP_CLIENT_MANAGED: "1",
+          GSD_MCP_PROBE: "1",
+          GSD_WORKFLOW_PROJECT_ROOT: ${JSON.stringify(installDir)},
+        },
+        stderr: "pipe",
+      });
+      const client = new Client({ name: "bundled-mcp-stdio-validator", version: "1.0.0" });
+      try {
+        await client.connect(transport);
+        const { tools } = await client.listTools();
+        if (!tools.some((tool) => tool.name === "gsd_execute")) {
+          throw new Error("bundled MCP stdio server did not advertise gsd_execute");
+        }
+      } finally {
+        await client.close();
+      }
+    `;
+    execFileSync(process.execPath, ['--input-type=module', '--eval', handshakeScript], {
+      cwd: installedRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'inherit', 'inherit'],
+      timeout: 30000,
+      maxBuffer: DEFAULT_MAX_BUFFER,
+    });
+    console.log('    bundled MCP import and stdio handshake are valid.');
+  } catch (err) {
+    console.log('ERROR: Bundled MCP server validation failed after root tarball install.');
+    if (err.stdout) console.log(err.stdout);
+    if (err.stderr) console.log(err.stderr);
+    console.log(err.message ?? err);
+    process.exit(1);
+  }
+
   try {
     const versionOutput = execFileSync(process.execPath, [loaderPath, '-v'], {
       cwd: installDir,

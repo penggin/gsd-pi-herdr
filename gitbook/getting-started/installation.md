@@ -1,19 +1,33 @@
 # Installation
 
-Docs and community: [opengsd.net](https://opengsd.net)
+Source and documentation: [penggin/gsd-pi-herdr](https://github.com/penggin/gsd-pi-herdr)
 
 ## Install GSD-Pi
 
-Recommended — guided installer (installs globally, configures provider):
+The source checkout is the currently verified installation path:
 
 ```bash
-npx @opengsd/gsd-pi@latest
+git clone https://github.com/penggin/gsd-pi-herdr.git
+cd gsd-pi-herdr
+pnpm install --frozen-lockfile
+pnpm run build:core
+pnpm run build:web-host
+npm pack
+npm install -g ./penggin-gsd-pi-herdr-*.tgz
+gsd --build-info
+```
+
+After a registry release, the guided installer installs globally and configures
+the provider:
+
+```bash
+npx @penggin/gsd-pi-herdr@latest
 ```
 
 Alternative — direct global install (provider setup runs on first `gsd` launch):
 
 ```bash
-npm install -g @opengsd/gsd-pi@latest
+npm install -g @penggin/gsd-pi-herdr@latest
 ```
 
 Using pnpm globally:
@@ -21,13 +35,13 @@ Using pnpm globally:
 ```bash
 pnpm setup
 exec $SHELL -l
-pnpm add -g @opengsd/gsd-pi@latest
+pnpm add -g @penggin/gsd-pi-herdr@latest
 ```
 
 For automated or non-interactive installs:
 
 ```bash
-npx @opengsd/gsd-pi@latest --yes
+npx @penggin/gsd-pi-herdr@latest --yes
 ```
 
 Requires **Node.js 22.18.0 or later** (24 LTS recommended) and **Git**.
@@ -42,7 +56,7 @@ GSD checks for updates once every 24 hours. When a new version is available, you
 
 ## Set Up Your LLM Provider
 
-If you used `npx @opengsd/gsd-pi@latest`, the installer walks through provider setup automatically via `gsd config`.
+If you used `npx @penggin/gsd-pi-herdr@latest`, the installer walks through provider setup automatically via `gsd config`.
 
 If you installed with `npm install -g`, launch GSD for the first time:
 

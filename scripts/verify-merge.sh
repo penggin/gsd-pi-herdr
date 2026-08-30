@@ -12,10 +12,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-DEFAULT_BASE_REF="upstream/main"
-if ! git rev-parse --verify "$DEFAULT_BASE_REF" >/dev/null 2>&1; then
-	DEFAULT_BASE_REF="origin/main"
-fi
+DEFAULT_BASE_REF="origin/main"
 VERIFY_MERGE_BASE_REF="${VERIFY_MERGE_BASE_REF:-$DEFAULT_BASE_REF}"
 VERIFY_MERGE_HEAD_REF="${VERIFY_MERGE_HEAD_REF:-HEAD}"
 

@@ -47,7 +47,7 @@
 
 ### 安装后出现 `command not found: gsd`
 
-**症状：** `npm install -g @opengsd/gsd-pi` 成功，但系统找不到 `gsd`。
+**症状：** `npm install -g @penggin/gsd-pi-herdr` 成功，但系统找不到 `gsd`。
 
 **原因：** npm 的全局 bin 目录没有加入 shell 的 `$PATH`。
 
@@ -63,7 +63,7 @@ echo 'export PATH="$(npm prefix -g)/bin:$PATH"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
-**临时方案：** 直接执行 `npx @opengsd/gsd-pi`，或使用 `$(npm prefix -g)/bin/gsd`。
+**临时方案：** 直接执行 `npx @penggin/gsd-pi-herdr`，或使用 `$(npm prefix -g)/bin/gsd`。
 
 **常见原因：**
 
@@ -71,7 +71,7 @@ source ~/.zshrc
 - **版本管理器（nvm、fnm、mise）**：全局 bin 路径是按版本区分的，需确保版本管理器正确初始化
 - **oh-my-zsh**：`gitfast` 插件会把 `gsd` alias 到 `git svn dcommit`。可通过 `alias gsd` 检查，并在需要时取消 alias
 
-### `npm install -g @opengsd/gsd-pi` 失败
+### `npm install -g @penggin/gsd-pi-herdr` 失败
 
 **常见原因：**
 
@@ -346,7 +346,7 @@ Doctor 会从磁盘上的 plan 和 roadmap 文件重建 `STATE.md`，并修复�
 
 ## 获取帮助
 
-- **GitHub Issues：** [github.com/open-gsd/gsd-pi/issues](https://github.com/open-gsd/gsd-pi/issues)
+- **GitHub Issues：** [github.com/penggin/gsd-pi-herdr/issues](https://github.com/penggin/gsd-pi-herdr/issues)
 - **Dashboard：** `Ctrl+Alt+G` 或 `/gsd status`，查看实时诊断信息
 - **Forensics：** `/gsd forensics`，用于对自动模式失败做结构化事后分析
 - **Session logs：** `.gsd/activity/` 中包含用于崩溃取证的 JSONL 会话转储

@@ -56,7 +56,7 @@ function createFixture(): string {
   });
   writeJson(root, "pkg/package.json", { name: "@glittercowboy/gsd", version: "1.0.0" });
   writeJson(root, "native/npm/darwin-arm64/package.json", {
-    name: "@opengsd/engine-darwin-arm64",
+    name: "@penggin/gsd-pi-herdr-engine-darwin-arm64",
     version: "1.0.0",
   });
   writeText(

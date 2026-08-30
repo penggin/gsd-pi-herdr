@@ -52,7 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.channel == 'latest' && 'dev' || github.event.inputs.channel }}
     container:
-      image: ghcr.io/open-gsd/gsd-ci-builder:latest
+      image: ghcr.io/penggin/gsd-pi-herdr-ci-builder:latest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
@@ -560,7 +560,7 @@ jobs:
         run: |
           MISSING=()
           for platform in darwin-arm64 darwin-x64 linux-x64-gnu linux-arm64-gnu win32-x64-msvc; do
-            PKG="@opengsd/engine-${platform}"
+            PKG="@penggin/gsd-pi-herdr-engine-${platform}"
             if ! npm view "${PKG}" name >/dev/null 2>&1; then
               MISSING+=("${PKG}")
             fi
@@ -601,7 +601,7 @@ jobs:
           for attempt in $(seq 1 5); do
             FAILED=0
             for platform in darwin-arm64 darwin-x64 linux-x64-gnu linux-arm64-gnu win32-x64-msvc; do
-              PKG="@opengsd/engine-${platform}"
+              PKG="@penggin/gsd-pi-herdr-engine-${platform}"
               PUBLISHED=$(npm view "${PKG}@${RELEASE_VERSION}" version 2>/dev/null || echo "")
               if [ "${PUBLISHED}" != "${RELEASE_VERSION}" ]; then
                 FAILED=1
@@ -615,7 +615,7 @@ jobs:
             if [ "${attempt}" = "5" ]; then
               echo "::error::One or more native platform packages were not visible after 5 attempts."
               for platform in darwin-arm64 darwin-x64 linux-x64-gnu linux-arm64-gnu win32-x64-msvc; do
-                PKG="@opengsd/engine-${platform}"
+                PKG="@penggin/gsd-pi-herdr-engine-${platform}"
                 PUBLISHED=$(npm view "${PKG}@${RELEASE_VERSION}" version 2>/dev/null || echo "")
                 if [ "${PUBLISHED}" = "${RELEASE_VERSION}" ]; then
                   echo "  ✓ ${PKG}@${RELEASE_VERSION}"
@@ -639,7 +639,7 @@ jobs:
           RELEASE_VERSION: ${{ needs.prod-release-plan.outputs.version }}
         run: |
           # The release commit + tag are created (in "Commit and tag release") BEFORE
-          # the @opengsd/engine-* native packages are published to npm. bump-version.mjs
+          # the @penggin/gsd-pi-herdr-engine-* native packages are published to npm. bump-version.mjs
           # runs `pnpm install --lockfile-only` at that point, and pnpm silently drops
           # the still-unpublished engine packages from optionalDependencies — so the
           # committed pnpm-lock.yaml is missing them. They are published and verified

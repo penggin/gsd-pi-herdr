@@ -134,8 +134,8 @@ ISSUE_URL=$(gh issue create -R penggin/gsd-pi-herdr \
 
 # Step 2: Set the issue type via GraphQL
 ISSUE_NUM=$(echo "$ISSUE_URL" | grep -oE '[0-9]+$')
-ISSUE_ID=$(gh api graphql -f query='{ repository(owner:"open-gsd",name:"gsd-pi") { issue(number:'"$ISSUE_NUM"') { id } } }' --jq '.data.repository.issue.id')
-TYPE_ID=$(gh api graphql -f query='{ repository(owner:"open-gsd",name:"gsd-pi") { issueTypes(first:20) { nodes { id name } } } }' --jq '.data.repository.issueTypes.nodes[] | select(.name=="Bug") | .id')
+ISSUE_ID=$(gh api graphql -f query='{ repository(owner:"penggin",name:"gsd-pi-herdr") { issue(number:'"$ISSUE_NUM"') { id } } }' --jq '.data.repository.issue.id')
+TYPE_ID=$(gh api graphql -f query='{ repository(owner:"penggin",name:"gsd-pi-herdr") { issueTypes(first:20) { nodes { id name } } } }' --jq '.data.repository.issueTypes.nodes[] | select(.name=="Bug") | .id')
 gh api graphql -f query='mutation { updateIssue(input:{id:"'"$ISSUE_ID"'",issueTypeId:"'"$TYPE_ID"'"}) { issue { number } } }'
 ```
 
@@ -158,13 +158,13 @@ See [labels.md](./references/labels.md) for the full taxonomy and color codes.
 
 ```bash
 # List projects
-gh project list --owner open-gsd
+gh project list --owner penggin
 
 # Create project
-gh project create --owner open-gsd --title "gsd-pi Backlog"
+gh project create --owner penggin --title "gsd-pi-herdr Backlog"
 
 # Add issue to project
-gh project item-add 1 --owner open-gsd \
+gh project item-add 1 --owner penggin \
   --url https://github.com/penggin/gsd-pi-herdr/issues/42
 ```
 

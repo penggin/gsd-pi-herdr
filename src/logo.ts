@@ -8,7 +8,7 @@ import { GSD_PI_BRAND, GSD_PI_LOGO } from './resources/shared/gsd-pi-logo.js'
 export { GSD_PI_BRAND, GSD_PI_LOGO }
 
 /** Project website — shown in installer, loader, and onboarding surfaces. */
-export const GSD_WEBSITE = 'https://opengsd.net'
+export const GSD_WEBSITE = 'https://github.com/penggin/gsd-pi-herdr'
 
 /**
  * Render the GSD-Pi wordmark with a color function applied to each line.

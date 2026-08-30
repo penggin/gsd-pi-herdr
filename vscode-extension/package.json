@@ -8,11 +8,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/open-gsd/gsd-pi.git"
+    "url": "git+https://github.com/penggin/gsd-pi-herdr.git"
   },
-  "homepage": "https://github.com/open-gsd/gsd-pi/blob/main/vscode-extension/README.md",
+  "homepage": "https://github.com/penggin/gsd-pi-herdr/blob/main/vscode-extension/README.md",
   "bugs": {
-    "url": "https://github.com/open-gsd/gsd-pi/issues"
+    "url": "https://github.com/penggin/gsd-pi-herdr/issues"
   },
   "keywords": [
     "ai",

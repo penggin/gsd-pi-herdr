@@ -1,5 +1,6 @@
 {
   "name": "@opengsd/rpc-client",
+  "private": true,
   "version": "1.16.2",
   "description": "Standalone RPC client SDK for GSD — zero internal dependencies",
   "license": "MIT",
@@ -12,9 +13,6 @@
     "type": "git",
     "url": "git+https://github.com/penggin/gsd-pi-herdr.git",
     "directory": "packages/rpc-client"
-  },
-  "publishConfig": {
-    "access": "public"
   },
   "type": "module",
   "main": "./dist/index.js",

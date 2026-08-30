@@ -38,7 +38,7 @@ You can stay hands-on with **step mode** (reviewing each step) or let GSD run au
 
 ```bash
 # Install
-npx @opengsd/gsd-pi@latest
+npx @penggin/gsd-pi-herdr@latest
 
 # Launch
 gsd

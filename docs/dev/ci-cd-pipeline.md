@@ -40,13 +40,13 @@ tag can lag `main` by any amount of time:
 
 ```bash
 # Most recent manually published dev build
-npx @opengsd/gsd-pi@dev
+npx @penggin/gsd-pi-herdr@dev
 
 # Most recent manually published next build
-npx @opengsd/gsd-pi@next
+npx @penggin/gsd-pi-herdr@next
 
 # Stable production release
-npx @opengsd/gsd-pi@latest    # or just: npx @opengsd/gsd-pi
+npx @penggin/gsd-pi-herdr@latest    # or just: npx @penggin/gsd-pi-herdr
 ```
 
 ### Using Docker
@@ -55,16 +55,16 @@ Only `:latest` and `:<version>` are pushed (by the `prod-release` job):
 
 ```bash
 # Stable
-docker run --rm -v $(pwd):/workspace ghcr.io/open-gsd/gsd-pi:latest --version
+docker run --rm -v $(pwd):/workspace ghcr.io/penggin/gsd-pi-herdr:latest --version
 
 # A specific release
-docker run --rm -v $(pwd):/workspace ghcr.io/open-gsd/gsd-pi:<version> --version
+docker run --rm -v $(pwd):/workspace ghcr.io/penggin/gsd-pi-herdr:<version> --version
 ```
 
 ### Checking if a Fix Landed
 
 1. Confirm the PR merged to `main` — that alone does **not** publish anything.
-2. Check the current dist-tags: `npm view @opengsd/gsd-pi dist-tags`
+2. Check the current dist-tags: `npm view @penggin/gsd-pi-herdr dist-tags`
 3. If your fix is not in the version those tags point at, it has not been
    published yet. Ask a maintainer to run **NPM Publish** for the channel you
    need.
@@ -77,7 +77,7 @@ docker run --rm -v $(pwd):/workspace ghcr.io/open-gsd/gsd-pi:<version> --version
 |----------|------|---------|---------|
 | CI | `ci.yml` | PR + push to `main`/`dev`/`test`/`hotfix/**` (+ manual dispatch) | Build, test, typecheck — **the merge gate** |
 | NPM Publish | `npm-publish.yml` | `workflow_dispatch` only | **The only workflow that publishes to npm.** Publishes `@dev` or `@next`; for `@latest`, publishes and verifies `@dev` first, then waits for `prod` approval |
-| Builder Image | `pipeline.yml` | After CI completes on `main`, or manual dispatch | Rebuilds `ghcr.io/open-gsd/gsd-ci-builder:latest` when `Dockerfile`, `package.json`, or `pipeline.yml` changed. Publishes nothing to npm |
+| Builder Image | `pipeline.yml` | After CI completes on `main`, or manual dispatch | Rebuilds `ghcr.io/penggin/gsd-pi-herdr-ci-builder:latest` when `Dockerfile`, `package.json`, or `pipeline.yml` changed. Publishes nothing to npm |
 | Native Binaries | `build-native.yml` | `workflow_dispatch` only | Cross-compile platform binaries; optional token-auth bootstrap publish |
 | Dev Cleanup | `cleanup-dev-versions.yml` | Weekly (Monday 06:00 UTC) | Unpublish `-dev.` versions older than 30 days |
 | Agent Workflow Guard | `agent-workflow-guard.yml` | PR changes to workflow files | Blocks workflow diffs that expand `allowed_non_write_users` |
@@ -94,7 +94,7 @@ docker run --rm -v $(pwd):/workspace ghcr.io/open-gsd/gsd-pi:<version> --version
 - **pnpm cache** — the prerelease publish, prerelease verify, and production release jobs in `npm-publish.yml` use `cache: pnpm` on `setup-node`, saving ~1-2 min per job on repeat runs
 - **Exponential backoff** — npm registry propagation waits use exponential backoff (10s → 20s → 40s → 60s cap in `npm-publish.yml`; 5s → 30s cap for native package verification) instead of fixed sleeps
 - **Concurrent-publish guard** — every `npm publish` step treats "cannot publish over the previously published version" as an idempotent skip, but only after re-reading the dist-tag; if the tag does not point at the expected version the job fails loudly
-- **dist-tag mutation is not automated** — npm trusted publishing authenticates `npm publish`, not dist-tag moves. When a version already exists and the tag points elsewhere, the workflow stops and prints the manual escape hatch: `npm dist-tag add @opengsd/gsd-pi@<version> <channel>`
+- **dist-tag mutation is not automated** — npm trusted publishing authenticates `npm publish`, not dist-tag moves. When a version already exists and the tag points elsewhere, the workflow stops and prints the manual escape hatch: `npm dist-tag add @penggin/gsd-pi-herdr@<version> <channel>`
 - **Security hardening** — `${{ }}` expressions are passed through `env:` variables rather than interpolated directly into `run:` blocks, to prevent command injection vectors
 - **Merge-queue PR uses `RELEASE_PAT`** — `GITHUB_TOKEN` cannot create PRs on this repo. The GitHub Release is created after the tag and before that PR so a PR-create failure cannot leave npm published with no GitHub Release
 
@@ -110,7 +110,7 @@ See [Test confidence stack](./test-confidence-stack.md) for the code-area → ru
 | Platform | Docker e2e step in `build`, `windows-portability` | Path-gated; Docker runs only when `docker-changed=true`, Windows runs only when portability paths change | Yes when triggered |
 | Platform (warn) | Windows e2e smoke step inside `windows-portability` | `windows-e2e-changed=true` | **No** (`continue-on-error: true`) |
 
-**Local before review:** run `npm run verify:merge:needed -- --base upstream/main` first. If it reports `heavy-code-changed=true`, then run `npm run verify:merge` for sequential parity with the PR-blocking Linux jobs above (except path-gated platform jobs). If not, `verify:fast` plus targeted checks is usually sufficient.
+**Local before review:** run `npm run verify:merge:needed -- --base origin/main` first. If it reports `heavy-code-changed=true`, then run `npm run verify:merge` for sequential parity with the PR-blocking Linux jobs above (except path-gated platform jobs). If not, `verify:fast` plus targeted checks is usually sufficient.
 
 **Branch protection:** Required checks should include `fast-gates` and `build` for full Linux merge confidence. Keep `windows-portability` required only if GitHub branch protection is configured to handle skipped path-gated checks correctly.
 
@@ -171,12 +171,12 @@ Nothing moves to `@latest` as a side effect of this. A production release is a s
 1. In GitHub Actions, run **NPM Publish** with `channel=latest`. This always uses `main`, ignoring the `ref` input.
 2. The workflow publishes and verifies `@dev` from `main` first (the same `prerelease-publish` + `prerelease-verify` jobs), then `prod-release-plan` generates the changelog and computes the version, and `prod-native-build` builds all five native binaries.
 3. `prod-release` targets the `prod` environment and shows "Waiting for review". Click **Review deployments** → select `prod` → **Approve**.
-4. After approval the workflow re-checks that `main` has not moved, bumps and commits the version, publishes the matching `@opengsd/engine-*` packages, verifies they are visible on npm, publishes the `@opengsd` workspace packages, publishes `@opengsd/gsd-pi@latest`, runs `verify-npm-release.mjs`, pushes the release commit and `v<version>` tag, creates the GitHub Release, pushes the Docker images, and opens a back-merge PR from `main` into `next` if needed.
+4. After approval the workflow re-checks that `main` has not moved, bumps and commits the version, publishes the matching `@penggin/gsd-pi-herdr-engine-*` packages, verifies they are visible on npm, publishes `@penggin/gsd-pi-herdr@latest`, runs `verify-npm-release.mjs`, pushes the release commit and `v<version>` tag, creates the GitHub Release, pushes the Docker images, and opens a back-merge PR from `main` into `next` if needed. Inherited internal workspaces remain private and are bundled into the root package; they are never published separately.
 
 If a step fails after the version is already on npm, the dist-tag may be left behind — trusted publishing cannot move it. Move it by hand:
 
 ```bash
-npm dist-tag add @opengsd/gsd-pi@<version> <channel>
+npm dist-tag add @penggin/gsd-pi-herdr@<version> <channel>
 ```
 
 ### Rolling Back a Release
@@ -185,12 +185,12 @@ If a broken version reaches production:
 
 ```bash
 # Roll back npm
-npm dist-tag add @opengsd/gsd-pi@<previous-good-version> latest
+npm dist-tag add @penggin/gsd-pi-herdr@<previous-good-version> latest
 
 # Roll back Docker
-docker pull ghcr.io/open-gsd/gsd-pi:<previous-good-version>
-docker tag ghcr.io/open-gsd/gsd-pi:<previous-good-version> ghcr.io/open-gsd/gsd-pi:latest
-docker push ghcr.io/open-gsd/gsd-pi:latest
+docker pull ghcr.io/penggin/gsd-pi-herdr:<previous-good-version>
+docker tag ghcr.io/penggin/gsd-pi-herdr:<previous-good-version> ghcr.io/penggin/gsd-pi-herdr:latest
+docker push ghcr.io/penggin/gsd-pi-herdr:latest
 ```
 
 For `@dev` or `@next`, roll back the same way (`npm dist-tag add`) or re-run **NPM Publish** for that channel from a good ref. Nothing overwrites those tags on its own.
@@ -208,7 +208,7 @@ For `@dev` or `@next`, roll back the same way (`npm dist-tag add`) or re-run **N
 | Secret: `ANTHROPIC_API_KEY` | Prod environment only (non-blocking live LLM tests) |
 | Secret: `OPENAI_API_KEY` | Prod environment only (non-blocking live LLM tests) |
 | Secret: `DISCORD_CHANGELOG_WEBHOOK` | Optional — release announcement; the step tolerates a missing webhook |
-| GHCR | Enabled for the `open-gsd` org |
+| GHCR | Enabled for the `penggin` namespace |
 
 ### npm Trusted Publishing (all packages)
 
@@ -216,15 +216,15 @@ npm [trusted publishing](https://docs.npmjs.com/trusted-publishers) binds each p
 
 #### First-time packages (bootstrap with token)
 
-Use this when any `@opengsd/engine-*` package is missing from npm (today: `@opengsd/engine-darwin-x64`, `@opengsd/engine-linux-x64-gnu`).
+Use this when any `@penggin/gsd-pi-herdr-engine-*` package is missing from npm (today: `@penggin/gsd-pi-herdr-engine-darwin-x64`, `@penggin/gsd-pi-herdr-engine-linux-x64-gnu`).
 
-1. Create an npm [automation token](https://www.npmjs.com/settings/opengsd/tokens) with **Publish** access to the `@opengsd` scope (must be allowed to create new packages under the org).
+1. Create an npm automation token with **Publish** access to the `@penggin` scope (it must be allowed to create the downstream packages).
 2. Add the token as repository secret **`NPM_TOKEN`** (GitHub → repo → Settings → Secrets and variables → Actions).
-3. Run [Build Native Binaries](https://github.com/open-gsd/gsd-pi/actions/workflows/build-native.yml):
+3. Run [Build Native Binaries](https://github.com/penggin/gsd-pi-herdr/actions/workflows/build-native.yml):
    - `publish`: **true**
    - `platform_packages_only`: **true**
    - `publish_auth`: **token** ← required for packages that do not exist yet
-4. Confirm all five packages resolve: `npm view @opengsd/engine-darwin-x64 version` (and the other four).
+4. Confirm all five packages resolve: `npm view @penggin/gsd-pi-herdr-engine-darwin-x64 version` (and the other four).
 5. **Then** configure trusted publishing on each package as described below.
 6. Re-run **NPM Publish** with the desired channel.
 
@@ -232,9 +232,9 @@ The publish step skips packages already on npm and attempts all five platforms b
 
 #### Trusted publishing (after first publish)
 
-Configure **every** package on [npm package settings](https://www.npmjs.com/settings/opengsd/packages) → package → **Publishing access** → **Trusted Publisher**. Use `npm-publish.yml` for the root package, every native engine package, and every publishable workspace package returned by `node scripts/lib/npm-release-packages.cjs`; that script is the authoritative release-set inventory.
+Configure every downstream package in npm package settings → **Publishing access** → **Trusted Publisher**. Use `npm-publish.yml` for the root package and every native engine package returned by `node scripts/lib/npm-release-packages.cjs`; that script is the authoritative release-set inventory. Internal workspaces are deliberately absent because they are private.
 
-For all packages: repository **`open-gsd/gsd-pi`**, environment **(none)**.
+For all packages: repository **`penggin/gsd-pi-herdr`**, environment **(none)**.
 
 After trusted publishing is configured, use **NPM Publish** with `channel=latest` and `publish_auth=trusted` (default) for routine production publishes. The standalone **Build Native Binaries** workflow remains useful for manual binary builds and token-based bootstrap publishes, but trusted production native package publishing belongs to `npm-publish.yml` so the prod workflow can publish a single coherent version end to end.
 
@@ -242,8 +242,8 @@ After trusted publishing is configured, use **NPM Publish** with `channel=latest
 
 | Image | Base | Purpose | Tags |
 |-------|------|---------|------|
-| `ghcr.io/open-gsd/gsd-ci-builder` | `node:24-bookworm` | CI build environment with Rust toolchain | `:latest`, `:<date>` |
-| `ghcr.io/open-gsd/gsd-pi` | `node:24-slim` | User-facing runtime | `:latest`, `:<version>` |
+| `ghcr.io/penggin/gsd-pi-herdr-ci-builder` | `node:24-bookworm` | CI build environment with Rust toolchain | `:latest`, `:<date>` |
+| `ghcr.io/penggin/gsd-pi-herdr` | `node:24-slim` | User-facing runtime | `:latest`, `:<version>` |
 
 The runtime image is built and pushed only by the `prod-release` job in `npm-publish.yml`, so it exists only for approved `@latest` releases. There is no `:next` runtime tag.
 

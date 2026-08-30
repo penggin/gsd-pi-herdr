@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Publish all @opengsd/engine-* platform packages for the root package version.
+# Publish all @penggin/gsd-pi-herdr-engine-* platform packages for the root package version.
 # Skips packages already on npm; continues on per-platform failure and reports a summary at the end (avoids leaving platforms unpublished after an early exit).
 
 set -euo pipefail
@@ -16,7 +16,7 @@ SKIPPED=()
 PUBLISHED=()
 
 for platform in "${PLATFORMS[@]}"; do
-  PKG="@opengsd/engine-${platform}"
+  PKG="@penggin/gsd-pi-herdr-engine-${platform}"
   EXISTING="$(npm view "${PKG}@${VERSION}" version 2>/dev/null || true)"
 
   if [ "${EXISTING}" = "${VERSION}" ]; then

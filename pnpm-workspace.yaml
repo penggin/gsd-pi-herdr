@@ -1,11 +1,13 @@
 packages:
   - 'packages/*'
+  - 'native/npm/*'
   - 'extensions/*'
   - 'web'
 
 autoInstallPeers: true
 strictPeerDependencies: false
 engineStrict: true
+linkWorkspacePackages: true
 
 # Transitive-dependency security overrides (Dependabot). pnpm 10 reads overrides
 # from here, not from package.json's top-level npm "overrides" field.

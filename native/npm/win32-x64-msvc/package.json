@@ -1,5 +1,5 @@
 {
-  "name": "@opengsd/engine-win32-x64-msvc",
+  "name": "@penggin/gsd-pi-herdr-engine-win32-x64-msvc",
   "version": "1.16.2",
   "description": "GSD native engine binary for Windows x64 (MSVC)",
   "os": [
@@ -15,7 +15,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/open-gsd/gsd-pi.git"
+    "url": "git+https://github.com/penggin/gsd-pi-herdr.git"
   },
   "publishConfig": {
     "provenance": true

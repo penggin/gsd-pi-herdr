@@ -9,10 +9,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-DEFAULT_BASE_REF="upstream/main"
-if ! git rev-parse --verify "$DEFAULT_BASE_REF" >/dev/null 2>&1; then
-  DEFAULT_BASE_REF="origin/main"
-fi
+DEFAULT_BASE_REF="origin/main"
 
 BASE_REF="$DEFAULT_BASE_REF"
 HEAD_REF="HEAD"

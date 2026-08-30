@@ -21,25 +21,16 @@ const {
 } = require("../lib/npm-release-packages.cjs");
 const repoRoot = path.resolve(fileURLToPath(import.meta.url), "../../..");
 
-test("required npm set keeps daemon and excludes retired cloud products", () => {
+test("required npm set never publishes private source-scope workspaces", () => {
   const names = getRequiredNpmPackageNames();
-  assert.ok(names.includes("@opengsd/daemon"), "daemon must be published");
-  assert.ok(!names.includes("@opengsd/cloud-mcp-gateway"), "retired cloud gateway must not be published");
-  assert.ok(!names.includes("@opengsd/gsd-cloud"), "retired cloud agent must not be published");
+  assert.deepEqual(getPublishableWorkspacePackages(), []);
+  assert.ok(names.every((name) => !name.startsWith("@opengsd/")), "release set must be downstream-owned");
 });
 
-test("required npm set = root + engines + every publishConfig workspace package", () => {
+test("required npm set = downstream root + downstream engines", () => {
   const names = getRequiredNpmPackageNames();
-  for (const expected of [
-    getRootPackageName(),
-    ...getEnginePackageNames(),
-    "@opengsd/contracts",
-    "@opengsd/rpc-client",
-    "@opengsd/mcp-server",
-    "@opengsd/daemon",
-  ]) {
-    assert.ok(names.includes(expected), `${expected} must be in the required npm set`);
-  }
+  assert.deepEqual(names, [...getEnginePackageNames(), getRootPackageName()]);
+  assert.ok(names.every((name) => name.startsWith("@penggin/")));
 });
 
 test("bundled @gsd/* packages are NOT published", () => {

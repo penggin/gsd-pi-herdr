@@ -1,5 +1,6 @@
 {
   "name": "@opengsd/daemon",
+  "private": true,
   "version": "1.16.2",
   "description": "GSD daemon — background process for project monitoring and Discord integration",
   "license": "MIT",
@@ -7,9 +8,6 @@
     "type": "git",
     "url": "git+https://github.com/penggin/gsd-pi-herdr.git",
     "directory": "packages/daemon"
-  },
-  "publishConfig": {
-    "access": "public"
   },
   "type": "module",
   "main": "./dist/index.js",

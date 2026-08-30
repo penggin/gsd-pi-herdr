@@ -23,7 +23,7 @@ export function printBanner({ version, colors }) {
 
   process.stdout.write(
     `\n  ${c.dim}Git Ship Done · v${version}${c.reset}\n` +
-    `  ${c.dim}${logoModule?.GSD_WEBSITE ?? 'https://opengsd.net'}${c.reset}\n\n`,
+    `  ${c.dim}${logoModule?.GSD_WEBSITE ?? 'https://github.com/penggin/gsd-pi-herdr'}${c.reset}\n\n`,
   )
 }
 

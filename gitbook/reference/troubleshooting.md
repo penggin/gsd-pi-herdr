@@ -20,16 +20,16 @@ An old global `gsd-pi` install can shadow the new scoped package.
 ```bash
 npm uninstall -g gsd-pi
 rm -f ~/.gsd/.update-check ~/.gsd/agent/managed-resources.json
-npm install -g @opengsd/gsd-pi@latest
+npm install -g @penggin/gsd-pi-herdr@latest
 ```
 
 **Move from old npm to pnpm:**
 ```bash
-npm uninstall -g gsd-pi @opengsd/gsd-pi
+npm uninstall -g gsd-pi @penggin/gsd-pi-herdr
 rm -f ~/.gsd/.update-check ~/.gsd/agent/managed-resources.json
 pnpm setup
 exec $SHELL -l
-pnpm add -g @opengsd/gsd-pi@latest
+pnpm add -g @penggin/gsd-pi-herdr@latest
 command -v gsd
 gsd --version
 ```
@@ -41,7 +41,7 @@ If the old package was installed with `sudo npm install -g`, use `sudo npm unins
 GSD exits before startup with an error like:
 
 ```text
-gsd.db schema is v30, newer than the v29 this gsd-pi supports. Update gsd-pi (npm i -g @opengsd/gsd-pi) before opening this project.
+gsd.db schema is v30, newer than the v29 this gsd-pi supports. Update gsd-pi (npm i -g @penggin/gsd-pi-herdr) before opening this project.
 ```
 
 The version numbers may differ. This means `.gsd/gsd.db` was already opened or migrated by a newer `gsd-pi` binary, and the running binary is too old to safely read or write that database.
@@ -49,14 +49,14 @@ The version numbers may differ. This means `.gsd/gsd.db` was already opened or m
 **Fix:** Upgrade the `gsd` binary that will open this project, then retry from the project root:
 
 ```bash
-npm install -g @opengsd/gsd-pi@latest
+npm install -g @penggin/gsd-pi-herdr@latest
 gsd --version
 ```
 
 If you use pnpm globals, run:
 
 ```bash
-pnpm add -g @opengsd/gsd-pi@latest
+pnpm add -g @penggin/gsd-pi-herdr@latest
 gsd --version
 ```
 
@@ -70,13 +70,13 @@ pnpm global commands fail with `The configured global bin directory ... is not i
 ```bash
 pnpm setup
 exec $SHELL -l
-pnpm remove -g @opengsd/gsd-pi
+pnpm remove -g @penggin/gsd-pi-herdr
 ```
 
 For a one-terminal workaround on macOS/Linux:
 ```bash
 export PATH="/path/from/pnpm-error:$PATH"
-pnpm remove -g @opengsd/gsd-pi
+pnpm remove -g @penggin/gsd-pi-herdr
 ```
 
 Replace the path with the exact global bin directory from your pnpm error message.
@@ -262,7 +262,7 @@ Follow the [authoritative recovery contract](../../docs/user-docs/migration.md#p
 
 ## Getting Help
 
-- **GitHub Issues:** [github.com/open-gsd/gsd-pi/issues](https://github.com/open-gsd/gsd-pi/issues)
+- **GitHub Issues:** [github.com/penggin/gsd-pi-herdr/issues](https://github.com/penggin/gsd-pi-herdr/issues)
 - **Dashboard:** `Ctrl+Alt+G` or `/gsd status`
 - **Forensics:** `/gsd forensics` for post-mortem analysis
 - **Session logs:** `.gsd/activity/` contains JSONL session dumps

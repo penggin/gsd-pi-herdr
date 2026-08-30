@@ -1,7 +1,7 @@
 name: Build Native Binaries
 
 # NOTE: no `push: tags: v*` trigger. The production release (npm-publish.yml,
-# channel=latest) already builds and publishes all @opengsd/engine-* packages
+# channel=latest) already builds and publishes all @penggin/gsd-pi-herdr-engine-* packages
 # from the release commit, then pushes the v* tag. Re-triggering here on that tag
 # caused a redundant 5x native rebuild + publish/verify and confusing parallel
 # red runs on otherwise-successful releases. This workflow is now manual-only,
@@ -26,7 +26,7 @@ on:
           - "trusted"
           - "token"
       platform_packages_only:
-        description: "Publish @opengsd/engine-* only (skip @penggin/gsd-pi-herdr; use to bootstrap missing platform packages)"
+        description: "Publish @penggin/gsd-pi-herdr-engine-* only (skip @penggin/gsd-pi-herdr; use to bootstrap missing platform packages)"
         required: false
         default: "false"
         type: choice
@@ -215,7 +215,7 @@ jobs:
         run: |
           MISSING=()
           for platform in darwin-arm64 darwin-x64 linux-x64-gnu linux-arm64-gnu win32-x64-msvc; do
-            PKG="@opengsd/engine-${platform}"
+            PKG="@penggin/gsd-pi-herdr-engine-${platform}"
             if ! npm view "${PKG}" name >/dev/null 2>&1; then
               MISSING+=("${PKG}")
             fi
@@ -244,7 +244,7 @@ jobs:
         run: |
           if [ -z "${NODE_AUTH_TOKEN}" ]; then
             echo "::error::publish_auth=token requires the NPM_TOKEN repository secret."
-            echo "::error::Create an npm automation token with publish access to @opengsd, add it as NPM_TOKEN, then re-run."
+            echo "::error::Create an npm automation token with publish access to @penggin, add it as NPM_TOKEN, then re-run."
             exit 1
           fi
           npm whoami
@@ -268,7 +268,7 @@ jobs:
           for attempt in $(seq 1 5); do
             FAILED=0
             for platform in darwin-arm64 darwin-x64 linux-x64-gnu linux-arm64-gnu win32-x64-msvc; do
-              PKG="@opengsd/engine-${platform}"
+              PKG="@penggin/gsd-pi-herdr-engine-${platform}"
               PUBLISHED=$(npm view "${PKG}@${VERSION}" version 2>/dev/null || echo "")
               if [ "${PUBLISHED}" != "${VERSION}" ]; then
                 FAILED=1
@@ -282,7 +282,7 @@ jobs:
             if [ "$attempt" = "5" ]; then
               echo "::error::One or more platform packages not found after 5 attempts. Aborting."
               for platform in darwin-arm64 darwin-x64 linux-x64-gnu linux-arm64-gnu win32-x64-msvc; do
-                PKG="@opengsd/engine-${platform}"
+                PKG="@penggin/gsd-pi-herdr-engine-${platform}"
                 PUBLISHED=$(npm view "${PKG}@${VERSION}" version 2>/dev/null || echo "")
                 if [ "${PUBLISHED}" = "${VERSION}" ]; then
                   echo "  ✓ ${PKG}@${VERSION}"
@@ -304,7 +304,7 @@ jobs:
           # Install WITH optional deps. The web host build (next/tailwind) needs
           # lightningcss's platform-native binary, which ships as an optionalDependency;
           # --no-optional skips it and breaks `next build` with
-          # "Cannot find module '../lightningcss.linux-x64-gnu.node'". The @opengsd/engine-*
+          # "Cannot find module '../lightningcss.linux-x64-gnu.node'". The @penggin/gsd-pi-herdr-engine-*
           # optional deps are already published by this point, so a full install resolves.
           pnpm install --lockfile-only
           pnpm install --frozen-lockfile
@@ -405,32 +405,6 @@ jobs:
             DELAY=$((DELAY * 2))
           done
           echo "::error::Smoke test failed — @penggin/gsd-pi-herdr@${VERSION} not installable"
-          exit 1
-
-      - name: Post-publish MCP server smoke test
-        if: github.event_name != 'workflow_dispatch' || github.event.inputs.platform_packages_only != 'true'
-        run: |
-          set -o pipefail
-          VERSION=$(node -p "require('./package.json').version")
-          TMPDIR=$(mktemp -d)
-          cd "$TMPDIR"
-          npm init -y > /dev/null 2>&1
-
-          echo "Installing @opengsd/mcp-server@${VERSION}..."
-          DELAY=5
-          for attempt in 1 2 3; do
-            if npm install "@opengsd/mcp-server@${VERSION}" 2>&1 | tee /tmp/mcp-install-output.txt; then
-              test -x node_modules/.bin/gsd-mcp-server || { echo "::error::gsd-mcp-server bin missing"; exit 1; }
-              node -e "import('@opengsd/mcp-server').then((mod) => { if (!Object.keys(mod).length) throw new Error('empty @opengsd/mcp-server exports'); })"
-              echo "Published MCP server package is functional"
-              exit 0
-            fi
-            echo "MCP server install attempt ${attempt}/3 failed, retrying in ${DELAY}s..."
-            cat /tmp/mcp-install-output.txt
-            sleep "$DELAY"
-            DELAY=$((DELAY * 2))
-          done
-          echo "::error::Smoke test failed — @opengsd/mcp-server@${VERSION} not installable"
           exit 1
 
       - name: Verify dist-tag after publish

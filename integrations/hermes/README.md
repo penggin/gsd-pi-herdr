@@ -1,6 +1,6 @@
 # open-gsd-hermes
 
-Hermes Agent plugin integrating [GSD Pi](https://github.com/open-gsd/gsd-pi) as the structured delivery engine.
+Hermes Agent plugin integrating [GSD Pi](https://github.com/penggin/gsd-pi-herdr) as the structured delivery engine.
 
 ## Install
 

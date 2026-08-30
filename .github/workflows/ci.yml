@@ -162,7 +162,7 @@ jobs:
           GSD_SKIP_DEP_REPAIR: '1'
         run: pnpm install --frozen-lockfile
 
-      # The native engine (@opengsd/engine-*) is published only at release time,
+      # The native engine (@penggin/gsd-pi-herdr-engine-*) is published only at release time,
       # so the pinned npm binary lags the Rust source in native/crates/engine.
       # When native code changes (e.g. new N-API exports), the tests below must
       # run against the addon built from THIS commit, not the stale published

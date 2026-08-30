@@ -57,6 +57,20 @@ test("installer package manager detection uses precise pnpm bin directories", as
   );
 });
 
+test("installer resolves downstream package roots", async () => {
+  const { getLocalPackageRoot } = await import("../install/npm-global.js");
+  const root = getLocalPackageRoot("/tmp/project").replaceAll("\\", "/");
+  assert.equal(root, "/tmp/project/node_modules/@penggin/gsd-pi-herdr");
+
+  const source = readFileSync("scripts/install/npm-global.js", "utf8");
+  assert.doesNotMatch(source, /join\([^\n]+['\"]@opengsd['\"][^\n]+['\"]gsd-pi['\"]/);
+});
+
+test("source checkout postinstall never performs nested npm dependency repair", () => {
+  const source = readFileSync("scripts/install/deps.js", "utf8");
+  assert.match(source, /existsSync\(join\(packageRoot, 'pnpm-workspace\.yaml'\)\)/);
+});
+
 test("installer tarball declares extension-critical externals at the package root", () => {
   for (const dep of REQUIRED_ROOT_EXTERNALS) {
     assert.ok(pkg.dependencies[dep], `root package must depend on ${dep}`);

@@ -32,17 +32,17 @@ macOS / Linux:
 ```bash
 sudo npm uninstall -g gsd-pi
 rm -f ~/.gsd/.update-check ~/.gsd/agent/managed-resources.json
-sudo npm install -g @opengsd/gsd-pi@latest
+sudo npm install -g @penggin/gsd-pi-herdr@latest
 ```
 
 To move from the old npm global package to a pnpm global install:
 
 ```bash
-npm uninstall -g gsd-pi @opengsd/gsd-pi
+npm uninstall -g gsd-pi @penggin/gsd-pi-herdr
 rm -f ~/.gsd/.update-check ~/.gsd/agent/managed-resources.json
 pnpm setup
 exec $SHELL -l
-pnpm add -g @opengsd/gsd-pi@latest
+pnpm add -g @penggin/gsd-pi-herdr@latest
 command -v gsd
 gsd --version
 ```
@@ -54,7 +54,7 @@ Windows PowerShell:
 ```powershell
 Remove-Item "$env:USERPROFILE\.gsd\.update-check" -Force -ErrorAction SilentlyContinue
 Remove-Item "$env:USERPROFILE\.gsd\agent\managed-resources.json" -Force -ErrorAction SilentlyContinue
-npm install -g @opengsd/gsd-pi@latest
+npm install -g @penggin/gsd-pi-herdr@latest
 ```
 
 Windows Command Prompt:
@@ -62,13 +62,13 @@ Windows Command Prompt:
 ```bat
 del "%USERPROFILE%\.gsd\.update-check" 2>nul
 del "%USERPROFILE%\.gsd\agent\managed-resources.json" 2>nul
-npm install -g @opengsd/gsd-pi@latest
+npm install -g @penggin/gsd-pi-herdr@latest
 ```
 
 Or run the installer from the new package on any OS:
 
 ```bash
-npx @opengsd/gsd-pi@latest
+npx @penggin/gsd-pi-herdr@latest
 ```
 
 After that, routine upgrades use `gsd upgrade`, `gsd update`, or `/gsd update` in a session.
@@ -84,14 +84,14 @@ After that, routine upgrades use `gsd upgrade`, `gsd update`, or `/gsd update` i
 ```bash
 pnpm setup
 exec $SHELL -l
-pnpm remove -g @opengsd/gsd-pi
+pnpm remove -g @penggin/gsd-pi-herdr
 ```
 
 For a one-terminal workaround on macOS/Linux, add the directory from the error to `PATH` before retrying:
 
 ```bash
 export PATH="/path/from/pnpm-error:$PATH"
-pnpm remove -g @opengsd/gsd-pi
+pnpm remove -g @penggin/gsd-pi-herdr
 ```
 
 Replace the path with the exact global bin directory from your pnpm error message.
@@ -218,11 +218,11 @@ Stop the process through its terminal or service manager when possible. Use `kil
 
 ### `command not found: gsd` after install
 
-**Symptoms:** `npm install -g @opengsd/gsd-pi@latest` succeeds but `gsd` isn't found.
+**Symptoms:** `npm install -g @penggin/gsd-pi-herdr@latest` succeeds but `gsd` isn't found.
 
 **Cause:** npm's global bin directory isn't in your shell's `$PATH`.
 
-**Prevention:** The guided installer (`npx @opengsd/gsd-pi@latest`) checks PATH during setup and warns before you hit this error.
+**Prevention:** The guided installer (`npx @penggin/gsd-pi-herdr@latest`) checks PATH during setup and warns before you hit this error.
 
 **Fix:**
 
@@ -236,41 +236,44 @@ echo 'export PATH="$(npm prefix -g)/bin:$PATH"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
-**Workaround:** Run `npx @opengsd/gsd-pi@latest` or `$(npm prefix -g)/bin/gsd` directly.
+**Workaround:** Run `npx @penggin/gsd-pi-herdr@latest` or `$(npm prefix -g)/bin/gsd` directly.
 
 **Common causes:**
 - **Homebrew Node** — `/opt/homebrew/bin` should be in PATH but sometimes isn't if Homebrew init is missing from your shell profile
 - **Version manager (nvm, fnm, mise)** — global bin is version-specific; ensure your version manager initializes in your shell config
 - **oh-my-zsh** — the `gitfast` plugin aliases `gsd` to `git svn dcommit`. Check with `alias gsd` and unalias if needed
 
-### `npm install -g @opengsd/gsd-pi@latest` fails
+### `npm install -g @penggin/gsd-pi-herdr@latest` fails
 
 **Common causes:**
 - Missing workspace packages — fixed in a recent release
 - `postinstall` hangs on Linux (Playwright `--with-deps` triggering sudo) — fixed in a recent release
 - Node.js version too old — requires ≥ 22.18.0
-- `ETARGET: No matching version found` / `notarget` — the `@opengsd/gsd-pi` package has not been published to the npm registry yet for the requested version (see below)
+- `ETARGET: No matching version found` / `notarget` — the `@penggin/gsd-pi-herdr` package has not been published to the npm registry yet for the requested version (see below)
 
 **If you see `ETARGET` or `notarget` (package not found on npm):**
 
-The `@opengsd/gsd-pi` package is published to npm from tagged releases. If a release is in progress or you are on a pre-release branch, the package may not yet be available on the public npm registry.
+The `@penggin/gsd-pi-herdr` package is published to npm from tagged releases. If a release is in progress or you are on a pre-release branch, the package may not yet be available on the public npm registry.
 
 Options:
 
-1. **Wait and retry** — check [npm for @opengsd/gsd-pi](https://www.npmjs.com/package/@opengsd/gsd-pi) to confirm whether a release has landed, then retry.
+1. **Wait and retry** — check [npm for @penggin/gsd-pi-herdr](https://www.npmjs.com/package/@penggin/gsd-pi-herdr) to confirm whether a release has landed, then retry.
 
-2. **Use `npx` instead of a global install** — `npx @opengsd/gsd-pi@latest` fetches the package on demand and may pick up the most recently published version without a local cache:
+2. **Use `npx` instead of a global install** — `npx @penggin/gsd-pi-herdr@latest` fetches the package on demand and may pick up the most recently published version without a local cache:
    ```bash
-   npx @opengsd/gsd-pi@latest
+   npx @penggin/gsd-pi-herdr@latest
    ```
 
 3. **Build from source** — clone the repository and build locally:
    ```bash
-   git clone https://github.com/open-gsd/gsd-pi.git
-   cd gsd-pi
+   git clone https://github.com/penggin/gsd-pi-herdr.git
+   cd gsd-pi-herdr
    pnpm install --frozen-lockfile
-   pnpm run build
-   npm install -g .
+   pnpm run build:core
+   pnpm run build:web-host
+   npm pack
+   npm install -g ./penggin-gsd-pi-herdr-*.tgz
+   gsd --build-info
    ```
    Requires Node.js ≥ 22.18.0 and pnpm. If `pnpm` is not installed: `npm install -g pnpm`.
 
@@ -628,7 +631,7 @@ For non-TTY environments (CI, cron, scripted automation), `gsd headless recover`
 
 ## Getting Help
 
-- **GitHub Issues:** [github.com/open-gsd/gsd-pi/issues](https://github.com/open-gsd/gsd-pi/issues)
+- **GitHub Issues:** [github.com/penggin/gsd-pi-herdr/issues](https://github.com/penggin/gsd-pi-herdr/issues)
 - **Dashboard:** `Ctrl+Alt+G` or `/gsd status` for real-time diagnostics
 - **Forensics:** `/gsd forensics` for structured post-mortem analysis of auto-mode failures
 - **Session logs:** `.gsd/activity/` contains JSONL session dumps for crash forensics

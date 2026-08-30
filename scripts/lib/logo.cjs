@@ -6,7 +6,7 @@ const { join } = require('path')
 /** Install-time fallback — mirrors src/resources/shared/gsd-pi-logo.ts */
 const fallback = {
   GSD_PI_BRAND: 'GSD-Pi',
-  GSD_WEBSITE: 'https://opengsd.net',
+  GSD_WEBSITE: 'https://github.com/penggin/gsd-pi-herdr',
   GSD_PI_LOGO: [
     '  ██████╗ ███████╗██████╗ ─ ██████╗ ██╗',
     ' ██╔════╝ ██╔════╝██╔══██╗ ██╔══██╗██║',

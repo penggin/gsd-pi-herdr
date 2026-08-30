@@ -44,7 +44,7 @@ git --version    # 应输出 2.20+
 **第 4 步：安装 GSD：**
 
 ```bash
-npm install -g @opengsd/gsd-pi
+npm install -g @penggin/gsd-pi-herdr
 ```
 
 **第 5 步：设置你的 LLM provider：**
@@ -116,7 +116,7 @@ git --version    # 应输出 2.20+
 **第 4 步：安装 GSD：**
 
 ```powershell
-npm install -g @opengsd/gsd-pi
+npm install -g @penggin/gsd-pi-herdr
 ```
 
 **第 5 步：设置你的 LLM provider：**
@@ -220,7 +220,7 @@ git --version    # 应输出 2.20+
 **第 3 步：安装 GSD：**
 
 ```bash
-npm install -g @opengsd/gsd-pi
+npm install -g @penggin/gsd-pi-herdr
 ```
 
 **第 4 步：设置你的 LLM provider：**
@@ -263,7 +263,7 @@ gsd --version     # 输出已安装版本
 > npm config set prefix '~/.npm-global'
 > echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> ~/.bashrc
 > source ~/.bashrc
-> npm install -g @opengsd/gsd-pi
+> npm install -g @penggin/gsd-pi-herdr
 > ```
 
 ---
@@ -279,8 +279,8 @@ gsd --version     # 输出已安装版本
 **第 2 步：克隆 GSD 仓库：**
 
 ```bash
-git clone https://github.com/open-gsd/gsd-pi.git
-cd gsd-pi/docker
+git clone https://github.com/penggin/gsd-pi-herdr.git
+cd gsd-pi-herdr/docker
 ```
 
 **第 3 步：创建并进入沙箱：**
@@ -438,7 +438,7 @@ gsd sessions
 GSD 每 24 小时检查一次更新，并在启动时提示。你也可以手动更新：
 
 ```bash
-npm update -g @opengsd/gsd-pi
+npm update -g @penggin/gsd-pi-herdr
 ```
 
 或者在会话中执行：
@@ -455,7 +455,7 @@ npm update -g @opengsd/gsd-pi
 |------|----------|
 | `command not found: gsd` | 把 npm 全局 bin 目录加入 PATH（见上面的系统说明） |
 | `gsd` 实际执行了 `git svn dcommit` | oh-my-zsh 冲突，执行 `unalias gsd` 或改用 `gsd-cli` |
-| `npm install -g @opengsd/gsd-pi` 权限错误 | 修复 npm prefix（见 Linux 说明）或改用 nvm |
+| `npm install -g @penggin/gsd-pi-herdr` 权限错误 | 修复 npm prefix（见 Linux 说明）或改用 nvm |
 | 无法连接到 LLM | 用 `gsd config` 检查 API key，并确认网络可用 |
 | `gsd` 启动时卡住 | 检查 Node.js 版本：`node --version`（需要 22.18+） |
 

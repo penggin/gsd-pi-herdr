@@ -1,8 +1,8 @@
 # GSD–Herdr Living Plan
 
-> **Status:** M0–M7 complete
+> **Status:** M0–M7 and final downstream-isolation revalidation complete
 > **Last updated:** 2026-08-30
-> **Current milestone:** M7 complete — downstream distribution hardening and install validation
+> **Current milestone:** Complete — downstream-only install and release validation passed
 > **Canonical rule:** Every Herdr-integration development session starts by reading this file and ends by updating it.
 
 ## 1. Mission
@@ -67,7 +67,7 @@ GSD root TUI in Herdr
 │   ├── environment/capability detection
 │   ├── socket/CLI client
 │   ├── root session reporter
-│   └── later: worker pane pool
+│   └── persistent four-slot worker pane pool
 │
 └── bundled subagent tool
     └── common one-child semantic runner
@@ -285,9 +285,9 @@ Structural gaps discovered:
 
 ## 9. Current execution queue
 
-1. Complete the exact downstream tarball install and isolated Herdr v0.8.2 smoke from this feature-branch checkout.
-2. Run focused/parity regressions plus `typecheck:extensions`, `test:changed:src`, `build:core`, `build:web-host`, `validate-pack`, and `git diff --check`.
-3. Record the exact tarball identity, capability evidence, failures/risks, and next task. No merge, push, tag, publish, or original-project request is authorized.
+All implementation and validation tasks in this plan are complete. The only
+remaining action is an explicitly authorized downstream review/merge/release;
+this session does not merge, push, tag, or publish.
 
 ## 10. Progress log
 
@@ -528,6 +528,56 @@ Structural gaps discovered:
 - Downstream-isolation implementation checkpoint `8aee21c142982517d02fc748881cebd7f580d1b4` was packed from a clean tree. The clean stamp recorded that exact commit, `dirty=false`, `buildKind=release-candidate`, and `capabilityVerified=true`; an offline isolated install plus explicit workspace-link repair returned the same values through installed `gsd --build-info`.
 - Final validation: pre-commit changed-source regression **254/254 pass**; final `typecheck:extensions` pass; Herdr integration/automation **16/16 pass**; `build:core` pass; `build:web-host` pass with the pre-existing non-fatal Next.js trace warning; clean candidate package **9,418 entries / 51.1 MB compressed / 204.4 MB unpacked**; isolated local install, installed binary/version/build identity, standalone web host, daemon dependencies, and global `--ignore-scripts` install+repair all pass; `validate-pack` ended with **`Package is installable. Safe to publish.`**; `git diff --check` pass.
 - Post-M7 distribution isolation and usability hardening is complete. Exact next task: review this feature branch and, only with separate user authorization, choose a downstream merge/release/publish action. No merge, push, tag, publish, or original-project request was performed.
+
+### 2026-08-30 — Final downstream-only completion audit
+
+- Audited active runtime, installer, support, CI, release, Docker, native-engine,
+  VS Code, and user-documentation paths. Removed remaining operational targets
+  for the source project; historical references remain only in archived design
+  evidence, attribution comments, and inert regression fixtures.
+- Renamed all publishable native binaries to
+  `@penggin/gsd-pi-herdr-engine-*`, moved the CI builder to
+  `ghcr.io/penggin/gsd-pi-herdr-ci-builder`, and made inherited
+  `@opengsd/{contracts,rpc-client,mcp-server,daemon}` workspaces private and
+  non-publishable. The authoritative release inventory is exactly five
+  downstream engines plus `@penggin/gsd-pi-herdr`; workspace publication emits
+  no entries.
+- Fixed a real downstream installer defect: global/local installation installed
+  `@penggin/gsd-pi-herdr` but returned the old source-package directory. All
+  installer roots now resolve `node_modules/@penggin/gsd-pi-herdr`. Source
+  checkout postinstall also skips nested `npm install`, preserving the pnpm
+  lockfile and preventing an implicit registry lookup during local setup.
+- Replaced the obsolete standalone MCP-package publish gate with a stronger
+  installed-root gate. The private bundled MCP server now passes both public API
+  import and real stdio MCP handshake from the installed downstream tarball.
+- Official Herdr v0.8.2 capability evidence passed protocol 20, API schema v1,
+  schema SHA-256
+  `c48f1f54ee0150ca27e11fd44455fe94aeadb20fdf4e4a62393ed822a4e5b150`,
+  all 13 required methods, pane-run, plugin-link, and plugin-manifest checks.
+  The earlier installed-tarball public-subagent E2E remains the live runtime
+  evidence; this audit changed distribution/release surfaces, not Herdr
+  orchestration semantics.
+- Fresh audit tarball `penggin-gsd-pi-herdr-1.16.2.tgz` was 53,628,161 bytes
+  with SHA-256
+  `706143516bcbb651836143135db2ef9a5ddb18dd6cd137ae1c28937c0f7242c0`.
+  It installed with `npm --offline --ignore-scripts` into an empty prefix,
+  linked 14 bundled workspaces, and reported downstream package identity,
+  `herdrIntegration=true`, `capabilityVerified=true`, and the correct installer
+  help URL/commands through the installed files.
+- Final validation: downstream release/installer/workflow focused regression
+  **53/53 pass**; Herdr integration/automation **18/18 pass**; full
+  Herdr/subagent/backend parity regression **136/136 pass** (combined Herdr
+  focused evidence **154/154**); changed-source regression **10/10 pass**;
+  `typecheck:extensions`, `verify:version-sync`, frozen offline pnpm install,
+  `build:core`, `build:web-host`, `validate-pack`, and `git diff --check` all
+  pass. `validate-pack` ended with **`Package is installable. Safe to publish.`**
+- The first package-gate run correctly failed because the old standalone MCP
+  validator still expected a public `@opengsd/mcp-server`; that obsolete
+  assumption was removed and the installed-root MCP validation above replaced
+  it. No unresolved implementation risk remains for the audited scope.
+- Exact next task: no engineering work remains in this plan. A human may review
+  and explicitly authorize a downstream merge/release action. No source-project
+  request, merge, push, tag, or publish was performed.
 
 ## 11. Working-session protocol
 

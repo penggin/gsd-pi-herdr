@@ -5,16 +5,29 @@ description: "Install GSD, configure your LLM provider, and run your first auton
 
 ## Install
 
-Recommended guided installer:
+The source checkout is the currently verified installation path:
 
 ```bash
-npx @opengsd/gsd-pi@latest
+git clone https://github.com/penggin/gsd-pi-herdr.git
+cd gsd-pi-herdr
+pnpm install --frozen-lockfile
+pnpm run build:core
+pnpm run build:web-host
+npm pack
+npm install -g ./penggin-gsd-pi-herdr-*.tgz
+gsd --build-info
+```
+
+After a registry release, use the guided installer:
+
+```bash
+npx @penggin/gsd-pi-herdr@latest
 ```
 
 Direct npm install:
 
 ```bash
-npm install -g @opengsd/gsd-pi@latest
+npm install -g @penggin/gsd-pi-herdr@latest
 ```
 
 Direct pnpm install:
@@ -22,7 +35,7 @@ Direct pnpm install:
 ```bash
 pnpm setup
 exec $SHELL -l
-pnpm add -g @opengsd/gsd-pi@latest
+pnpm add -g @penggin/gsd-pi-herdr@latest
 ```
 
 Requires Node.js 22.18+ and Git.

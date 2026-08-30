@@ -177,6 +177,15 @@ export async function repairPackageDependencies(packageRoot, { ui, quiet = false
   const pkgJson = join(packageRoot, 'package.json')
   if (!existsSync(pkgJson)) return
 
+  // A source checkout is already managed by pnpm. Running a nested npm install
+  // from its postinstall hook can consult the registry, rewrite node_modules,
+  // and bypass the repository lockfile. Dependency repair is only for the
+  // standalone packed installation, which does not contain this workspace file.
+  if (existsSync(join(packageRoot, 'pnpm-workspace.yaml'))) {
+    if (!quiet) ui?.skip?.('Dependencies', 'managed by pnpm workspace')
+    return
+  }
+
   const stop = quiet ? undefined : ui?.start?.('Installing dependencies...')
   const result = await execCommand('npm install --ignore-scripts', { cwd: packageRoot })
   stop?.()
@@ -195,7 +204,7 @@ export async function repairPackageDependencies(packageRoot, { ui, quiet = false
     if (!ui) {
       console.warn(
         `[gsd] WARNING: failed to materialize runtime dependencies (${meaningful || 'npm install failed'}).\n` +
-        `[gsd] The CLI may fail to start. Re-run with network access, or run \`npm install --ignore-scripts\` inside the gsd-pi package directory.`,
+        `[gsd] The CLI may fail to start. Re-run with network access, or run \`npm install --ignore-scripts\` inside the gsd-pi-herdr package directory.`,
       )
     }
     return

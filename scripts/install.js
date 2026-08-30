@@ -67,7 +67,7 @@ if (HAS_VERSION) {
 if (HAS_HELP) {
   process.stdout.write(`
   ${colors.bold}GSD-Pi Installer${colors.reset} ${colors.dim}v${gsdVersion}${colors.reset}
-  ${colors.dim}https://opengsd.net${colors.reset}
+  ${colors.dim}https://github.com/penggin/gsd-pi-herdr${colors.reset}
 
   ${colors.yellow}Usage:${colors.reset}
     npx @penggin/gsd-pi-herdr@latest        Install GSD-Pi Herdr globally

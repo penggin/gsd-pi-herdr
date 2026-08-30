@@ -41,7 +41,6 @@ test("build-native can skip main package when bootstrapping engine packages", ()
     "Publish workspace packages",
     "Publish main package",
     "Post-publish smoke test",
-    "Post-publish MCP server smoke test",
   ];
 
   for (const name of gatedSteps) {
@@ -74,7 +73,7 @@ test("build-native requires token auth when engine packages are missing from npm
   assert.match(tokenCheck.run, /NPM_TOKEN/);
 });
 
-test("build-native publishes MCP server workspace to npm before the main package", () => {
+test("build-native keeps the derived workspace hook before the downstream main package", () => {
   const steps = publishJob.steps;
   const workspacePublish = steps.find(
     (entry) => entry.name === "Publish workspace packages",
@@ -83,9 +82,6 @@ test("build-native publishes MCP server workspace to npm before the main package
     (entry) => entry.name === "Publish main package",
   );
   const workspacePublishIndex = steps.indexOf(workspacePublish);
-  const smoke = steps.find(
-    (entry) => entry.name === "Post-publish MCP server smoke test",
-  );
 
   assert.ok(workspacePublish, "workflow must publish workspace packages");
   assert.ok(workspacePublishIndex > -1 && workspacePublishIndex < mainPublishIndex);
@@ -101,9 +97,9 @@ test("build-native publishes MCP server workspace to npm before the main package
   assert.match(mainPublish.run, /prepack-resolve-workspace\.cjs/);
   assert.match(mainPublish.run, /postpack-restore-workspace\.cjs/);
 
-  assert.ok(smoke, "workflow must smoke-test the standalone MCP server package");
-  assert.match(smoke.run, /npm install "@opengsd\/mcp-server@\$\{VERSION\}"/);
-  assert.match(smoke.run, /gsd-mcp-server/);
+  const workflowSource = readFileSync(".github/workflows/build-native.yml", "utf8");
+  assert.doesNotMatch(workflowSource, /@opengsd\/mcp-server/);
+  assert.doesNotMatch(workflowSource, /Post-publish MCP server smoke test/);
 });
 
 test("publish-engine-packages script continues through all platforms", () => {

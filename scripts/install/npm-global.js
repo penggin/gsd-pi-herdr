@@ -3,6 +3,8 @@ import { homedir } from 'os'
 import { join, resolve as resolvePath, sep } from 'path'
 
 const PACKAGE_MANAGERS = new Set(['npm', 'pnpm'])
+const PACKAGE_SCOPE = '@penggin'
+const PACKAGE_BASENAME = 'gsd-pi-herdr'
 
 function normalizePackageManager(value) {
   return PACKAGE_MANAGERS.has(value) ? value : 'npm'
@@ -163,7 +165,7 @@ export function getGlobalPaths(options = {}) {
       prefix: binDir,
       root,
       binDir,
-      packageRoot: join(root, '@opengsd', 'gsd-pi'),
+      packageRoot: join(root, PACKAGE_SCOPE, PACKAGE_BASENAME),
       packageManager,
     }
   }
@@ -174,13 +176,13 @@ export function getGlobalPaths(options = {}) {
     prefix,
     root,
     binDir: process.platform === 'win32' ? prefix : join(prefix, 'bin'),
-    packageRoot: join(root, '@opengsd', 'gsd-pi'),
+    packageRoot: join(root, PACKAGE_SCOPE, PACKAGE_BASENAME),
     packageManager,
   }
 }
 
 export function getLocalPackageRoot(cwd = process.cwd()) {
-  return join(cwd, 'node_modules', '@opengsd', 'gsd-pi')
+  return join(cwd, 'node_modules', PACKAGE_SCOPE, PACKAGE_BASENAME)
 }
 
 export async function installGlobalPackage(version, options = {}) {
@@ -201,7 +203,7 @@ export async function installGlobalPackage(version, options = {}) {
   if (!rootResult.ok) {
     throw new Error(formatPackageManagerFailure(packageManager, rootResult))
   }
-  return join(rootResult.stdout.trim(), '@opengsd', 'gsd-pi')
+  return join(rootResult.stdout.trim(), PACKAGE_SCOPE, PACKAGE_BASENAME)
 }
 
 export async function installLocalPackage(version, cwd = process.cwd(), options = {}) {

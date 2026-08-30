@@ -31,7 +31,8 @@ test("forensics prompt renders compact investigation and issue routing guidance"
   assert.match(prompt, /Filing Tool Availability/);
   assert.match(prompt, /gsd_milestone_status/);
   assert.match(prompt, /sqlite3 .gsd\/gsd.db/);
-  assert.match(prompt, /gh issue create --repo open-gsd\/gsd-pi/);
+  assert.match(prompt, /gh issue create --repo penggin\/gsd-pi-herdr/);
+  assert.doesNotMatch(prompt, /open-gsd\/gsd-pi/);
   assert.match(prompt, /Do NOT use the `github_issues` tool/);
   assert.match(prompt, /paste-once shell script/);
   assert.match(prompt, /Redaction Rules/);

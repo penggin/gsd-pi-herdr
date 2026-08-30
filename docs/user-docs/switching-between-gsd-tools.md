@@ -1,6 +1,6 @@
 # Switching between gsd-core and gsd-pi
 
-Both `@opengsd/gsd-core` and `@opengsd/gsd-pi` use the same `.gsd/` directory, but they do not share an authority model. Switching requires an explicit handoff when modeled markdown changes. This doc explains that workflow and what to do when the two tools disagree.
+Both `@opengsd/gsd-core` and `@penggin/gsd-pi-herdr` use the same `.gsd/` directory, but they do not share an authority model. Switching requires an explicit handoff when modeled markdown changes. This doc explains that workflow and what to do when the two tools disagree.
 
 ## The shared contract
 

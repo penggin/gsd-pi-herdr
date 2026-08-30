@@ -236,3 +236,25 @@ Every tarball carries `dist/herdr-release.json`; `gsd --build-info` exposes that
 identity after installation; and the package gate verifies both from an isolated
 prefix. The source-base commit remains recorded as lineage only, not as an
 instruction to contact the source repository.
+
+---
+
+## ADR-H019 — Publish only downstream-owned artifacts
+
+**Status:** Accepted
+**Date:** 2026-08-30
+
+The release set contains only `@penggin/gsd-pi-herdr` and its five
+`@penggin/gsd-pi-herdr-engine-*` platform packages. Inherited internal
+workspaces keep their compatibility import names but are `private`, have no
+`publishConfig`, and ship only as bundled content inside the downstream root
+tarball. Release discovery must exclude native workspace manifests from the
+generic workspace-publish path and must reject any release inventory outside
+the `@penggin` scope.
+
+The CI builder and runtime images likewise use the `ghcr.io/penggin/` namespace.
+Installer paths, support links, issue/project prompts, local comparison defaults,
+and release documentation target this repository. Historical attribution may
+retain source-project references in archived design evidence and regression
+fixtures, but executable runtime, install, CI, support, and publication paths
+must never address or mutate source-project assets.

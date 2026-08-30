@@ -139,8 +139,8 @@ ISSUE_URL=$(gh issue create --repo penggin/gsd-pi-herdr \
 rm -f "$ISSUE_BODY_FILE"
 
 ISSUE_NUM=$(echo "$ISSUE_URL" | grep -oE '[0-9]+$')
-ISSUE_ID=$(gh api graphql -f query='{ repository(owner:"open-gsd",name:"gsd-pi") { issue(number:'"$ISSUE_NUM"') { id } } }' --jq '.data.repository.issue.id')
-TYPE_ID=$(gh api graphql -f query='{ repository(owner:"open-gsd",name:"gsd-pi") { issueTypes(first:20) { nodes { id name } } } }' --jq '.data.repository.issueTypes.nodes[] | select(.name=="Bug") | .id')
+ISSUE_ID=$(gh api graphql -f query='{ repository(owner:"penggin",name:"gsd-pi-herdr") { issue(number:'"$ISSUE_NUM"') { id } } }' --jq '.data.repository.issue.id')
+TYPE_ID=$(gh api graphql -f query='{ repository(owner:"penggin",name:"gsd-pi-herdr") { issueTypes(first:20) { nodes { id name } } } }' --jq '.data.repository.issueTypes.nodes[] | select(.name=="Bug") | .id')
 gh api graphql -f query='mutation { updateIssue(input:{id:"'"$ISSUE_ID"'",issueTypeId:"'"$TYPE_ID"'"}) { issue { number } } }'
 ```
 
@@ -196,8 +196,8 @@ ISSUE_URL=$(gh issue create --repo penggin/gsd-pi-herdr \
 rm -f "$ISSUE_BODY_FILE"
 
 ISSUE_NUM=$(echo "$ISSUE_URL" | grep -oE '[0-9]+$')
-ISSUE_ID=$(gh api graphql -f query='{ repository(owner:"open-gsd",name:"gsd-pi") { issue(number:'"$ISSUE_NUM"') { id } } }' --jq '.data.repository.issue.id')
-TYPE_ID=$(gh api graphql -f query='{ repository(owner:"open-gsd",name:"gsd-pi") { issueTypes(first:20) { nodes { id name } } } }' --jq '.data.repository.issueTypes.nodes[] | select(.name=="Bug") | .id')
+ISSUE_ID=$(gh api graphql -f query='{ repository(owner:"penggin",name:"gsd-pi-herdr") { issue(number:'"$ISSUE_NUM"') { id } } }' --jq '.data.repository.issue.id')
+TYPE_ID=$(gh api graphql -f query='{ repository(owner:"penggin",name:"gsd-pi-herdr") { issueTypes(first:20) { nodes { id name } } } }' --jq '.data.repository.issueTypes.nodes[] | select(.name=="Bug") | .id')
 gh api graphql -f query='mutation { updateIssue(input:{id:"'"$ISSUE_ID"'",issueTypeId:"'"$TYPE_ID"'"}) { issue { number } } }'
 echo "$ISSUE_URL"
 ```

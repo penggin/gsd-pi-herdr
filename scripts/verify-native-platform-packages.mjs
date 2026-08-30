@@ -6,11 +6,11 @@ import { readFileSync } from "node:fs";
 const pkg = JSON.parse(readFileSync("package.json", "utf8"));
 const optionalDependencies = pkg.optionalDependencies ?? {};
 const enginePackages = Object.keys(optionalDependencies)
-  .filter((name) => name.startsWith("@opengsd/engine-"))
+  .filter((name) => name.startsWith("@penggin/gsd-pi-herdr-engine-"))
   .sort();
 
 if (enginePackages.length === 0) {
-  process.stderr.write("ERROR: no @opengsd/engine-* optionalDependencies found\n");
+  process.stderr.write("ERROR: no @penggin/gsd-pi-herdr-engine-* optionalDependencies found\n");
   process.exit(1);
 }
 
@@ -44,7 +44,7 @@ for (const spec of missing) {
 }
 process.stderr.write(
   allowAnyVersion
-    ? "Publish the missing @opengsd/engine-* packages before publishing @penggin/gsd-pi-herdr.\nRun Build Native Binaries (build-native.yml) with publish=true, platform_packages_only=true, publish_auth=token.\nPackages must exist on npm before trusted publishing can be configured — see docs/dev/ci-cd-pipeline.md.\n"
+    ? "Publish the missing @penggin/gsd-pi-herdr-engine-* packages before publishing @penggin/gsd-pi-herdr.\nRun Build Native Binaries (build-native.yml) with publish=true, platform_packages_only=true, publish_auth=token.\nPackages must exist on npm before trusted publishing can be configured — see docs/dev/ci-cd-pipeline.md.\n"
     : "Publish the native platform packages for this version before publishing @penggin/gsd-pi-herdr. The production NPM Publish workflow does this automatically before the main package publish.\n",
 );
 process.exit(1);

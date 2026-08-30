@@ -3,7 +3,7 @@
 
 # ──────────────────────────────────────────────
 # CI Builder
-# Image: ghcr.io/open-gsd/gsd-ci-builder
+# Image: ghcr.io/penggin/gsd-pi-herdr-ci-builder
 # Used by: publish workflows that need Rust and Linux cross-compilers
 # ──────────────────────────────────────────────
 FROM node:24-bookworm AS builder
@@ -48,7 +48,7 @@ CMD ["--help"]
 # instead of pulling from npm. Lets `tests/e2e/docker/` exercise the actual
 # runtime container produced by this branch's code.
 # Build with:  docker build --target runtime-local \
-#                --build-arg TARBALL=opengsd-gsd-pi-<version>.tgz -t gsd-pi:local .
+#                --build-arg TARBALL=penggin-gsd-pi-herdr-<version>.tgz -t gsd-pi-herdr:local .
 # The tarball must be in the build context (created by `npm pack`).
 # ──────────────────────────────────────────────
 FROM node:24-slim AS runtime-local

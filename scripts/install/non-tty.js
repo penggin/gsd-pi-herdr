@@ -15,6 +15,6 @@ export function printNonInteractiveNextSteps() {
     '\nInstalled. Run:\n' +
     '  gsd config   # configure LLM provider\n' +
     '  gsd          # start agent\n\n' +
-    'Docs: https://opengsd.net\n\n',
+    'Docs: https://github.com/penggin/gsd-pi-herdr\n\n',
   )
 }

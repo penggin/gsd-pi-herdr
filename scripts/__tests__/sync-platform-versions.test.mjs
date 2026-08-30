@@ -32,7 +32,7 @@ test("prepublish verifies matching native platform packages before publishing ma
 test("root package pins native optional dependencies to its own version", () => {
   const pkg = JSON.parse(readFileSync("package.json", "utf8"));
   const nativeDeps = Object.entries(pkg.optionalDependencies).filter(([name]) =>
-    name.startsWith("@opengsd/engine-"),
+    name.startsWith("@penggin/gsd-pi-herdr-engine-"),
   );
 
   assert.equal(nativeDeps.length, 5);

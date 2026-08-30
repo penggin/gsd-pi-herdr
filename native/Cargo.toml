@@ -7,7 +7,7 @@ version = "1.16.2"
 edition = "2021"
 license = "MIT"
 authors = ["GSD Contributors"]
-repository = "https://github.com/open-gsd/gsd-pi"
+repository = "https://github.com/penggin/gsd-pi-herdr"
 
 [profile.release]
 opt-level = 3

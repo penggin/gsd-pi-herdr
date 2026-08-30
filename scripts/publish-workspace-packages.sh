@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # gsd-pi + scripts/publish-workspace-packages.sh
 #
-# Publishes every publishable @opengsd workspace package to npm, in dependency
+# Publishes every explicitly opted-in downstream workspace package to npm, in dependency
 # order, at the current root package.json version. The package list is derived
 # from scripts/lib/npm-release-packages.cjs (driven by each package's
 # publishConfig) — NOT a hardcoded list — so a new publishable package can never
@@ -70,7 +70,7 @@ wait_for_workspace_package() {
       # `npm publish` already confirmed registry acceptance ("+ pkg@version").
       # Brand-new packages can lag significantly in read-after-write propagation,
       # so a slow read MUST NOT abort the remaining publishes (that is exactly how
-      # later packages like mcp-server got left unpublished). Warn and continue;
+      # later opted-in packages could be left unpublished). Warn and continue;
       # the verify-npm-release gate before the GitHub release is the real check.
       echo "::warning::${package}@${VERSION} not yet visible on npm after ${attempt} attempts; publish was accepted, continuing."
       return 0
