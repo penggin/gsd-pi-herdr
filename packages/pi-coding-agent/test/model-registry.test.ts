@@ -1,7 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AnthropicMessagesCompat, Api, Context, Model, OpenAICompletionsCompat } from "@earendil-works/pi-ai";
+import type {
+	AnthropicMessagesCompat,
+	Api,
+	Context,
+	Model,
+	OpenAICodexResponsesCompat,
+	OpenAICompletionsCompat,
+} from "@earendil-works/pi-ai";
 import { getApiProvider, streamSimple } from "@earendil-works/pi-ai";
 import { getOAuthProvider } from "@earendil-works/pi-ai/oauth";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -438,6 +445,27 @@ describe("ModelRegistry", () => {
 
 			expect(compat?.supportsUsageInStreaming).toBe(false);
 			expect(compat?.maxTokensField).toBe("max_tokens");
+		});
+
+		test("Codex-compatible proxy auth and endpoint compat load from provider config", () => {
+			writeRawModelsJson({
+				proxy: {
+					baseUrl: "http://127.0.0.1:10100/v1",
+					apiKey: "LOCAL_ADMISSION_KEY",
+					api: "openai-codex-responses",
+					compat: {
+						codexAuth: "bearer",
+						codexEndpoint: "responses",
+					},
+					models: [{ id: "routed/model" }],
+				},
+			});
+
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			const compat = registry.find("proxy", "routed/model")?.compat as OpenAICodexResponsesCompat | undefined;
+
+			expect(registry.getError()).toBeUndefined();
+			expect(compat).toEqual({ codexAuth: "bearer", codexEndpoint: "responses" });
 		});
 
 		test("model-level compat overrides provider-level compat for custom models", () => {

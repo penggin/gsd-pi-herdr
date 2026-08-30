@@ -230,6 +230,25 @@ models: [{
 Use `openrouter` for OpenRouter-style `reasoning: { effort }` controls. Use `together` for Together-style `reasoning: { enabled }` controls; with `supportsReasoningEffort`, it also sends `reasoning_effort`. Use `qwen-chat-template` instead for local Qwen-compatible servers that read `chat_template_kwargs.enable_thinking`.
 Use `cacheControlFormat: "anthropic"` for OpenAI-compatible providers that expose Anthropic-style prompt caching via `cache_control` on the system prompt, last tool definition, and last user/assistant text content.
 
+Codex-compatible Responses proxies that implement `compaction_trigger` can retain `api: "openai-codex-responses"`.
+For non-`chatgpt.com` base URLs, Pi defaults to an opaque bearer credential and `baseUrl + /responses`; the
+equivalent explicit configuration is:
+
+```json
+{
+  "api": "openai-codex-responses",
+  "baseUrl": "http://127.0.0.1:10100/v1",
+  "compat": {
+    "codexAuth": "bearer",
+    "codexEndpoint": "responses"
+  }
+}
+```
+
+Use `codexAuth: "chatgpt-oauth"` and `codexEndpoint: "chatgpt"` only for endpoints that implement the ChatGPT
+OAuth claim and `/codex/responses` contract. API shape alone does not guarantee Remote Compaction V2 support;
+an incompatible proxy will fail the remote request and GSD can fall back to native plaintext compaction.
+
 For Anthropic-compatible providers using `api: "anthropic-messages"`, set `compat.forceAdaptiveThinking: true` on models or providers whose upstream model requires adaptive thinking (`thinking.type: "adaptive"` plus `output_config.effort`). Built-in adaptive Claude models set this automatically.
 
 > Migration note: Mistral moved from `openai-completions` to `mistral-conversations`.

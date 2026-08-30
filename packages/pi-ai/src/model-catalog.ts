@@ -80,6 +80,8 @@ const CompatSchema = Type.Object({
 	supportsEagerToolInputStreaming: Type.Optional(Type.Boolean()),
 	supportsCacheControlOnTools: Type.Optional(Type.Boolean()),
 	forceAdaptiveThinking: Type.Optional(Type.Boolean()),
+	codexAuth: Type.Optional(Type.Union([Type.Literal("chatgpt-oauth"), Type.Literal("bearer")])),
+	codexEndpoint: Type.Optional(Type.Union([Type.Literal("chatgpt"), Type.Literal("responses")])),
 });
 
 const ThinkingLevelMapSchema = Type.Object(

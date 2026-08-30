@@ -40,6 +40,18 @@ Use the shared predicates in `packages/pi-ai/src/providers/api-family.ts`:
 
 The helpers are re-exported from `@gsd/pi-ai` for use across the monorepo.
 
+### Codex Responses transport subcontracts
+
+`openai-codex-responses` identifies the request and streaming shape, but it does not imply one authentication
+or URL layout. The built-in ChatGPT transport uses an OAuth JWT, requires its `chatgpt_account_id`, and sends to
+`/codex/responses`. A Codex-compatible proxy can expose the same wire protocol at `/responses` while accepting an
+opaque bearer credential. Pi infers the built-in contract only for `chatgpt.com`; other base URLs default to the
+proxy contract. `compat.codexAuth` and `compat.codexEndpoint` provide explicit overrides.
+
+This preserves the API-shape decision for payload features such as Remote Compaction V2 without coupling every
+compatible transport to ChatGPT account credentials. Direct ChatGPT requests remain fail-closed when the OAuth
+claim is missing.
+
 ### When `provider` comparison is still correct
 
 A small set of call sites legitimately keys on `provider`. These are **not** gated on API shape:

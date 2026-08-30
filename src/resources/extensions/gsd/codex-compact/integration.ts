@@ -80,7 +80,9 @@ function isCheckpointCompatible(
   details: CodexCheckpointDetails,
   model: Model<Api> | undefined,
 ): model is Model<"openai-codex-responses"> {
-  return usesCodexResponsesApi(model) && model.id === details.modelId;
+  return usesCodexResponsesApi(model)
+    && model.provider === details.provider
+    && model.id === details.modelId;
 }
 
 function activePath(entries: readonly SessionEntry[], leafId: string | null): SessionEntry[] {

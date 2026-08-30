@@ -80,6 +80,72 @@ function buildSSEPayload({
 }
 
 describe("openai-codex streaming", () => {
+	it("supports Codex-compatible proxies with opaque bearer credentials", async () => {
+		const model: Model<"openai-codex-responses"> = {
+			id: "routed/model",
+			name: "Routed model",
+			api: "openai-codex-responses",
+			provider: "codex-proxy",
+			baseUrl: "http://127.0.0.1:10100/v1",
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 400000,
+			maxTokens: 128000,
+		};
+		const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
+			expect(String(input)).toBe("http://127.0.0.1:10100/v1/responses");
+			const headers = init?.headers instanceof Headers ? init.headers : new Headers(init?.headers);
+			expect(headers.get("Authorization")).toBe("Bearer local-admission-secret");
+			expect(headers.has("chatgpt-account-id")).toBe(false);
+			return new Response(buildSSEPayload({ status: "completed" }), {
+				status: 200,
+				headers: { "content-type": "text/event-stream" },
+			});
+		});
+
+		const result = await streamOpenAICodexResponses(model, {
+			systemPrompt: "system",
+			messages: [{ role: "user", content: "hello", timestamp: Date.now() }],
+		}, {
+			apiKey: "local-admission-secret",
+			transport: "sse",
+			fetch: fetchMock,
+		}).result();
+
+		expect(result.stopReason).toBe("stop");
+		expect(fetchMock).toHaveBeenCalledOnce();
+	});
+
+	it("keeps ChatGPT direct transport fail-closed on non-OAuth credentials", async () => {
+		const model: Model<"openai-codex-responses"> = {
+			id: "gpt-5.6-codex",
+			name: "GPT-5.6 Codex",
+			api: "openai-codex-responses",
+			provider: "openai-codex",
+			baseUrl: "https://chatgpt.com/backend-api",
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 400000,
+			maxTokens: 128000,
+		};
+		const fetchMock = vi.fn();
+
+		const result = await streamOpenAICodexResponses(model, {
+			systemPrompt: "system",
+			messages: [{ role: "user", content: "hello", timestamp: Date.now() }],
+		}, {
+			apiKey: "not-a-chatgpt-oauth-token",
+			transport: "sse",
+			fetch: fetchMock,
+		}).result();
+
+		expect(result.stopReason).toBe("error");
+		expect(result.errorMessage).toBe("Failed to extract accountId from token");
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
 	it("uses a request-scoped fetch implementation for bounded protocol observers", async () => {
 		const token = mockToken();
 		const model: Model<"openai-codex-responses"> = {

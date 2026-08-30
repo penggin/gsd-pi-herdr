@@ -300,6 +300,14 @@ test("openai-codex-responses compaction submits trigger, persists opaque details
   assert.equal(replayed.input.at(-1)?.type, "compaction");
   assert.equal(replayed.input.at(-1)?.encrypted_content, "opaque-live-shape");
 
+  const differentRouteCtx = {
+    ...ctx,
+    model: { ...activeModel, provider: "different-codex-route" },
+  } as ExtensionContext;
+  assert.equal(rewriteActiveCheckpointPayload({
+    input: [{ role: "user", content: [{ type: "input_text", text: marker }] }],
+  }, differentRouteCtx, basePath), undefined);
+
   entries.push(entry("new-user", "remote-compact", userMessage("after first compact", 5)));
   const repeatedEvent = {
     ...event,

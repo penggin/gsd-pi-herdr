@@ -28,6 +28,7 @@ import type {
 	AssistantMessage,
 	Context,
 	Model,
+	OpenAICodexResponsesCompat,
 	SimpleStreamOptions,
 	StreamFunction,
 	StreamOptions,
@@ -63,6 +64,25 @@ const CODEX_RESPONSE_STATUSES = new Set<CodexResponseStatus>([
 	"queued",
 	"in_progress",
 ]);
+
+type ResolvedOpenAICodexResponsesCompat = Required<OpenAICodexResponsesCompat>;
+
+function isCanonicalChatGPTBaseUrl(baseUrl?: string): boolean {
+	const raw = baseUrl && baseUrl.trim().length > 0 ? baseUrl : DEFAULT_CODEX_BASE_URL;
+	try {
+		return new URL(raw).hostname.toLowerCase() === "chatgpt.com";
+	} catch {
+		return false;
+	}
+}
+
+function resolveCodexCompat(model: Model<"openai-codex-responses">): ResolvedOpenAICodexResponsesCompat {
+	const directChatGPT = isCanonicalChatGPTBaseUrl(model.baseUrl);
+	return {
+		codexAuth: model.compat?.codexAuth ?? (directChatGPT ? "chatgpt-oauth" : "bearer"),
+		codexEndpoint: model.compat?.codexEndpoint ?? (directChatGPT ? "chatgpt" : "responses"),
+	};
+}
 
 // ============================================================================
 // Types
@@ -163,7 +183,8 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 				throw new Error(`No API key for provider: ${model.provider}`);
 			}
 
-			const accountId = extractAccountId(apiKey);
+			const compat = resolveCodexCompat(model);
+			const accountId = compat.codexAuth === "chatgpt-oauth" ? extractAccountId(apiKey) : undefined;
 			let body = buildRequestBody(model, context, options);
 			const nextBody = await options?.onPayload?.(body, model);
 			if (nextBody !== undefined) {
@@ -189,7 +210,7 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 				let websocketStarted = false;
 				try {
 					await processWebSocketStream(
-						resolveCodexWebSocketUrl(model.baseUrl),
+						resolveCodexWebSocketUrl(model.baseUrl, compat.codexEndpoint),
 						body,
 						websocketHeaders,
 						output,
@@ -246,7 +267,7 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 				}
 
 				try {
-					response = await fetchImpl(resolveCodexUrl(model.baseUrl), {
+					response = await fetchImpl(resolveCodexUrl(model.baseUrl, compat.codexEndpoint), {
 						method: "POST",
 						headers: sseHeaders,
 						body: bodyJson,
@@ -468,16 +489,25 @@ function resolveCodexServiceTier(
 	return responseServiceTier ?? requestServiceTier;
 }
 
-function resolveCodexUrl(baseUrl?: string): string {
+function resolveCodexUrl(
+	baseUrl: string | undefined,
+	endpoint: OpenAICodexResponsesCompat["codexEndpoint"] = "chatgpt",
+): string {
 	const raw = baseUrl && baseUrl.trim().length > 0 ? baseUrl : DEFAULT_CODEX_BASE_URL;
 	const normalized = raw.replace(/\/+$/, "");
+	if (endpoint === "responses") {
+		return normalized.endsWith("/responses") ? normalized : `${normalized}/responses`;
+	}
 	if (normalized.endsWith("/codex/responses")) return normalized;
 	if (normalized.endsWith("/codex")) return `${normalized}/responses`;
 	return `${normalized}/codex/responses`;
 }
 
-function resolveCodexWebSocketUrl(baseUrl?: string): string {
-	const url = new URL(resolveCodexUrl(baseUrl));
+function resolveCodexWebSocketUrl(
+	baseUrl: string | undefined,
+	endpoint: OpenAICodexResponsesCompat["codexEndpoint"] = "chatgpt",
+): string {
+	const url = new URL(resolveCodexUrl(baseUrl, endpoint));
 	if (url.protocol === "https:") url.protocol = "wss:";
 	if (url.protocol === "http:") url.protocol = "ws:";
 	return url.toString();
@@ -1345,7 +1375,7 @@ function createCodexRequestId(): string {
 function buildBaseCodexHeaders(
 	initHeaders: Record<string, string> | undefined,
 	additionalHeaders: Record<string, string> | undefined,
-	accountId: string,
+	accountId: string | undefined,
 	token: string,
 ): Headers {
 	const headers = new Headers(initHeaders);
@@ -1353,7 +1383,7 @@ function buildBaseCodexHeaders(
 		headers.set(key, value);
 	}
 	headers.set("Authorization", `Bearer ${token}`);
-	headers.set("chatgpt-account-id", accountId);
+	if (accountId) headers.set("chatgpt-account-id", accountId);
 	headers.set("originator", "pi");
 	const userAgent = _os ? `pi (${_os.platform()} ${_os.release()}; ${_os.arch()})` : "pi (browser)";
 	headers.set("User-Agent", userAgent);
@@ -1363,7 +1393,7 @@ function buildBaseCodexHeaders(
 function buildSSEHeaders(
 	initHeaders: Record<string, string> | undefined,
 	additionalHeaders: Record<string, string> | undefined,
-	accountId: string,
+	accountId: string | undefined,
 	token: string,
 	sessionId?: string,
 ): Headers {
@@ -1383,7 +1413,7 @@ function buildSSEHeaders(
 function buildWebSocketHeaders(
 	initHeaders: Record<string, string> | undefined,
 	additionalHeaders: Record<string, string> | undefined,
-	accountId: string,
+	accountId: string | undefined,
 	token: string,
 	requestId: string,
 ): Headers {

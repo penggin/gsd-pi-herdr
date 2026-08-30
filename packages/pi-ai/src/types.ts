@@ -475,6 +475,22 @@ export interface OpenAIResponsesCompat {
 	supportsLongCacheRetention?: boolean;
 }
 
+/** Compatibility settings for Codex Responses transports. */
+export interface OpenAICodexResponsesCompat {
+	/**
+	 * Authentication contract used by the endpoint. ChatGPT OAuth access tokens
+	 * carry a chatgpt_account_id claim; bearer proxies accept an opaque token.
+	 * Default: inferred from baseUrl (chatgpt.com => chatgpt-oauth, otherwise bearer).
+	 */
+	codexAuth?: "chatgpt-oauth" | "bearer";
+	/**
+	 * URL layout used by the endpoint. ChatGPT uses /codex/responses while
+	 * Codex-compatible Responses proxies conventionally expose /responses.
+	 * Default: inferred from baseUrl alongside codexAuth.
+	 */
+	codexEndpoint?: "chatgpt" | "responses";
+}
+
 /** Compatibility settings for Anthropic Messages-compatible APIs. */
 export interface AnthropicMessagesCompat {
 	/**
@@ -638,9 +654,11 @@ export interface Model<TApi extends Api> {
 		? OpenAICompletionsCompat
 		: TApi extends "openai-responses"
 			? OpenAIResponsesCompat
-			: TApi extends "anthropic-messages" | "anthropic-vertex"
-				? AnthropicMessagesCompat
-				: never;
+			: TApi extends "openai-codex-responses"
+				? OpenAICodexResponsesCompat
+				: TApi extends "anthropic-messages" | "anthropic-vertex"
+					? AnthropicMessagesCompat
+					: never;
 	/** Provider-specific options passed through to stream handlers. */
 	providerOptions?: Record<string, unknown>;
 }
