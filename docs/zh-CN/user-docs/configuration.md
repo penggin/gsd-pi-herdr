@@ -66,8 +66,8 @@ token_profile: balanced
 
 | 工具 | 环境变量 | 用途 | 获取地址 |
 |------|----------|------|----------|
-| Tavily Search | `TAVILY_API_KEY` | 为非 Anthropic models 提供 Web 搜索 | [tavily.com/app/api-keys](https://tavily.com/app/api-keys) |
-| Brave Search | `BRAVE_API_KEY` | 为非 Anthropic models 提供 Web 搜索 | [brave.com/search/api](https://brave.com/search/api) |
+| Tavily Search | `TAVILY_API_KEY` | 可选的外部 Web 搜索后备方案 | [tavily.com/app/api-keys](https://tavily.com/app/api-keys) |
+| Brave Search | `BRAVE_API_KEY` | 可选的外部 Web 搜索后备方案 | [brave.com/search/api](https://brave.com/search/api) |
 | Context7 Docs | `CONTEXT7_API_KEY` | 库文档检索 | [context7.com/dashboard](https://context7.com/dashboard) |
 
 ### 工作方式
@@ -76,7 +76,7 @@ token_profile: balanced
 2. 每次会话启动时，`loadToolApiKeys()` 都会读取该文件并设置环境变量
 3. 这些 keys 对所有项目生效，无需单独配置
 4. 环境变量（例如 `export BRAVE_API_KEY=...`）优先级高于保存下来的 keys
-5. Anthropic models 不需要 Brave/Tavily，因为它们自带 Web 搜索
+5. 支持的 Anthropic 与 ChatGPT OpenAI Codex models 不需要 Brave/Tavily，因为它们使用托管 Web 搜索
 
 ## MCP Servers
 

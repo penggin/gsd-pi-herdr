@@ -109,7 +109,7 @@ GSD workflow code must treat the active project/worktree as explicit state, not 
 |-----------|-----------------|
 | **GSD** | Core workflow engine — auto mode, state machine, commands, dashboard |
 | **Browser Tools** | Browser Automation Contract adapter; browser-facing projects prefer the managed gsd-browser engine when proven, falling back to Playwright (ADR-037) |
-| **Search the Web** | Brave Search, Tavily, or Jina page extraction |
+| **Search the Web** | Hosted Anthropic/OpenAI Codex search, optional Brave/Tavily/Ollama, or Jina page extraction |
 | **Google Search** | Gemini-powered web search with AI-synthesized answers |
 | **Context7** | Up-to-date library/framework documentation |
 | **Background Shell** | Long-running process management with readiness detection |

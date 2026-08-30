@@ -144,6 +144,123 @@ describe("openai-codex streaming", () => {
 		expect(scopedFetch).toHaveBeenCalledOnce();
 	});
 
+	it("preserves hosted web search calls, sources, and replay input", async () => {
+		const model: Model<"openai-codex-responses"> = {
+			id: "gpt-5.6-codex",
+			name: "GPT-5.6 Codex",
+			api: "openai-codex-responses",
+			provider: "openai-codex",
+			baseUrl: "https://chatgpt.com/backend-api",
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 400000,
+			maxTokens: 128000,
+		};
+		const searchItem = {
+			type: "web_search_call",
+			id: "ws_1",
+			status: "completed",
+			action: {
+				type: "search",
+				query: "GSD Pi Herdr",
+				queries: ["GSD Pi Herdr"],
+				sources: [
+					{ type: "url", url: "https://example.com/one" },
+					{ type: "url", url: "https://example.com/two" },
+				],
+			},
+		};
+		const events = [
+			{ type: "response.output_item.added", item: { ...searchItem, status: "in_progress" } },
+			{ type: "response.web_search_call.searching", item_id: "ws_1", output_index: 0, sequence_number: 1 },
+			{ type: "response.output_item.done", item: searchItem },
+			{
+				type: "response.output_item.added",
+				item: { type: "message", id: "msg_search", role: "assistant", status: "in_progress", content: [] },
+			},
+			{ type: "response.content_part.added", part: { type: "output_text", text: "" } },
+			{ type: "response.output_text.delta", delta: "Found it." },
+			{
+				type: "response.output_item.done",
+				item: {
+					type: "message",
+					id: "msg_search",
+					role: "assistant",
+					status: "completed",
+					content: [{ type: "output_text", text: "Found it.", annotations: [] }],
+				},
+			},
+			{
+				type: "response.completed",
+				response: {
+					id: "resp_search",
+					status: "completed",
+					usage: {
+						input_tokens: 10,
+						output_tokens: 4,
+						total_tokens: 14,
+						input_tokens_details: { cached_tokens: 0 },
+					},
+				},
+			},
+		];
+		const searchSse = `${events.map((event) => `data: ${JSON.stringify(event)}`).join("\n\n")}\n\n`;
+		const firstFetch = vi.fn(async () => new Response(searchSse, {
+			status: 200,
+			headers: { "content-type": "text/event-stream" },
+		}));
+
+		const first = await streamOpenAICodexResponses(model, {
+			systemPrompt: "system",
+			messages: [{ role: "user", content: "search", timestamp: 1 }],
+		}, {
+			apiKey: mockToken(),
+			transport: "sse",
+			fetch: firstFetch,
+		}).result();
+
+		expect(first.content.map((block) => block.type)).toEqual(["serverToolUse", "webSearchResult", "text"]);
+		expect(first.content[0]).toMatchObject({
+			type: "serverToolUse",
+			id: "ws_1",
+			name: "web_search",
+			input: searchItem.action,
+		});
+		expect(first.content[1]).toMatchObject({
+			type: "webSearchResult",
+			toolUseId: "ws_1",
+			content: [
+				{ type: "web_search_result", url: "https://example.com/one" },
+				{ type: "web_search_result", url: "https://example.com/two" },
+			],
+		});
+
+		let replayBody: Record<string, unknown> | undefined;
+		const replayFetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+			replayBody = JSON.parse(String(init?.body));
+			return new Response(buildSSEPayload({ status: "completed" }), {
+				status: 200,
+				headers: { "content-type": "text/event-stream" },
+			});
+		});
+		await streamOpenAICodexResponses(model, {
+			systemPrompt: "system",
+			messages: [
+				{ role: "user", content: "search", timestamp: 1 },
+				first,
+				{ role: "user", content: "continue", timestamp: 3 },
+			],
+		}, {
+			apiKey: mockToken(),
+			transport: "sse",
+			fetch: replayFetch,
+		}).result();
+
+		const replayInput = replayBody?.input as Array<Record<string, unknown>>;
+		expect(replayInput.find((item) => item.type === "web_search_call")).toEqual(searchItem);
+	});
+
 	it("streams SSE responses into AssistantMessageEventStream", async () => {
 		const tempDir = mkdtempSync(join(tmpdir(), "pi-codex-stream-"));
 		process.env.PI_CODING_AGENT_DIR = tempDir;

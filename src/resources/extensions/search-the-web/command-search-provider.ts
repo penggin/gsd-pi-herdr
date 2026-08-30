@@ -1,14 +1,14 @@
 /**
  * /search-provider slash command.
  *
- * Lets users switch between tavily, brave, and auto search backends.
+ * Lets users switch between hosted model search and external search backends.
  * Supports direct arg (`/search-provider tavily`) or interactive select UI.
- * Tab completion provides the three valid options with key status.
+ * Tab completion provides all valid options with external-key status.
  *
  * All provider logic lives in provider.ts (S01) — this is pure UI wiring.
  */
 
-import { supportsNativeWebSearch } from './native-search.js'
+import { supportsCodexNativeWebSearch, supportsNativeWebSearch } from './native-search.js'
 import type { ExtensionAPI } from '@gsd/pi-coding-agent'
 import type { AutocompleteItem } from '@gsd/pi-tui'
 import {
@@ -21,7 +21,7 @@ import {
   type SearchProviderPreference,
 } from './provider.js'
 
-const VALID_PREFERENCES: SearchProviderPreference[] = ['tavily', 'brave', 'ollama', 'auto']
+const VALID_PREFERENCES: SearchProviderPreference[] = ['native', 'tavily', 'brave', 'ollama', 'auto']
 
 function keyStatus(provider: 'tavily' | 'brave' | 'ollama'): string {
   if (provider === 'tavily') return getTavilyApiKey() ? '✓' : '✗'
@@ -31,6 +31,7 @@ function keyStatus(provider: 'tavily' | 'brave' | 'ollama'): string {
 
 function buildSelectOptions(): string[] {
   return [
+    `native (no separate API key)`,
     `tavily (key: ${keyStatus('tavily')})`,
     `brave (key: ${keyStatus('brave')})`,
     `ollama (key: ${keyStatus('ollama')})`,
@@ -39,6 +40,7 @@ function buildSelectOptions(): string[] {
 }
 
 function parseSelectChoice(choice: string): SearchProviderPreference {
+  if (choice.startsWith('native')) return 'native'
   if (choice.startsWith('tavily')) return 'tavily'
   if (choice.startsWith('brave')) return 'brave'
   if (choice.startsWith('ollama')) return 'ollama'
@@ -47,7 +49,7 @@ function parseSelectChoice(choice: string): SearchProviderPreference {
 
 export function registerSearchProviderCommand(pi: ExtensionAPI): void {
   pi.registerCommand('search-provider', {
-    description: 'Switch search provider (tavily, brave, ollama, auto)',
+    description: 'Switch search provider (native, tavily, brave, ollama, auto)',
 
     getArgumentCompletions(prefix: string): AutocompleteItem[] | null {
       const trimmed = prefix.trim().toLowerCase()
@@ -55,8 +57,10 @@ export function registerSearchProviderCommand(pi: ExtensionAPI): void {
         .filter((p) => p.startsWith(trimmed))
         .map((p) => {
           let description: string
-          if (p === 'auto') {
-            description = `Auto-select (tavily: ${keyStatus('tavily')}, brave: ${keyStatus('brave')}, ollama: ${keyStatus('ollama')})`
+          if (p === 'native') {
+            description = 'Hosted search from the active Anthropic or OpenAI Codex model'
+          } else if (p === 'auto') {
+            description = `Prefer hosted search; external fallback (tavily: ${keyStatus('tavily')}, brave: ${keyStatus('brave')}, ollama: ${keyStatus('ollama')})`
           } else {
             description = `key: ${keyStatus(p)}`
           }
@@ -94,10 +98,19 @@ export function registerSearchProviderCommand(pi: ExtensionAPI): void {
       // Gate on api shape + provider allowlist: the info note must match the
       // actual runtime behavior in native-search.ts. Claude served via copilot
       // / minimax / kimi is anthropic-shaped but does NOT run native search.
-      const isAnthropic = supportsNativeWebSearch(ctx.model)
-      const nativeNote = isAnthropic ? '\nNote: Native Anthropic web search is also active (automatic, no API key needed).' : ''
+      const nativeName = supportsNativeWebSearch(ctx.model)
+        ? 'Anthropic'
+        : supportsCodexNativeWebSearch(ctx.model)
+          ? 'OpenAI Codex'
+          : undefined
+      const useNative = nativeName !== undefined && (chosen === 'native' || chosen === 'auto')
+      const effectiveLabel = useNative
+        ? `${nativeName} built-in`
+        : chosen === 'native'
+          ? 'unavailable for active model'
+          : effective ?? 'none (no API keys)'
       ctx.ui.notify(
-        `Search provider set to ${chosen}. Effective provider: ${effective ?? 'none (no API keys)'}${nativeNote}`,
+        `Search provider set to ${chosen}. Effective provider: ${effectiveLabel}`,
         'info',
       )
     },

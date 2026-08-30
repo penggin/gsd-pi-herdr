@@ -94,8 +94,8 @@ This opens an interactive wizard showing which keys are configured and which are
 
 | Tool | Environment Variable | Purpose | Get a key |
 |------|---------------------|---------|-----------|
-| Tavily Search | `TAVILY_API_KEY` | Web search for non-Anthropic models | [tavily.com/app/api-keys](https://tavily.com/app/api-keys) |
-| Brave Search | `BRAVE_API_KEY` | Web search for non-Anthropic models | [brave.com/search/api](https://brave.com/search/api) |
+| Tavily Search | `TAVILY_API_KEY` | Optional external web search fallback | [tavily.com/app/api-keys](https://tavily.com/app/api-keys) |
+| Brave Search | `BRAVE_API_KEY` | Optional external web search fallback | [brave.com/search/api](https://brave.com/search/api) |
 | Context7 Docs | `CONTEXT7_API_KEY` | Library documentation lookup | [context7.com/dashboard](https://context7.com/dashboard) |
 
 ### How it works
@@ -104,7 +104,7 @@ This opens an interactive wizard showing which keys are configured and which are
 2. On every session start, `loadToolApiKeys()` reads the file and sets environment variables
 3. Keys apply to all projects — no per-project setup required
 4. Environment variables (`export BRAVE_API_KEY=...`) take precedence over saved keys
-5. Anthropic models don't need Brave/Tavily — they have built-in web search
+5. Supported Anthropic and ChatGPT-backed OpenAI Codex models don't need Brave/Tavily — they use hosted web search
 
 ## MCP Servers
 

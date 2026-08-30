@@ -294,7 +294,7 @@ In `"parent"` mode, slice/task `targetRepositories` default to the declared chil
 
 - `auto_report`: boolean — generate an HTML report snapshot after each milestone completion. Default: `true`.
 
-- `search_provider`: `"brave"`, `"tavily"`, `"ollama"`, `"native"`, or `"auto"` — selects the search backend for research phases. `"native"` forces Anthropic's built-in web search only; provider values force that backend and disable native search; `"auto"` uses the default heuristic. Default: `"auto"`.
+- `search_provider`: `"brave"`, `"tavily"`, `"ollama"`, `"native"`, or `"auto"` — selects the search backend for research phases. `"native"` forces hosted search on supported Anthropic and ChatGPT-backed OpenAI Codex models; provider values force that external backend and disable hosted search; `"auto"` prefers hosted search when the active API/provider pair supports it. Default: `"auto"`.
 
 - `context_selection`: `"full"` or `"smart"` — controls how files are inlined into context. `"full"` inlines entire files; `"smart"` uses semantic chunking to include only the most relevant sections. Default is derived from `token_profile`.
 

@@ -1,5 +1,5 @@
 /**
- * Native Anthropic web search hook logic.
+ * Hosted Anthropic and OpenAI Codex web search hook logic.
  *
  * Extracted from index.ts so it can be unit-tested without importing
  * the heavy tool-registration modules.
@@ -7,12 +7,12 @@
 
 import { isAnthropicApi } from "@gsd/pi-ai";
 import { resolveSearchProviderFromPreferences } from "../gsd/preferences.js";
-import { resolveSearchProvider } from "./provider.js";
+import { getSearchProviderPreference, resolveSearchProvider } from "./provider.js";
 
 /** Tool names for the Brave-backed custom search tools */
 export const BRAVE_TOOL_NAMES = ["search-the-web", "search_and_read"];
 
-/** All custom search tool names that should be disabled when native search is active */
+/** All custom search tool names that should be disabled when hosted search is active */
 export const CUSTOM_SEARCH_TOOL_NAMES = ["search-the-web", "search_and_read", "google_search"];
 
 /** Thinking block types that require signature validation by the API */
@@ -100,6 +100,17 @@ export function supportsNativeWebSearch(
 }
 
 /**
+ * The ChatGPT-backed Codex Responses transport accepts the hosted Responses
+ * `web_search` tool. Keep this allowlist exact: compatible-looking Responses
+ * proxies may use the same payload shape while rejecting hosted OpenAI tools.
+ */
+export function supportsCodexNativeWebSearch(
+  model: { api?: string; provider?: string } | null | undefined
+): boolean {
+  return model?.api === "openai-codex-responses" && model?.provider === "openai-codex";
+}
+
+/**
  * Maximum number of native web searches allowed per session (agent unit).
  * The Anthropic API's `max_uses` is per-request — it resets on each API call.
  * When `pause_turn` triggers a resubmit, the model gets a fresh budget.
@@ -109,12 +120,13 @@ export function supportsNativeWebSearch(
  */
 export const MAX_NATIVE_SEARCHES_PER_SESSION = 15;
 
-/** When true, skip native web search injection and keep Brave/custom tools active on Anthropic. */
+/** When true, skip hosted search injection and keep the selected external tools active. */
 export function preferBraveSearch(): boolean {
-  // PREFERENCES.md takes priority over env var
-  const prefsPref = resolveSearchProviderFromPreferences();
-  if (prefsPref === "brave" || prefsPref === "tavily" || prefsPref === "ollama") return true;
-  if (prefsPref === "native") return false;
+  // PREFERENCES.md takes priority over the slash-command preference, which in
+  // turn takes priority over the legacy environment variable.
+  const preference = resolveSearchProviderFromPreferences() ?? getSearchProviderPreference();
+  if (preference === "brave" || preference === "tavily" || preference === "ollama") return true;
+  if (preference === "native") return false;
   // Fall back to env var
   return process.env.PREFER_BRAVE_SEARCH === "1" || process.env.PREFER_BRAVE_SEARCH === "true";
 }
@@ -160,13 +172,14 @@ export function stripThinkingFromHistory(
 }
 
 /**
- * Register model_select, before_provider_request, and session_start hooks
- * for native Anthropic web search injection.
+ * Register model_select, before_provider_request, and session_start hooks for
+ * hosted Anthropic and OpenAI Codex web search injection.
  *
  * Returns the isAnthropicProvider getter for testing.
  */
 export function registerNativeSearchHooks(pi: NativeSearchPI): { getIsAnthropic: () => boolean } {
   let isAnthropicProvider = false;
+  let isCodexProvider = false;
   let modelSelectFired = false;
 
   // Session-level native search counter (#1309).
@@ -178,25 +191,27 @@ export function registerNativeSearchHooks(pi: NativeSearchPI): { getIsAnthropic:
   // since model_select fires AFTER session_start and knows the provider.
   pi.on("model_select", async (event: any, ctx: any) => {
     modelSelectFired = true;
-    const wasAnthropic = isAnthropicProvider;
+    const wasNativeSearchProvider = isAnthropicProvider || isCodexProvider;
     // Gate on api shape AND provider allowlist: direct Anthropic, claude-code
     // OAuth, and anthropic-vertex accept `web_search_20250305`; copilot /
     // minimax / kimi / opencode route Claude-compat models through the same
     // wire protocol but reject the server-side tool (#4492 regression).
     isAnthropicProvider = supportsNativeWebSearch(event.model);
+    isCodexProvider = supportsCodexNativeWebSearch(event.model);
+    const isNativeSearchProvider = isAnthropicProvider || isCodexProvider;
 
-    const hasBrave = !!process.env.BRAVE_API_KEY;
+    const hasExternalSearch = resolveSearchProvider() !== null;
 
-    // When Anthropic (and not preferring Brave): disable custom search tools —
-    // native web_search is server-side and more reliable.
-    if (isAnthropicProvider && !preferBraveSearch()) {
+    // When hosted search is active, disable external discovery tools. Explicit
+    // external preferences take the opposite path.
+    if (isNativeSearchProvider && !preferBraveSearch()) {
       const active = pi.getActiveTools();
       pi.setActiveTools(
         active.filter((t: string) => !CUSTOM_SEARCH_TOOL_NAMES.includes(t))
       );
-    } else if (!isAnthropicProvider && wasAnthropic) {
-      // Switching away from Anthropic — re-enable custom search tools that were
-      // disabled while native search was active. Only re-add the Brave/Tavily/
+    } else if (wasNativeSearchProvider || isNativeSearchProvider) {
+      // Switching away from hosted search — re-enable custom search tools that
+      // were disabled while it was active. Only re-add the Brave/Tavily/
       // Ollama-backed tools when a provider key is actually configured: without
       // a key they can only return an auth error, and re-adding their names
       // would advertise a tool the model cannot use (and, when unregistered,
@@ -205,7 +220,7 @@ export function registerNativeSearchHooks(pi: NativeSearchPI): { getIsAnthropic:
       // Gemini creds); re-adding its name here is harmless either way — it
       // activates if registered, or is dropped as a no-op if not.
       const active = pi.getActiveTools();
-      const providerConfigured = resolveSearchProvider() !== null;
+      const providerConfigured = hasExternalSearch;
       const toAdd = CUSTOM_SEARCH_TOOL_NAMES.filter((t) => {
         if (active.includes(t)) return false;
         if (BRAVE_TOOL_NAMES.includes(t)) return providerConfigured;
@@ -217,13 +232,16 @@ export function registerNativeSearchHooks(pi: NativeSearchPI): { getIsAnthropic:
     }
 
     // Show provider-aware diagnostics on first selection or provider change
-    if (isAnthropicProvider && !preferBraveSearch() && !wasAnthropic && event.source !== "restore") {
-      ctx.ui.notify("Native Anthropic web search active", "info");
-    } else if (isAnthropicProvider && preferBraveSearch() && !wasAnthropic && event.source !== "restore") {
-      ctx.ui.notify("Brave search active (PREFER_BRAVE_SEARCH)", "info");
-    } else if (!isAnthropicProvider && !hasBrave) {
+    if (isNativeSearchProvider && !preferBraveSearch() && !wasNativeSearchProvider && event.source !== "restore") {
       ctx.ui.notify(
-        "Web search: Set BRAVE_API_KEY or use an Anthropic model for built-in search",
+        isCodexProvider ? "Native OpenAI Codex web search active" : "Native Anthropic web search active",
+        "info",
+      );
+    } else if (isNativeSearchProvider && preferBraveSearch() && !wasNativeSearchProvider && event.source !== "restore") {
+      ctx.ui.notify("External web search provider active", "info");
+    } else if (!isNativeSearchProvider && !hasExternalSearch) {
+      ctx.ui.notify(
+        "Web search: configure Brave/Tavily/Ollama or use Anthropic/OpenAI Codex built-in search",
         "warning"
       );
     }
@@ -261,12 +279,13 @@ export function registerNativeSearchHooks(pi: NativeSearchPI): { getIsAnthropic:
       // proxy, etc.) doesn't expose the server-side search tool (#648).
       isAnthropic = false;
     }
-    if (!isAnthropic) return;
+    const isCodex = supportsCodexNativeWebSearch(eventModel);
+    if (!isAnthropic && !isCodex) return;
 
     // Strip thinking blocks from history to avoid signature validation errors
     // caused by the SDK dropping server_tool_use/web_search_tool_result blocks.
     const messages = payload.messages as Array<Record<string, unknown>> | undefined;
-    if (Array.isArray(messages)) {
+    if (isAnthropic && Array.isArray(messages)) {
       stripThinkingFromHistory(messages);
     }
 
@@ -278,15 +297,35 @@ export function registerNativeSearchHooks(pi: NativeSearchPI): { getIsAnthropic:
     let tools = payload.tools as Array<Record<string, unknown>>;
 
     // Don't double-inject if already present
-    if (tools.some((t) => t.type === "web_search_20250305")) return;
+    const alreadyInjected = isCodex
+      ? tools.some((t) => t.type === "web_search" || t.type === "web_search_2025_08_26" || t.type === "web_search_preview")
+      : tools.some((t) => t.type === "web_search_20250305");
+    if (alreadyInjected) return;
 
-    // Remove custom search tool definitions from Anthropic requests.
-    // Native web_search is server-side and more reliable — keeping both confuses
+    // Remove custom search tool definitions from hosted-search requests.
+    // Keeping both discovery paths confuses
     // the model and causes it to pick custom tools which can fail with network errors.
     tools = tools.filter(
       (t) => !CUSTOM_SEARCH_TOOL_NAMES.includes(t.name as string)
     );
     payload.tools = tools;
+
+    if (isCodex) {
+      // ChatGPT's Codex Responses transport exposes the same hosted tool shape
+      // as the Responses API. `external_web_access` selects live rather than
+      // indexed-only results on that transport.
+      tools.push({
+        type: "web_search",
+        external_web_access: true,
+        search_context_size: "medium",
+      });
+      const include = Array.isArray(payload.include) ? payload.include : [];
+      if (!include.includes("web_search_call.action.sources")) {
+        include.push("web_search_call.action.sources");
+      }
+      payload.include = include;
+      return payload;
+    }
 
     // ── Session-level search budget (#1309, #compaction-safe) ─────────────
     // Count web_search_tool_result blocks in the conversation history to

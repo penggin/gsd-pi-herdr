@@ -1,13 +1,26 @@
-import test from "node:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import {
   registerNativeSearchHooks,
+  supportsCodexNativeWebSearch,
   stripThinkingFromHistory,
   BRAVE_TOOL_NAMES,
   CUSTOM_SEARCH_TOOL_NAMES,
   MAX_NATIVE_SEARCHES_PER_SESSION,
   type NativeSearchPI,
 } from "../resources/extensions/search-the-web/native-search.ts";
+
+const originalGsdHome = process.env.GSD_HOME;
+const isolatedGsdHome = mkdtempSync(join(tmpdir(), "gsd-native-search-test-"));
+process.env.GSD_HOME = isolatedGsdHome;
+after(() => {
+  rmSync(isolatedGsdHome, { recursive: true, force: true });
+  if (originalGsdHome === undefined) delete process.env.GSD_HOME;
+  else process.env.GSD_HOME = originalGsdHome;
+});
 
 /**
  * Tests for native Anthropic web search injection.
@@ -99,6 +112,101 @@ test("before_provider_request injects web_search for claude models", async () =>
   assert.ok(nativeTool, "Should inject web_search_20250305 tool");
   assert.equal((tools as any[]).length, 2, "Should have original + injected tool");
   assert.equal(nativeTool.max_uses, 5, "Should set max_uses to 5 to prevent search loops (#817)");
+});
+
+test("before_provider_request uses hosted web_search for ChatGPT-backed Codex Responses", async () => {
+  const pi = createMockPI();
+  registerNativeSearchHooks(pi);
+  const model = { provider: "openai-codex", api: "openai-codex-responses", id: "gpt-5.6-codex" };
+
+  const payload: Record<string, unknown> = {
+    model: "gpt-5.6-codex",
+    input: [{ role: "user", content: [{ type: "input_text", text: "search" }] }],
+    include: ["reasoning.encrypted_content"],
+    tools: [
+      { type: "function", name: "bash" },
+      { type: "function", name: "search-the-web" },
+      { type: "function", name: "search_and_read" },
+    ],
+  };
+
+  const result = await pi.fire("before_provider_request", {
+    type: "before_provider_request",
+    model,
+    payload,
+  });
+
+  assert.equal(result, payload);
+  const tools = payload.tools as Array<Record<string, unknown>>;
+  assert.deepEqual(tools.map((tool) => tool.name ?? tool.type), ["bash", "web_search"]);
+  assert.deepEqual(tools[1], {
+    type: "web_search",
+    external_web_access: true,
+    search_context_size: "medium",
+  });
+  assert.deepEqual(payload.include, ["reasoning.encrypted_content", "web_search_call.action.sources"]);
+  assert.equal(supportsCodexNativeWebSearch(model), true);
+});
+
+test("Codex hosted search is gated on the exact openai-codex provider", async () => {
+  const pi = createMockPI();
+  registerNativeSearchHooks(pi);
+  const payload = {
+    model: "gpt-5.6-codex",
+    input: [],
+    tools: [{ type: "function", name: "search-the-web" }],
+  };
+
+  const result = await pi.fire("before_provider_request", {
+    type: "before_provider_request",
+    model: { provider: "custom-proxy", api: "openai-codex-responses", id: "gpt-5.6-codex" },
+    payload,
+  });
+
+  assert.equal(result, undefined);
+  assert.deepEqual(payload.tools, [{ type: "function", name: "search-the-web" }]);
+});
+
+test("model_select activates hosted search and hides external tools for OpenAI Codex", async () => {
+  const pi = createMockPI();
+  registerNativeSearchHooks(pi);
+
+  await pi.fire("model_select", {
+    type: "model_select",
+    model: { provider: "openai-codex", api: "openai-codex-responses", id: "gpt-5.6-codex" },
+    previousModel: undefined,
+    source: "set",
+  });
+
+  assert.ok(!pi.getActiveTools().includes("search-the-web"));
+  assert.ok(!pi.getActiveTools().includes("search_and_read"));
+  assert.ok(pi.getActiveTools().includes("fetch_page"));
+  assert.ok(pi.notifications.some(({ message }) => message === "Native OpenAI Codex web search active"));
+});
+
+test("explicit external search preference keeps Codex hosted search disabled", async (t) => {
+  const previous = process.env.PREFER_BRAVE_SEARCH;
+  process.env.PREFER_BRAVE_SEARCH = "1";
+  t.after(() => {
+    if (previous === undefined) delete process.env.PREFER_BRAVE_SEARCH;
+    else process.env.PREFER_BRAVE_SEARCH = previous;
+  });
+  const pi = createMockPI();
+  registerNativeSearchHooks(pi);
+  const payload = {
+    model: "gpt-5.6-codex",
+    input: [],
+    tools: [{ type: "function", name: "search-the-web" }],
+  };
+
+  const result = await pi.fire("before_provider_request", {
+    type: "before_provider_request",
+    model: { provider: "openai-codex", api: "openai-codex-responses", id: "gpt-5.6-codex" },
+    payload,
+  });
+
+  assert.equal(result, undefined);
+  assert.deepEqual(payload.tools, [{ type: "function", name: "search-the-web" }]);
 });
 
 test("before_provider_request does NOT inject web_search without model_select or event.model provider (#648)", async () => {

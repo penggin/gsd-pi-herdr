@@ -1,7 +1,7 @@
 /**
  * Web Search Extension v4
  *
- * Native Anthropic hooks stay eager. Heavy tool registration is deferred in
+ * Hosted Anthropic/OpenAI Codex hooks stay eager. Heavy tool registration is deferred in
  * interactive mode so startup is not blocked on the full search tool stack.
  *
  * Provider gating: the Brave/Tavily/Ollama-backed tools (search-the-web,

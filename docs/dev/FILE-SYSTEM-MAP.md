@@ -46,7 +46,7 @@
 | **Onboarding** | First-run wizard and setup flows |
 | **Permissions** | Permission management for tools and trust |
 | **Remote Questions** | Remote prompting via Slack, Discord, Telegram |
-| **Search the Web** | Brave/Jina/Tavily-based web search extension |
+| **Search the Web** | Hosted Anthropic/OpenAI Codex search plus optional Brave/Jina/Tavily/Ollama |
 | **Session Management** | Session file I/O, branches, fork trees |
 | **Skills** | Skill tool registration, health, telemetry |
 | **Slash Commands** | Command boilerplate generators extension |
@@ -625,9 +625,9 @@
 | browser-tools/tools/action-cache.ts | Browser Tools | Action caching and replay |
 | context7/index.ts | Context7, Tool System | Library documentation fetching extension |
 | google-search/index.ts | Google Search, Tool System | Web search via Google API |
-| search-the-web/index.ts | Search the Web | Brave/Jina/Tavily-based web search extension |
+| search-the-web/index.ts | Search the Web | Hosted model search and optional external provider registration |
 | search-the-web/provider.ts | Search the Web | Search provider abstraction |
-| search-the-web/native-search.ts | Search the Web | Native Brave search implementation |
+| search-the-web/native-search.ts | Search the Web | Anthropic and OpenAI Codex hosted search injection |
 | search-the-web/tavily.ts | Search the Web | Tavily search provider |
 | search-the-web/tool-search.ts | Search the Web, Tool System | Search tool implementation |
 | search-the-web/tool-fetch-page.ts | Search the Web, Tool System | Page fetching tool |

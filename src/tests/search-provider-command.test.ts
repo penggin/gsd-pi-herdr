@@ -10,11 +10,20 @@
  * - Notify message includes effective provider from resolveSearchProvider()
  */
 
-import test from 'node:test'
+import test, { after } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+
+const originalGsdHome = process.env.GSD_HOME
+const isolatedGsdHome = mkdtempSync(join(tmpdir(), 'gsd-search-provider-command-'))
+process.env.GSD_HOME = isolatedGsdHome
+after(() => {
+  rmSync(isolatedGsdHome, { recursive: true, force: true })
+  if (originalGsdHome === undefined) delete process.env.GSD_HOME
+  else process.env.GSD_HOME = originalGsdHome
+})
 
 // ─── Helpers (reused from provider.test.ts pattern) ────────────────────────
 
@@ -187,11 +196,29 @@ test('direct arg "auto" sets preference and notifies', async (t) => {
   })
 })
 
+test('direct arg "native" selects OpenAI Codex built-in search without an external key', async () => {
+  const cmd = await loadCommand()
+  const ctx = makeMockCtx() as MockCtx & { model: Record<string, unknown> }
+  ctx.model = {
+    provider: 'openai-codex',
+    api: 'openai-codex-responses',
+    id: 'gpt-5.6-codex',
+  }
+
+  await withEnv({ TAVILY_API_KEY: undefined, BRAVE_API_KEY: undefined }, async () => {
+    await cmd.handler('native', ctx)
+  })
+
+  assert.equal(ctx.ui.selectCalls.length, 0)
+  assert.match(ctx.ui.notifyCalls[0].message, /Search provider set to native/)
+  assert.match(ctx.ui.notifyCalls[0].message, /Effective provider: OpenAI Codex built-in/)
+})
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 4. No arg — shows select UI, user picks one
 // ═══════════════════════════════════════════════════════════════════════════
 
-test('no arg shows select UI with 3 options, user picks brave', async () => {
+test('no arg shows select UI with 5 options, user picks brave', async () => {
   const cmd = await loadCommand()
 
   await withEnv({ TAVILY_API_KEY: 'tvly-test', BRAVE_API_KEY: 'BSA-test' }, async () => {
@@ -200,13 +227,14 @@ test('no arg shows select UI with 3 options, user picks brave', async () => {
 
     // Select UI shown
     assert.equal(ctx.ui.selectCalls.length, 1, 'should show select UI')
-    assert.equal(ctx.ui.selectCalls[0].options.length, 4)
+    assert.equal(ctx.ui.selectCalls[0].options.length, 5)
 
     // Options show key status
-    assert.match(ctx.ui.selectCalls[0].options[0], /tavily \(key: ✓\)/)
-    assert.match(ctx.ui.selectCalls[0].options[1], /brave \(key: ✓\)/)
-    assert.match(ctx.ui.selectCalls[0].options[2], /ollama \(key:/)
-    assert.equal(ctx.ui.selectCalls[0].options[3], 'auto')
+    assert.match(ctx.ui.selectCalls[0].options[0], /native \(no separate API key\)/)
+    assert.match(ctx.ui.selectCalls[0].options[1], /tavily \(key: ✓\)/)
+    assert.match(ctx.ui.selectCalls[0].options[2], /brave \(key: ✓\)/)
+    assert.match(ctx.ui.selectCalls[0].options[3], /ollama \(key:/)
+    assert.equal(ctx.ui.selectCalls[0].options[4], 'auto')
 
     // Title shows current preference
     assert.match(ctx.ui.selectCalls[0].title, /current:/)
@@ -263,19 +291,19 @@ test('invalid arg "google" falls back to interactive select', async () => {
 })
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 7. Tab completion — all 3 options when prefix is empty
+// 7. Tab completion — all options when prefix is empty
 // ═══════════════════════════════════════════════════════════════════════════
 
-test('tab completion returns all 4 options when prefix is empty', async () => {
+test('tab completion returns all 5 options when prefix is empty', async () => {
   const cmd = await loadCommand()
 
   withEnv({ TAVILY_API_KEY: 'tvly-test', BRAVE_API_KEY: 'BSA-test' }, () => {
     const items = cmd.getArgumentCompletions!('')
     assert.ok(items, 'completions should not be null')
-    assert.equal(items!.length, 4)
+    assert.equal(items!.length, 5)
 
     const values = items!.map((i: any) => i.value)
-    assert.deepEqual(values, ['tavily', 'brave', 'ollama', 'auto'])
+    assert.deepEqual(values, ['native', 'tavily', 'brave', 'ollama', 'auto'])
 
     // Each item has label and description
     assert.ok(items!.every((i: any) => i.label), 'every item should have a label')
@@ -345,8 +373,8 @@ test('select options show key unavailability with ✗', async () => {
     await cmd.handler('', ctx)
 
     assert.equal(ctx.ui.selectCalls.length, 1)
-    assert.match(ctx.ui.selectCalls[0].options[0], /tavily \(key: ✗\)/)
-    assert.match(ctx.ui.selectCalls[0].options[1], /brave \(key: ✗\)/)
+    assert.match(ctx.ui.selectCalls[0].options[1], /tavily \(key: ✗\)/)
+    assert.match(ctx.ui.selectCalls[0].options[2], /brave \(key: ✗\)/)
   })
 })
 

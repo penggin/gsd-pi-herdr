@@ -116,6 +116,16 @@ test('resolveSearchProvider returns null when neither key is set', async () => {
   })
 })
 
+test('resolveSearchProvider returns null for explicit native preference even when external keys exist', async () => {
+  const { resolveSearchProvider } = await import(
+    '../resources/extensions/search-the-web/provider.ts'
+  )
+
+  withEnv({ TAVILY_API_KEY: 'tvly-test', BRAVE_API_KEY: 'BSA-test' }, () => {
+    assert.equal(resolveSearchProvider('native'), null)
+  })
+})
+
 test('resolveSearchProvider treats invalid preference as auto', async () => {
   const { resolveSearchProvider } = await import(
     '../resources/extensions/search-the-web/provider.ts'
@@ -188,6 +198,9 @@ test('setSearchProviderPreference writes to auth.json via AuthStorage', async (t
   // Round-trip: change to auto
   setSearchProviderPreference('auto', authPath)
   assert.equal(getSearchProviderPreference(authPath), 'auto')
+
+  setSearchProviderPreference('native', authPath)
+  assert.equal(getSearchProviderPreference(authPath), 'native')
 })
 
 test('getSearchProviderPreference returns auto for invalid stored value', async (t) => {

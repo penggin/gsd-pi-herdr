@@ -3,6 +3,7 @@ import type {
 	Tool as OpenAITool,
 	ResponseCreateParamsStreaming,
 	ResponseFunctionCallOutputItemList,
+	ResponseFunctionWebSearch,
 	ResponseFunctionToolCall,
 	ResponseInput,
 	ResponseInputContent,
@@ -19,6 +20,7 @@ import type {
 	Context,
 	ImageContent,
 	Model,
+	ServerToolUse,
 	StopReason,
 	TextContent,
 	TextSignatureV1,
@@ -186,6 +188,10 @@ export function convertResponsesMessages<TApi extends Api>(
 			const output: ResponseInput = [];
 			const assistantMsg = msg as AssistantMessage;
 			let textItemIndex = 0;
+			const isSameModel =
+				assistantMsg.model === model.id &&
+				assistantMsg.provider === model.provider &&
+				assistantMsg.api === model.api;
 			const isDifferentModel =
 				assistantMsg.model !== model.id &&
 				assistantMsg.provider === model.provider &&
@@ -234,6 +240,19 @@ export function convertResponsesMessages<TApi extends Api>(
 						name: toolCall.name,
 						arguments: JSON.stringify(toolCall.arguments),
 					});
+				} else if (
+					block.type === "serverToolUse"
+					&& block.name === "web_search"
+					&& isSameModel
+					&& block.input
+					&& typeof block.input === "object"
+				) {
+					output.push({
+						type: "web_search_call",
+						id: block.id,
+						status: "completed",
+						action: block.input,
+					} as ResponseFunctionWebSearch);
 				}
 			}
 			if (output.length === 0) continue;
@@ -311,8 +330,8 @@ export async function processResponsesStream<TApi extends Api>(
 	model: Model<TApi>,
 	options?: OpenAIResponsesStreamOptions,
 ): Promise<void> {
-	let currentItem: ResponseReasoningItem | ResponseOutputMessage | ResponseFunctionToolCall | null = null;
-	let currentBlock: ThinkingContent | TextContent | (ToolCall & { partialJson: string }) | null = null;
+	let currentItem: ResponseReasoningItem | ResponseOutputMessage | ResponseFunctionToolCall | ResponseFunctionWebSearch | null = null;
+	let currentBlock: ThinkingContent | TextContent | (ToolCall & { partialJson: string }) | ServerToolUse | null = null;
 	const blocks = output.content;
 	const blockIndex = () => blocks.length - 1;
 
@@ -342,6 +361,16 @@ export async function processResponsesStream<TApi extends Api>(
 				};
 				output.content.push(currentBlock);
 				stream.push({ type: "toolcall_start", contentIndex: blockIndex()});
+			} else if (item.type === "web_search_call") {
+				currentItem = item;
+				currentBlock = {
+					type: "serverToolUse",
+					id: item.id,
+					name: "web_search",
+					input: structuredClone(item.action),
+				};
+				output.content.push(currentBlock);
+				stream.push({ type: "server_tool_use", contentIndex: blockIndex() });
 			}
 		} else if (event.type === "response.reasoning_summary_part.added") {
 			if (currentItem && currentItem.type === "reasoning") {
@@ -490,6 +519,31 @@ export async function processResponsesStream<TApi extends Api>(
 
 				currentBlock = null;
 				stream.push({ type: "toolcall_end", contentIndex: blockIndex(), toolCall});
+			} else if (item.type === "web_search_call") {
+				let serverBlock = currentBlock?.type === "serverToolUse" && currentBlock.id === item.id
+					? currentBlock
+					: undefined;
+				if (!serverBlock) {
+					for (let index = output.content.length - 1; index >= 0; index--) {
+						const block = output.content[index];
+						if (block.type === "serverToolUse" && block.id === item.id) {
+							serverBlock = block;
+							break;
+						}
+					}
+				}
+				if (serverBlock) serverBlock.input = structuredClone(item.action);
+				const sourceUrls = item.action.type === "search"
+					? (item.action.sources ?? []).map((source) => source.url)
+					: item.action.url
+						? [item.action.url]
+						: [];
+				output.content.push({
+					type: "webSearchResult",
+					toolUseId: item.id,
+					content: sourceUrls.map((url) => ({ type: "web_search_result", title: url, url })),
+				});
+				currentBlock = null;
 			}
 		} else if (event.type === "response.completed") {
 			const response = event.response;

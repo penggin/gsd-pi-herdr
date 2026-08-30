@@ -824,7 +824,11 @@ async function runWebSearchStep(
 ): Promise<string | null> {
   // Check which LLM provider was configured
   const authed = authStorage.list().filter(id => LLM_PROVIDER_IDS.includes(id))
-  const isAnthropic = isAnthropicAuth && authed.includes('anthropic')
+  const nativeProvider = isAnthropicAuth && authed.includes('anthropic')
+    ? 'Anthropic'
+    : authed.includes('openai-codex')
+      ? 'OpenAI Codex'
+      : null
 
   // Check if web search is already configured
   const hasBrave = !!process.env.BRAVE_API_KEY || authStorage.has('brave')
@@ -839,11 +843,11 @@ async function runWebSearchStep(
     options.push({ value: 'keep', label: `Keep current (${existingSearch})`, hint: 'already configured' })
   }
 
-  if (isAnthropic) {
+  if (nativeProvider) {
     options.push({
-      value: 'anthropic-native',
-      label: 'Anthropic built-in web search',
-      hint: 'no API key needed — already included with Claude',
+      value: 'provider-native',
+      label: `${nativeProvider} built-in web search`,
+      hint: 'no separate search API key needed',
     })
   }
 
@@ -861,9 +865,11 @@ async function runWebSearchStep(
   if (p.isCancel(choice) || choice === 'skip') return null
   if (choice === 'keep') return existingSearch
 
-  if (choice === 'anthropic-native') {
-    p.log.success(`Web search: ${pc.green('Anthropic built-in')} — works out of the box`)
-    return 'Anthropic built-in'
+  if (choice === 'provider-native') {
+    authStorage.remove('search_provider')
+    authStorage.set('search_provider', { type: 'api_key', key: 'native' })
+    p.log.success(`Web search: ${pc.green(`${nativeProvider} built-in`)} — works out of the box`)
+    return `${nativeProvider} built-in`
   }
 
   if (choice === 'brave') {

@@ -40,7 +40,7 @@ export interface OnboardingStepDef {
 export const ONBOARDING_STEPS: readonly OnboardingStepDef[] = [
   { id: "llm",       label: "LLM provider & auth",      required: true,  hint: "Sign in or paste an API key" },
   { id: "model",     label: "Default model",            required: false, hint: "Pick a default model for the chosen provider" },
-  { id: "search",    label: "Web search provider",      required: false, hint: "Brave, Tavily, or Anthropic built-in" },
+  { id: "search",    label: "Web search provider",      required: false, hint: "Hosted model search, Brave, Tavily, or Ollama" },
   { id: "remote",    label: "Remote questions",         required: false, hint: "Discord / Slack / Telegram notifications" },
   { id: "tool-keys", label: "Tool API keys",            required: false, hint: "Context7, Jina, Groq voice, etc." },
   { id: "prefs",     label: "Global preferences",       required: false, hint: "Mode, profile, notifications" },

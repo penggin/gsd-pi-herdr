@@ -1,10 +1,12 @@
 /**
  * Search provider selection and preference management.
  *
- * Single source of truth for which search backend (Tavily vs Brave) to use.
+ * Single source of truth for hosted-vs-external search preference and the
+ * selected external backend.
  * Reads API keys from process.env at call time (not module load time) so
  * hot-reloaded keys work. Preference is stored in auth.json under the
- * synthetic provider key `search_provider` as { type: "api_key", key: "tavily" | "brave" | "auto" }.
+ * synthetic provider key `search_provider` as an API-key-shaped preference
+ * record (`native`, `tavily`, `brave`, `ollama`, or `auto`).
  *
  * @see S01-RESEARCH.md for the storage decision rationale (D002).
  */
@@ -22,9 +24,9 @@ function authFilePath(): string {
 }
 
 export type SearchProvider = 'tavily' | 'brave' | 'ollama'
-export type SearchProviderPreference = SearchProvider | 'auto'
+export type SearchProviderPreference = SearchProvider | 'native' | 'auto'
 
-const VALID_PREFERENCES = new Set<string>(['tavily', 'brave', 'ollama', 'auto'])
+const VALID_PREFERENCES = new Set<string>(['tavily', 'brave', 'ollama', 'native', 'auto'])
 const PREFERENCE_KEY = 'search_provider'
 
 /** Returns the Tavily API key from the environment, or empty string if not set. */
@@ -108,7 +110,7 @@ export function resolveSearchProvider(overridePreference?: string): SearchProvid
   } else {
     // PREFERENCES.md takes priority over auth.json
     const mdPref = resolveSearchProviderFromPreferences()
-    if (mdPref && mdPref !== 'auto' && mdPref !== 'native') {
+    if (mdPref) {
       pref = mdPref as SearchProviderPreference
     } else if (overridePreference !== undefined && !VALID_PREFERENCES.has(overridePreference)) {
       pref = 'auto'
@@ -116,6 +118,8 @@ export function resolveSearchProvider(overridePreference?: string): SearchProvid
       pref = getSearchProviderPreference()
     }
   }
+
+  if (pref === 'native') return null
 
   // Resolve based on preference
   if (pref === 'auto') {
