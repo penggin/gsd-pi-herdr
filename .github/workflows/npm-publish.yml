@@ -148,6 +148,15 @@ jobs:
       - name: Validate package is installable
         run: pnpm run validate-pack
 
+      - name: Publish optional workspace packages
+        env:
+          NODE_AUTH_TOKEN: ${{ github.event.inputs.publish_auth == 'token' && secrets.NPM_TOKEN || '' }}
+          TAG_FLAG: --tag ${{ github.event.inputs.channel == 'latest' && 'dev' || github.event.inputs.channel }}
+        run: |
+          trap 'node scripts/postpack-restore-workspace.cjs' EXIT
+          node scripts/prepack-resolve-workspace.cjs
+          bash scripts/publish-workspace-packages.sh
+
       - name: Publish @${{ github.event.inputs.channel == 'latest' && 'dev' || github.event.inputs.channel }}
         env:
           CHANNEL: ${{ github.event.inputs.channel == 'latest' && 'dev' || github.event.inputs.channel }}
@@ -248,6 +257,23 @@ jobs:
           GSD_SMOKE_BINARY=$(which gsd)
           export GSD_SMOKE_BINARY
           pnpm run test:smoke
+
+      - name: Install and discover optional Assessment Gate pack
+        env:
+          PUBLISH_VERSION: ${{ needs.prerelease-publish.outputs.version }}
+        run: |
+          for i in 1 2 3 4 5 6; do
+            if gsd install "npm:@penggin/gsd-assessment-pack-gstack@${PUBLISH_VERSION}"; then
+              break
+            fi
+            if [ "$i" = "6" ]; then
+              echo "::error::Failed to install the optional Assessment Gate pack after registry propagation retries."
+              exit 1
+            fi
+            sleep 10
+          done
+          gsd list | tee /tmp/gsd-package-list.txt
+          grep -F "@penggin/gsd-assessment-pack-gstack" /tmp/gsd-package-list.txt
 
       - name: Install repo dependencies (for regression harness)
         run: pnpm install --frozen-lockfile

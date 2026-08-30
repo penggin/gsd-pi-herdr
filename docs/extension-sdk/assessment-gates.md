@@ -2,6 +2,8 @@
 
 Assessment Gates are Agent Skills with a GSD policy namespace. They are installed through the existing Pi skill/package mechanisms; there is no separate gate package manager.
 
+Install the optional pilot pack with `gsd install npm:@penggin/gsd-assessment-pack-gstack`. Add `--local` to scope it to the current project. Verify it with `/gsd gate list`; uninstall it with `gsd remove npm:@penggin/gsd-assessment-pack-gstack`.
+
 ## Minimal gate
 
 ```yaml

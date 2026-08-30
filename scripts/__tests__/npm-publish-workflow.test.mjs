@@ -180,6 +180,32 @@ test("main package publish validates tarball before publishing", () => {
   assert.ok(prodSteps.indexOf(prodValidate) < prodPublishIndex);
 });
 
+test("prerelease publishes and installs optional workspace packages before release planning", () => {
+  const publishSteps = workflow.jobs["prerelease-publish"].steps;
+  const workspacePublishIndex = publishSteps.findIndex(
+    (step) => step.name === "Publish optional workspace packages",
+  );
+  const rootPublishIndex = publishSteps.findIndex(
+    (step) => step.name === prereleasePublishStep,
+  );
+  const workspacePublish = publishSteps[workspacePublishIndex];
+
+  assert.ok(workspacePublishIndex > -1, "prerelease must publish optional workspace packages");
+  assert.ok(workspacePublishIndex < rootPublishIndex, "optional packages must publish before root");
+  assert.match(workspacePublish.run, /publish-workspace-packages\.sh/);
+  assert.match(workspacePublish.run, /prepack-resolve-workspace\.cjs/);
+  assert.match(workspacePublish.env.TAG_FLAG, /github\.event\.inputs\.channel/);
+
+  const verifySteps = workflow.jobs["prerelease-verify"].steps;
+  const packInstall = verifySteps.find(
+    (step) => step.name === "Install and discover optional Assessment Gate pack",
+  );
+  assert.ok(packInstall, "published pack must be installed through the public GSD command");
+  assert.match(packInstall.run, /gsd install "npm:@penggin\/gsd-assessment-pack-gstack@\$\{PUBLISH_VERSION\}"/);
+  assert.match(packInstall.run, /gsd list/);
+  assert.match(packInstall.run, /grep -F "@penggin\/gsd-assessment-pack-gstack"/);
+});
+
 test("production release runs optional live workflow test on the configured OpenAI model", () => {
   const steps = workflow.jobs["prod-release"].steps;
   const idx = (name) => steps.findIndex((step) => step.name === name);

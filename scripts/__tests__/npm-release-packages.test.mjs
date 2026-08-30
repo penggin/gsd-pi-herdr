@@ -23,13 +23,20 @@ const repoRoot = path.resolve(fileURLToPath(import.meta.url), "../../..");
 
 test("required npm set never publishes private source-scope workspaces", () => {
   const names = getRequiredNpmPackageNames();
-  assert.deepEqual(getPublishableWorkspacePackages(), []);
+  assert.deepEqual(
+    getPublishableWorkspacePackages().map((pkg) => pkg.name),
+    ["@penggin/gsd-assessment-pack-gstack"],
+  );
   assert.ok(names.every((name) => !name.startsWith("@opengsd/")), "release set must be downstream-owned");
 });
 
-test("required npm set = downstream root + downstream engines", () => {
+test("required npm set = optional packs + downstream engines + downstream root", () => {
   const names = getRequiredNpmPackageNames();
-  assert.deepEqual(names, [...getEnginePackageNames(), getRootPackageName()]);
+  assert.deepEqual(names, [
+    "@penggin/gsd-assessment-pack-gstack",
+    ...getEnginePackageNames(),
+    getRootPackageName(),
+  ]);
   assert.ok(names.every((name) => name.startsWith("@penggin/")));
 });
 
@@ -44,6 +51,15 @@ test("bundled @gsd/* packages are NOT published", () => {
   ]) {
     assert.ok(!names.includes(bundled), `${bundled} ships bundled and must not be published`);
   }
+});
+
+test("optional assessment pack is independently publishable and dependency-free", () => {
+  const packages = getOrderedWorkspacePublishList();
+  assert.deepEqual(packages, [{
+    dir: "packages/gsd-assessment-pack-gstack",
+    name: "@penggin/gsd-assessment-pack-gstack",
+    deps: [],
+  }]);
 });
 
 test("publishable workspaces do not depend on bundled workspaces at runtime", () => {

@@ -72,6 +72,7 @@ test("resolveEngineOptionalDependencyVersion keeps prerelease publishes on stabl
 
 test("version sync keeps daemon and excludes retired cloud products", () => {
   assert.ok(RELEASE_WORKSPACE_PACKAGE_DIRS.includes("packages/daemon"));
+  assert.ok(RELEASE_WORKSPACE_PACKAGE_DIRS.includes("packages/gsd-assessment-pack-gstack"));
   assert.ok(!RELEASE_WORKSPACE_PACKAGE_DIRS.includes("packages/cloud-mcp-gateway"));
   assert.ok(!RELEASE_WORKSPACE_PACKAGE_DIRS.includes("packages/gsd-cloud"));
 });

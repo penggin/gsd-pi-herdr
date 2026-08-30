@@ -15,6 +15,7 @@ This document records the implementation verification for ADR-050. The GSD datab
 - Findings never change validation, milestone, task, remediation, ship, or release state automatically.
 - Structured skill matching uses exact tokens and normalized phrases while preserving legacy `when` rules.
 - The optional GStack-derived pilot pack is independently discoverable and is not a core dependency.
+- The optional pack is an independently publishable, dependency-free Pi resource package. `validate-pack` installs its npm tarball into an isolated prefix, registers it through `gsd install --local`, and verifies every declared skill and provenance file.
 
 ## Verification commands
 
@@ -48,6 +49,13 @@ Results:
 ## Dependency audit
 
 `packages/gsd-assessment-pack-gstack` is a standalone workspace package with no runtime dependencies. Neither the root package nor GSD core packages depend on it. Core code contains only provider-neutral assessment contracts and does not require GStack, Codex, or another provider-specific CLI.
+
+## Installation evidence
+
+- The built root tarball was installed globally and `gsd --build-info` identified `@penggin/gsd-pi-herdr@1.16.2` with Herdr integration enabled.
+- The optional pack was registered through `gsd install` and appeared in `gsd list`.
+- The installed loader discovered `gstack-design-review` as a suggested pre-milestone gate and `gstack-second-opinion` as a manual post-validation gate, with no diagnostics and model-body invocation disabled.
+- The public npm names are not yet bootstrapped. The first registry publish must use the documented token-auth release path; subsequent releases can use trusted publishing.
 
 ## Known v1 limitations
 

@@ -164,6 +164,8 @@ Content inside fenced code blocks (` ``` `) is excluded — patterns in code exa
 3. Leave `publish_auth` at `trusted` (OIDC) unless you are bootstrapping a package that does not exist on npm yet — see [First-time packages](#first-time-packages-bootstrap-with-token).
 4. `prerelease-publish` builds, stamps the prerelease version, runs the gates, publishes with `--tag <channel>`, and polls npm until the version installs. `prerelease-verify` then installs the published package globally and runs the installed-binary gates listed above.
 
+The optional `@penggin/gsd-assessment-pack-gstack` resource package is part of the derived workspace release set. Prerelease and production workflows publish it before the root package, then prerelease verification installs it through `gsd install` and confirms it appears in `gsd list`. For the package's first registry publication, select `publish_auth=token`; after bootstrapping the npm package and configuring `npm-publish.yml` as its trusted publisher, normal releases use trusted publishing.
+
 Nothing moves to `@latest` as a side effect of this. A production release is a separate dispatch.
 
 ### Publishing a Production Release (`@latest`)

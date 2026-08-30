@@ -122,6 +122,16 @@ Assessment Gates are a separate, report-only class of Agent Skill for product/de
 
 `suggest` gates may be recommended once with compact metadata, but never run automatically. `manual` gates are visible only through gate commands. Every run shows its lifecycle, scope, capabilities, target, report-only guarantee, and cost before asking for explicit approval. A post-validation gate must match the source revision recorded by current GSD validation.
 
+Install the optional GStack-derived pilot pack separately:
+
+```bash
+gsd install npm:@penggin/gsd-assessment-pack-gstack
+# Project-local installation:
+gsd install npm:@penggin/gsd-assessment-pack-gstack --local
+```
+
+After installation, run `/gsd gate list`. Remove the pack with `gsd remove npm:@penggin/gsd-assessment-pack-gstack`.
+
 Gate findings are advisory. Use an explicit GSD remediation/reopen/rework action to act on them. See the [Assessment Gate author guide](../extension-sdk/assessment-gates.md).
 
 ## Skill Preferences

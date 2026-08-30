@@ -2,6 +2,8 @@
   "schemaVersion": 1,
   "id": "gsd-assessment-pack-gstack",
   "version": "0.1.0",
+  "package": "@penggin/gsd-assessment-pack-gstack",
+  "install": "gsd install npm:@penggin/gsd-assessment-pack-gstack",
   "description": "Optional GStack-derived adapters for the provider-neutral GSD Assessment Gate contract.",
   "coreDependency": false,
   "skills": [

@@ -9,6 +9,7 @@ const RELEASE_WORKSPACE_PACKAGE_DIRS = [
   "packages/daemon",
   "packages/gsd-agent-core",
   "packages/gsd-agent-modes",
+  "packages/gsd-assessment-pack-gstack",
   "packages/mcp-server",
   "packages/native",
   "packages/pi-agent-core",
