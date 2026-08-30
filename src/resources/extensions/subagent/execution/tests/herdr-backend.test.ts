@@ -17,10 +17,17 @@ class FakePool {
 	released: HerdrWorkerReleaseOutcome[] = [];
 	discarded = 0;
 	reserved: string[] = [];
+	private readonly paneIds: string[];
+	private reservationIndex = 0;
+	constructor(paneIds: string[] = ["w1:p9"]) {
+		this.paneIds = paneIds;
+	}
 	async reserve(request: { affinityKey?: string } = {}): Promise<HerdrPaneReservation> {
 		this.reserved.push(request.affinityKey ?? "");
+		const paneId = this.paneIds[Math.min(this.reservationIndex, this.paneIds.length - 1)];
+		this.reservationIndex += 1;
 		return {
-			paneId: "w1:p9",
+			paneId,
 			slotIndex: 0,
 			tabId: "w1:t9",
 			workspaceId: "w1",
@@ -34,12 +41,13 @@ class FakePool {
 class FakeClient {
 	requests: Array<{ method: string; params: Record<string, unknown> }> = [];
 	paneAvailable = true;
+	missingPanes = new Set<string>();
 	getEnvironment(): HerdrEnvironment {
 		return { available: true, socketPath: "/tmp/herdr.sock", workspaceId: "w1", tabId: "w1:t1", paneId: "w1:p1" };
 	}
 	async request(method: string, params: Record<string, unknown> = {}) {
 		this.requests.push({ method, params });
-		if (method === "pane.get" && !this.paneAvailable) {
+		if (method === "pane.get" && (!this.paneAvailable || this.missingPanes.has(String(params.pane_id)))) {
 			return { id: "fake", error: { code: "pane_not_found", message: "pane not found" } };
 		}
 		return { id: "fake", result: { type: "ok" } };
@@ -144,6 +152,10 @@ describe("HerdrBackend", () => {
 		assert.deepEqual(stderr, ["diagnostic"]);
 		assert.match(String(result.metadata?.workerDir), /runtime[\\/]herdr[\\/]v1/);
 		assert.equal(JSON.parse(readFileSync(join(String(result.metadata?.workerDir), "ownership.json"), "utf8")).status, "settled");
+		assert.deepEqual(
+			client.requests.find((item) => item.method === "pane.clear_agent_authority")?.params,
+			{ pane_id: "w1:p9" },
+		);
 		assert.equal(getLiveHerdrSubagentExecutionCount(), 0);
 		void cliCalls;
 	});
@@ -160,6 +172,36 @@ describe("HerdrBackend", () => {
 		assert.match(result.runtimeError ?? "", /failed or was ambiguous/);
 		assert.deepEqual(pool.released, ["failed"]);
 		assert.ok(client.requests.some((item) => item.method === "pane.send_keys"));
+		assert.equal(client.requests.some((item) => item.method === "pane.clear_agent_authority"), false);
+	});
+
+	it("re-reserves a pane that vanished before command submission without duplicate launch", async () => {
+		const { gsdHome, cwd, client } = fixture();
+		const pool = new FakePool(["w1:p8", "w1:p9"]);
+		client.missingPanes.add("w1:p8");
+		const calls: string[][] = [];
+		const backend = createHerdrSubagentBackend({
+			rootSessionId: "root-session", cwd, gsdHome, client, pool,
+			gsdBinPath: "/opt/gsd/loader.js",
+			pollIntervalMs: 5,
+			runCli: async (args) => {
+				calls.push([...args]);
+				const spec = JSON.parse(readFileSync(String(args.at(-1)), "utf8"));
+				setTimeout(() => {
+					writeFileSync(spec.stdoutPath, "");
+					writeFileSync(spec.stderrPath, "");
+					writeFileSync(spec.exitPath, JSON.stringify({ schemaVersion: 1, exitCode: 0, signal: null, aborted: false, completedAt: new Date().toISOString() }), { mode: 0o600 });
+				}, 10);
+				return cliResult(true);
+			},
+		});
+
+		const result = await backend.execute(request(cwd), { onStdoutLine: () => {}, onStderr: () => {} });
+		assert.equal(result.exitCode, 0);
+		assert.equal(pool.discarded, 1);
+		assert.deepEqual(pool.reserved, ["dispatch-1:0", "dispatch-1:0"]);
+		assert.equal(calls.length, 1);
+		assert.equal(calls[0][2], "w1:p9");
 	});
 
 	it("interrupts the exact pane on AbortSignal and returns M3 aborted exit evidence", async () => {
@@ -190,6 +232,7 @@ describe("HerdrBackend", () => {
 		assert.deepEqual(pool.released, ["aborted"]);
 		const interrupt = client.requests.find((item) => item.method === "pane.send_keys");
 		assert.deepEqual(interrupt?.params, { pane_id: "w1:p9", keys: ["ctrl+c"] });
+		assert.ok(client.requests.some((item) => item.method === "pane.clear_agent_authority"));
 	});
 
 	it("fails before launch when Herdr environment is unavailable", async () => {

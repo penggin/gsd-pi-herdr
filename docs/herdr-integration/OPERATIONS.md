@@ -132,6 +132,18 @@ If a user closes a worker pane before final exit evidence:
 - preserve logs and diagnostic context;
 - do not start a replacement worker automatically unless retry policy in GSD explicitly requests a new attempt.
 
+If a user closes an idle or terminal worker pane after final exit evidence, the
+next distinct dispatch reconciles the live topology, removes the stale cached
+slot, and creates or reuses healthy capacity. A pre-submission `pane.get` check
+may safely re-reserve once because no worker command has been submitted yet.
+After `pane run` has been attempted, ambiguous outcomes remain fail-closed and
+are never automatically replaced.
+
+Normal successful operation keeps physical worker panes warm. Completed and
+aborted workers release Herdr agent authority after final evidence, so they do
+not remain in the agents list; failed/ambiguous workers remain visible until
+reviewed or explicitly cleaned.
+
 ## Downstream releases
 
 Each downstream release should record:

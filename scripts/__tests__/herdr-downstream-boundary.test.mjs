@@ -166,6 +166,7 @@ test("Herdr canary compares only downstream refs and never fetches an original-p
 test("release inventory contains only downstream-owned packages", () => {
   const names = getRequiredNpmPackageNames();
   assert.deepEqual(names, [
+    "@penggin/gsd-assessment-pack-gstack",
     "@penggin/gsd-pi-herdr-engine-darwin-arm64",
     "@penggin/gsd-pi-herdr-engine-darwin-x64",
     "@penggin/gsd-pi-herdr-engine-linux-arm64-gnu",

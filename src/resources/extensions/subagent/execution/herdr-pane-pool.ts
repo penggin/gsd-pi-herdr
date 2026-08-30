@@ -147,7 +147,7 @@ export class HerdrWorkerPanePool {
 
 	private async drain(): Promise<void> {
 		if (this.waiters.length === 0) return;
-		await this.ensureTab();
+		if (!await this.ensureTab()) return;
 		this.applyRecoveredSlotStates();
 		this.applyCleanupRequests();
 
@@ -216,8 +216,7 @@ export class HerdrWorkerPanePool {
 		}
 	}
 
-	private async ensureTab(): Promise<void> {
-		if (this.tabId && this.slots.length > 0) return;
+	private async ensureTab(): Promise<boolean> {
 		const environment = this.client.getEnvironment();
 		if (!environment.available || !environment.workspaceId) {
 			throw new Error("Herdr worker pool requires a managed root pane with workspace identity");
@@ -225,23 +224,53 @@ export class HerdrWorkerPanePool {
 		this.workspaceId = environment.workspaceId;
 
 		const tabs = await this.listTabs(environment.workspaceId);
-		const existing = tabs.find((tab) => tab.label === this.tabLabel);
+		const cached = this.tabId ? tabs.find((tab) => tab.tabId === this.tabId) : undefined;
+		const existing = cached ?? tabs.find((tab) => tab.label === this.tabLabel);
 		if (existing) {
+			const leased = this.slots.filter((slot) => slot.leaseId);
+			if (this.tabId && existing.tabId !== this.tabId && leased.length > 0) {
+				this.scheduleRecoveryPoll();
+				return false;
+			}
 			this.tabId = existing.tabId;
 			const panes = (await this.listPanes(environment.workspaceId))
 				.filter((pane) => pane.tabId === existing.tabId)
 				.sort((left, right) => comparePublicIds(left.paneId, right.paneId));
 			if (panes.length === 0) throw new Error("Existing Herdr worker tab has no panes");
 			if (panes.length > this.maxPanes) throw new Error("Existing Herdr worker tab exceeds configured pane capacity");
-			this.slots = panes.map((pane, index) => ({
-				index,
-				paneId: pane.paneId,
-				state: pane.agentStatus === "working" || pane.agentStatus === "blocked" || pane.agentStatus === "unknown"
-					? "busy"
-					: "idle",
-			}));
-			return;
+			const livePaneIds = new Set(panes.map((pane) => pane.paneId));
+			if (leased.some((slot) => !livePaneIds.has(slot.paneId))) {
+				// The owning backend must first classify the in-flight execution and
+				// discard its lease. Starting replacement work before that boundary
+				// could duplicate an execution whose detached child is still alive.
+				this.scheduleRecoveryPoll();
+				return false;
+			}
+			const priorSlots = new Map(this.slots.map((slot) => [slot.paneId, slot]));
+			this.slots = panes.map((pane, index) => {
+				const prior = priorSlots.get(pane.paneId);
+				if (prior) {
+					prior.index = index;
+					return prior;
+				}
+				return {
+					index,
+					paneId: pane.paneId,
+					state: livePaneState(pane.agentStatus),
+				};
+			});
+			return true;
 		}
+
+		if (this.slots.some((slot) => slot.leaseId)) {
+			// The tab disappeared while work was leased. The backend's pane probe
+			// owns failure classification and process-tree cleanup; wait for its
+			// lease-safe discard before creating a replacement tab.
+			this.scheduleRecoveryPoll();
+			return false;
+		}
+		this.tabId = undefined;
+		this.slots = [];
 
 		const created = await this.requireResult("tab.create", {
 			workspace_id: environment.workspaceId,
@@ -255,6 +284,7 @@ export class HerdrWorkerPanePool {
 		if (!tab || !rootPane) throw new Error("Herdr tab.create returned incomplete worker-tab identity");
 		this.tabId = tab.tabId;
 		this.slots = [{ index: 0, paneId: rootPane.paneId, state: "idle" }];
+		return true;
 	}
 
 	private async ensureCapacity(requested: number): Promise<void> {
@@ -404,6 +434,12 @@ function parsePaneInfo(value: Record<string, unknown> | undefined): { paneId: st
 
 function comparePublicIds(left: string, right: string): number {
 	return left.localeCompare(right, undefined, { numeric: true });
+}
+
+function livePaneState(agentStatus: string | undefined): HerdrWorkerSlotState {
+	return agentStatus === "working" || agentStatus === "blocked" || agentStatus === "unknown"
+		? "busy"
+		: "idle";
 }
 
 function recordValue(value: unknown): Record<string, unknown> | undefined {

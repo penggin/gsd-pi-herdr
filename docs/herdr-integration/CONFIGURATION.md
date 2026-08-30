@@ -53,7 +53,11 @@ preference schema:
 - maximum four active worker panes;
 - fifth and later tasks queue until a successful slot is reclaimed;
 - successful retry/chain affinity can reuse a settled slot;
+- completed/aborted agent authority is cleared after final evidence while the
+  physical pane stays warm for reuse;
 - failed or ambiguous panes remain retained until explicit cleanup;
+- manually removed idle/retained panes are reconciled and replaced before the
+  next launch; in-flight pane loss still fails the current execution explicitly;
 - root-pane focus is preserved;
 - pane output is bounded activity only, never raw JSON or token deltas.
 

@@ -1,7 +1,7 @@
 # GSD–Herdr Living Plan
 
 > **Status:** M0–M7 and final downstream-isolation revalidation complete
-> **Last updated:** 2026-08-30
+> **Last updated:** 2026-08-31
 > **Current milestone:** Complete — downstream-only install and release validation passed
 > **Canonical rule:** Every Herdr-integration development session starts by reading this file and ends by updating it.
 
@@ -610,6 +610,49 @@ this session does not merge, push, tag, or publish.
   made against the source project. Exact next task remains an explicitly
   authorized downstream merge/release action; no push, merge, tag, or publish
   was performed.
+
+### 2026-08-31 — Warm worker visibility and manual topology-loss recovery
+
+- Reproduced the user-visible failure mode in focused tests: deleting a settled
+  worker pane left its ID in the root process's shared pool, so the next
+  dispatch attempted to launch into a non-existent pane and could poison the
+  rest of the root GSD session.
+- The pool now reconciles its cached worker tab and slots against live
+  `tab.list`/`pane.list` state before reservation. Missing non-leased panes are
+  removed, a missing tab is recreated when no lease remains, and missing leased
+  panes wait for the owning backend's explicit loss classification rather than
+  permitting a duplicate launch.
+- HerdrBackend now probes the reserved pane before `pane run`. A pane already
+  absent before submission is lease-safely discarded and re-reserved once; an
+  attempted/ambiguous submission still never falls back or retries.
+- Completed and aborted workers clear `pane.clear_agent_authority` only after
+  the runner's final report and immutable exit evidence settle. Their physical
+  shell panes remain warm for affinity/queue reuse, while failed or ambiguous
+  workers remain visible and retained for review (ADR-H020).
+- Final verification: pane-pool/backend regression **20/20 pass**; complete
+  Herdr root/worker plus Local/Cmux/Herdr subagent parity regression **140/140
+  pass**; Herdr integration/automation **19/19 pass**; compiled changed-source
+  gate **20/20 pass**; `pnpm run typecheck:extensions`, `pnpm run build:core`,
+  and `git diff --check` pass. `NPM_CONFIG_USERCONFIG=/dev/null pnpm run
+  validate-pack` accepted **9,466 entries / 51.2 MB compressed / 204.6 MB
+  unpacked**, completed isolated and global installed-root checks with
+  **`Package is installable. Safe to publish.`**, and independently installed
+  and discovered the 7-file optional assessment pack.
+- The full Herdr integration gate exposed one stale downstream-boundary
+  expectation from the prior optional assessment-pack release preparation: the
+  derived publish inventory already included
+  `@penggin/gsd-assessment-pack-gstack`, while ADR-H019 and one Herdr boundary
+  assertion still listed only root plus five native engines. The assertion and
+  ADR now recognize explicitly approved optional `@penggin` resource packs;
+  private inherited workspaces remain excluded.
+- No interactive real-Herdr manual-close smoke was rerun inside the user's live
+  session because replacing panes there would disturb active work. Exact next
+  operational check after installing the committed build is: finish one public
+  subagent, confirm its agent row clears while its shell pane remains, manually
+  close that idle pane/tab, and confirm the next distinct dispatch recreates
+  capacity without restarting root GSD. The code change itself is ready to
+  commit and push to `feature/herdr-integration-foundation` as explicitly
+  authorized.
 
 ## 11. Working-session protocol
 

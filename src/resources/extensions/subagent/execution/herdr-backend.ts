@@ -112,7 +112,7 @@ async function executeHerdrSubagent(
 	const affinityKey = backendAffinityKey(request);
 	let reservation: HerdrPaneReservation;
 	try {
-		reservation = await pool.reserve({ affinityKey });
+		reservation = await reserveLiveWorkerPane(pool, client, { affinityKey });
 	} catch (error) {
 		return failure(`Herdr worker pane reservation failed: ${errorMessage(error)}`, "not-started");
 	}
@@ -197,6 +197,13 @@ async function executeHerdrSubagent(
 			: evidence.exitCode === 0 && !evidence.runtimeError
 				? "completed"
 				: "failed";
+		if (outcome !== "failed") {
+			// The runner publishes immutable exit evidence only after its final
+			// lifecycle/metadata report has settled. Clear presentation authority
+			// at that boundary so completed/aborted workers leave the Herdr agent
+			// list while their warm shell panes remain available for safe reuse.
+			await clearSettledWorkerAuthority(client, reservation.paneId);
+		}
 		reservation.release(outcome);
 		return {
 			...evidence,
@@ -396,6 +403,29 @@ async function probePane(client: HerdrBackendClientLike, paneId: string): Promis
 		return response !== null && !response.error;
 	} catch {
 		return false;
+	}
+}
+
+async function reserveLiveWorkerPane(
+	pool: HerdrBackendPoolLike,
+	client: HerdrBackendClientLike,
+	request: HerdrPaneReservationRequest,
+): Promise<HerdrPaneReservation> {
+	for (let attempt = 0; attempt < 2; attempt += 1) {
+		const reservation = await pool.reserve(request);
+		if (await probePane(client, reservation.paneId)) return reservation;
+		reservation.discard();
+	}
+	throw new Error("reserved pane disappeared before command submission");
+}
+
+async function clearSettledWorkerAuthority(client: HerdrBackendClientLike, paneId: string): Promise<void> {
+	try {
+		await client.request("pane.clear_agent_authority", { pane_id: paneId });
+	} catch {
+		// Presentation cleanup is best-effort. Immutable exit evidence and the
+		// common GSD semantic result remain authoritative if Herdr restarts at
+		// this exact boundary; later reconciliation can clear stale authority.
 	}
 }
 

@@ -149,9 +149,12 @@ Native session identity, when available, should use `pane.report_agent_session` 
 ### Reserve
 
 1. Resolve the root Herdr workspace/tab/pane from environment or current-pane API.
-2. Find/create the worker tab for the root session.
-3. Reserve an available slot atomically in GSD-owned state.
-4. Clear prior worker metadata/authority from that slot if it is safe to reuse.
+2. Reconcile the cached worker tab/slots against live Herdr tab/pane state.
+3. Drop missing non-leased slots, or recreate a missing tab when no execution lease remains.
+4. Find/create the worker tab for the root session.
+5. Reserve an available slot atomically in GSD-owned state.
+6. Verify the pane still exists before command submission and safely re-reserve once if it vanished before launch.
+7. Clear prior worker metadata/authority from that slot if it is safe to reuse.
 
 ### Launch
 
@@ -180,6 +183,11 @@ The internal runner:
 The parent backend consumes final JSONL records through the existing GSD parser and returns the same semantic result the local backend would have produced.
 
 Success does not become authoritative merely because the worker process exited zero; GSD's existing result validation still applies.
+
+After completed/aborted final reporting and immutable exit evidence settle, the
+backend clears the pane's Herdr agent authority. The physical shell pane remains
+warm for reuse, but completed workers no longer remain in Herdr's agent list.
+Failed/ambiguous workers keep visible authority and retained evidence for review.
 
 ## 6. Display model
 
@@ -290,6 +298,9 @@ Security requirements are defined in `SECURITY.md`.
 - detect pane loss / missing heartbeat / missing final artifact;
 - interrupt remaining process if possible;
 - classify as explicit runtime failure.
+- never retry automatically after command submission may have occurred;
+- on the next distinct dispatch, reconcile and replace missing idle/retained
+  panes so one manual close cannot permanently poison the root session.
 
 ### Root GSD crashes
 

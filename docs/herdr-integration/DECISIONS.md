@@ -244,13 +244,15 @@ instruction to contact the source repository.
 **Status:** Accepted
 **Date:** 2026-08-30
 
-The release set contains only `@penggin/gsd-pi-herdr` and its five
-`@penggin/gsd-pi-herdr-engine-*` platform packages. Inherited internal
-workspaces keep their compatibility import names but are `private`, have no
-`publishConfig`, and ship only as bundled content inside the downstream root
-tarball. Release discovery must exclude native workspace manifests from the
-generic workspace-publish path and must reject any release inventory outside
-the `@penggin` scope.
+The release set contains `@penggin/gsd-pi-herdr`, its five
+`@penggin/gsd-pi-herdr-engine-*` platform packages, and explicitly approved
+optional downstream resource packs such as
+`@penggin/gsd-assessment-pack-gstack`. Inherited internal workspaces keep their
+compatibility import names but are `private`, have no `publishConfig`, and ship
+only as bundled content inside the downstream root tarball. Release discovery
+must exclude private/native workspace manifests from the generic
+workspace-publish path and must reject any release inventory outside the
+`@penggin` scope.
 
 The CI builder and runtime images likewise use the `ghcr.io/penggin/` namespace.
 Installer paths, support links, issue/project prompts, local comparison defaults,
@@ -258,3 +260,24 @@ and release documentation target this repository. Historical attribution may
 retain source-project references in archived design evidence and regression
 fixtures, but executable runtime, install, CI, support, and publication paths
 must never address or mutate source-project assets.
+
+---
+
+## ADR-H020 — Keep warm panes, release settled presentation authority, and self-heal stale topology
+
+**Status:** Accepted
+**Date:** 2026-08-31
+
+Successful/aborted worker shell panes remain in the bounded pool for reuse, but
+their Herdr agent authority is cleared only after final lifecycle/metadata
+reporting and immutable exit evidence have settled. Failed or ambiguous workers
+remain visible and retained for review.
+
+The in-memory pool is a lease cache, not topology authority. Before reservation
+it reconciles cached tab/pane IDs against live Herdr state, removes missing
+non-leased slots, and recreates a missing worker tab when no execution lease
+remains. A reserved pane is probed before command submission and may be safely
+re-reserved once when already absent. Once `pane run` may have been submitted,
+the no-duplicate-launch rule remains absolute: the current execution fails or
+reconciles explicitly, and only a later distinct GSD dispatch may use repaired
+capacity.

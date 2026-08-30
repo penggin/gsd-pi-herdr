@@ -205,6 +205,32 @@ describe("Herdr worker pane pool", () => {
 		assert.equal(client.requests.filter((request) => request.method === "tab.create").length, 2);
 	});
 
+	it("reconciles a manually closed retained pane before the next reservation", async () => {
+		const client = new FakeHerdrPoolClient();
+		const workers = pool(client);
+		const closed = await workers.reserve({ affinityKey: "closed" });
+		closed.release("completed");
+		client.closePane(closed.paneId);
+
+		const replacement = await workers.reserve({ affinityKey: "replacement" });
+		assert.notEqual(replacement.paneId, closed.paneId);
+		assert.equal(client.requests.filter((request) => request.method === "tab.create").length, 2);
+	});
+
+	it("drops a manually closed idle slot while preserving live worker capacity", async () => {
+		const client = new FakeHerdrPoolClient();
+		const workers = pool(client);
+		const first = await workers.reserve({ affinityKey: "first" });
+		const second = await workers.reserve({ affinityKey: "second" });
+		first.release("completed");
+		second.release("completed");
+		client.closePane(first.paneId);
+
+		const replacement = await workers.reserve({ affinityKey: "first" });
+		assert.equal(replacement.paneId, second.paneId);
+		assert.deepEqual(workers.getSnapshot().slots.map((slot) => slot.paneId), [second.paneId]);
+	});
+
 	it("reuses an existing matching worker tab after a runtime/session reload", async () => {
 		const client = new FakeHerdrPoolClient();
 		const firstPool = pool(client, "same-root");
