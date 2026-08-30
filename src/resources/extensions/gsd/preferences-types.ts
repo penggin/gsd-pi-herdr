@@ -27,6 +27,20 @@ export interface ContextManagementConfig {
   observation_mask_turns?: number;        // default: 8, range: 1-50
   compaction_threshold_percent?: number;  // default: 0.60, range: 0.5-0.95
   tool_result_max_chars?: number;         // default: 800, range: 200-10000
+  codex_remote_compaction?: CodexRemoteCompactionConfig;
+}
+
+export interface CodexRemoteCompactionConfig {
+  /** Attempt Remote Compaction V2 for openai-codex-responses models. Default: true. */
+  enabled?: boolean;
+  /** Bound one remote compaction request. Default: 300000, range: 30000-600000. */
+  request_timeout_ms?: number;
+  /** Provider transport retries. Default: 2, range: 0-2. */
+  max_retries?: number;
+  /** Approximate retained user-message token budget. Default: 64000, range: 8000-128000. */
+  replacement_token_budget?: number;
+  /** Notify when Remote V2 falls back to native plaintext compaction. Default: true. */
+  notify_on_fallback?: boolean;
 }
 
 /**

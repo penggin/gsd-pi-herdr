@@ -1365,6 +1365,45 @@ async function configureContextCodebase(ctx: ExtensionCommandContext, prefs: Rec
   const toolMax = await promptInteger(ctx, "Tool result max chars (200–10000)", cm.tool_result_max_chars, "800");
   if (toolMax !== undefined && toolMax !== "clear") cm.tool_result_max_chars = toolMax;
   else if (toolMax === "clear") delete cm.tool_result_max_chars;
+  const remote = (cm.codex_remote_compaction as Record<string, unknown> | undefined) ?? {};
+  const remoteEnabled = await promptBoolean(
+    ctx,
+    "Codex Remote Compaction V2 for openai-codex-responses",
+    remote.enabled,
+    true,
+  );
+  if (remoteEnabled !== undefined) remote.enabled = remoteEnabled;
+  const remoteTimeout = await promptInteger(
+    ctx,
+    "Codex remote compaction timeout ms (30000–600000)",
+    remote.request_timeout_ms,
+    "300000",
+  );
+  if (remoteTimeout !== undefined && remoteTimeout !== "clear") remote.request_timeout_ms = remoteTimeout;
+  else if (remoteTimeout === "clear") delete remote.request_timeout_ms;
+  const remoteRetries = await promptInteger(ctx, "Codex remote compaction retries (0–2)", remote.max_retries, "2");
+  if (remoteRetries !== undefined && remoteRetries !== "clear") remote.max_retries = remoteRetries;
+  else if (remoteRetries === "clear") delete remote.max_retries;
+  const replacementBudget = await promptInteger(
+    ctx,
+    "Codex checkpoint retained user-token budget (8000–128000)",
+    remote.replacement_token_budget,
+    "64000",
+  );
+  if (replacementBudget !== undefined && replacementBudget !== "clear") {
+    remote.replacement_token_budget = replacementBudget;
+  } else if (replacementBudget === "clear") {
+    delete remote.replacement_token_budget;
+  }
+  const notifyFallback = await promptBoolean(
+    ctx,
+    "Notify when Codex remote compaction falls back to native",
+    remote.notify_on_fallback,
+    true,
+  );
+  if (notifyFallback !== undefined) remote.notify_on_fallback = notifyFallback;
+  if (Object.keys(remote).length > 0) cm.codex_remote_compaction = remote;
+  else delete cm.codex_remote_compaction;
   if (Object.keys(cm).length > 0) prefs.context_management = cm;
   else if (prefs.context_management !== undefined) delete prefs.context_management;
 

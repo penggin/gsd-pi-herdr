@@ -288,6 +288,7 @@ In `"parent"` mode, slice/task `targetRepositories` default to the declared chil
   - `observation_mask_turns`: number — keep this many recent turns verbatim (1-50). Default: `8`.
   - `compaction_threshold_percent`: number — show a soft context warning at this fraction of the context window (0.5-0.95). Lower values warn earlier so operators can compact manually before drift accumulates. Default: `0.60`.
   - `tool_result_max_chars`: number — max chars per tool result in GSD sessions (200-10000). Default: `800`.
+  - `codex_remote_compaction`: enables opaque Codex Remote Compaction V2 only when the active model API is exactly `openai-codex-responses`. Pi still owns threshold, overflow, and `/compact` lifecycle behavior. Defaults: `{ enabled: true, request_timeout_ms: 300000, max_retries: 2, replacement_token_budget: 64000, notify_on_fallback: true }`. Generic `openai-responses` and `openai-completions` models remain on native plaintext compaction. The remote wire contract is provider-controlled and may change; non-cancellation failures fall back to native compaction.
 
 - `auto_visualize`: boolean — show a visualizer hint after each milestone completion in auto-mode. Default: `false`.
 

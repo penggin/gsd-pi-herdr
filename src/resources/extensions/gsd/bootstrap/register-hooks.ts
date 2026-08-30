@@ -1375,22 +1375,26 @@ export function registerHooks(
         "warning",
       );
     }
+    const compactRemotely = async () => {
+      const { compactWithCodexRemoteV2 } = await import("../codex-compact/integration.js");
+      return compactWithCodexRemoteV2(pi, event, ctx, basePath);
+    };
     const { ensureDbOpen } = await import("./dynamic-tools.js");
     await ensureDbOpen(basePath);
     const state = await deriveGsdState(basePath);
-    if (!state.activeMilestone || !state.activeSlice) return;
+    if (!state.activeMilestone || !state.activeSlice) return compactRemotely();
     // Write checkpoint for ALL phases, not just "executing" — discuss, research,
     // and planning also carry in-memory state (user answers, gate verification)
     // that would be lost on compaction (#4258).
     // if (state.phase !== "executing") return;
 
     const sliceDir = resolveSlicePath(basePath, state.activeMilestone.id, state.activeSlice.id);
-    if (!sliceDir) return;
+    if (!sliceDir) return compactRemotely();
 
     const existingFile = resolveSliceFile(basePath, state.activeMilestone.id, state.activeSlice.id, "CONTINUE");
-    if (existingFile && await loadFile(existingFile)) return;
+    if (existingFile && await loadFile(existingFile)) return compactRemotely();
     const legacyContinue = join(sliceDir, "continue.md");
-    if (await loadFile(legacyContinue)) return;
+    if (await loadFile(legacyContinue)) return compactRemotely();
 
     const continuePath = join(sliceDir, `${state.activeSlice.id}-CONTINUE.md`);
     const taskId = state.activeTask?.id ?? "none";
@@ -1419,6 +1423,13 @@ export function registerHooks(
         ? `Resume task ${taskId}: ${taskTitle}.`
         : `Resume ${phaseLabel} work for slice ${state.activeSlice.id}.`,
     }));
+    return compactRemotely();
+  });
+
+  pi.on("context", async (event, ctx) => {
+    const { projectActiveCheckpointContext } = await import("../codex-compact/integration.js");
+    const messages = projectActiveCheckpointContext(event.messages, ctx, contextBasePath(ctx));
+    return messages ? { messages } : undefined;
   });
 
   pi.on("message_update", async (event, ctx: ExtensionContext) => {
@@ -1490,6 +1501,8 @@ export function registerHooks(
   });
 
   pi.on("session_shutdown", async (_event, ctx: ExtensionContext) => {
+    const { resetCodexCompactSessionState } = await import("../codex-compact/integration.js");
+    resetCodexCompactSessionState(ctx.sessionManager.getSessionId());
     const { isParallelActive, shutdownParallel } = await import("../parallel-orchestrator.js");
     if (isParallelActive()) {
       try {
@@ -2051,16 +2064,28 @@ export function registerHooks(
 
   pi.on("model_select", async (_event, ctx) => {
     await syncServiceTierStatus(ctx);
+    const { warnForIncompatibleCheckpoint } = await import("../codex-compact/integration.js");
+    warnForIncompatibleCheckpoint(ctx, contextBasePath(ctx));
   });
 
-  pi.on("before_provider_request", async (event) => {
+  pi.on("before_provider_request", async (event, ctx) => {
     const payload = event.payload as Record<string, unknown> | null;
     if (!payload || typeof payload !== "object") return;
 
-    return applyProviderPayloadPolicy({
+    const policyPayload = applyProviderPayloadPolicy({
       payload,
       modelId: event.model?.id,
     });
+    try {
+      const { rewriteActiveCheckpointPayload } = await import("../codex-compact/integration.js");
+      return rewriteActiveCheckpointPayload(policyPayload, ctx, contextBasePath(ctx)) ?? policyPayload;
+    } catch (error) {
+      safetyLogWarning(
+        "compaction",
+        `checkpoint replay rejected: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return policyPayload;
+    }
   });
 
   // Capability-aware model routing hook (ADR-004)

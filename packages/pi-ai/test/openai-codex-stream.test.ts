@@ -80,6 +80,70 @@ function buildSSEPayload({
 }
 
 describe("openai-codex streaming", () => {
+	it("uses a request-scoped fetch implementation for bounded protocol observers", async () => {
+		const token = mockToken();
+		const model: Model<"openai-codex-responses"> = {
+			id: "gpt-5.1-codex",
+			name: "GPT-5.1 Codex",
+			api: "openai-codex-responses",
+			provider: "openai-codex",
+			baseUrl: "https://chatgpt.com/backend-api",
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 400000,
+			maxTokens: 128000,
+		};
+		const context: Context = {
+			systemPrompt: "You are a helpful assistant.",
+			messages: [{ role: "user", content: "compact", timestamp: Date.now() }],
+		};
+		const scopedFetch = vi.fn(async () => new Response(buildSSEPayload({ status: "completed" }), {
+			status: 200,
+			headers: { "content-type": "text/event-stream" },
+		}));
+		const globalFetch = vi.fn(async () => new Response("unexpected", { status: 500 }));
+		vi.stubGlobal("fetch", globalFetch);
+
+		const result = await streamOpenAICodexResponses(model, context, {
+			apiKey: token,
+			transport: "sse",
+			fetch: scopedFetch,
+		}).result();
+
+		expect(result.stopReason).toBe("stop");
+		expect(scopedFetch).toHaveBeenCalledOnce();
+		expect(globalFetch).not.toHaveBeenCalled();
+	});
+
+	it("honors a request-scoped zero retry budget", async () => {
+		const model: Model<"openai-codex-responses"> = {
+			id: "gpt-5.1-codex",
+			name: "GPT-5.1 Codex",
+			api: "openai-codex-responses",
+			provider: "openai-codex",
+			baseUrl: "https://chatgpt.com/backend-api",
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 400000,
+			maxTokens: 128000,
+		};
+		const scopedFetch = vi.fn(async () => new Response("overloaded", { status: 503 }));
+		const result = await streamOpenAICodexResponses(model, {
+			systemPrompt: "system",
+			messages: [{ role: "user", content: "compact", timestamp: Date.now() }],
+		}, {
+			apiKey: mockToken(),
+			transport: "sse",
+			maxRetries: 0,
+			fetch: scopedFetch,
+		}).result();
+
+		expect(result.stopReason).toBe("error");
+		expect(scopedFetch).toHaveBeenCalledOnce();
+	});
+
 	it("streams SSE responses into AssistantMessageEventStream", async () => {
 		const tempDir = mkdtempSync(join(tmpdir(), "pi-codex-stream-"));
 		process.env.PI_CODING_AGENT_DIR = tempDir;

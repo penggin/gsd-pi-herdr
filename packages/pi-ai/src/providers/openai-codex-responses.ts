@@ -73,6 +73,12 @@ export interface OpenAICodexResponsesOptions extends StreamOptions {
 	reasoningSummary?: "auto" | "concise" | "detailed" | "off" | "on" | null;
 	serviceTier?: ResponseCreateParamsStreaming["service_tier"];
 	textVerbosity?: "low" | "medium" | "high";
+	/**
+	 * Request-scoped fetch implementation. This is primarily used by bounded
+	 * protocol adapters (for example Codex Remote Compaction V2) that must tee
+	 * the raw SSE body without replacing the provider's auth or parsing logic.
+	 */
+	fetch?: typeof globalThis.fetch;
 }
 
 type CodexResponseStatus = "completed" | "incomplete" | "failed" | "cancelled" | "queued" | "in_progress";
@@ -231,14 +237,16 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 			// Fetch with retry logic for rate limits and transient errors
 			let response: Response | undefined;
 			let lastError: Error | undefined;
+			const fetchImpl = options?.fetch ?? globalThis.fetch;
+			const maxRetries = options?.maxRetries ?? MAX_RETRIES;
 
-			for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+			for (let attempt = 0; attempt <= maxRetries; attempt++) {
 				if (options?.signal?.aborted) {
 					throw new Error("Request was aborted");
 				}
 
 				try {
-					response = await fetch(resolveCodexUrl(model.baseUrl), {
+					response = await fetchImpl(resolveCodexUrl(model.baseUrl), {
 						method: "POST",
 						headers: sseHeaders,
 						body: bodyJson,
@@ -254,7 +262,7 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 					}
 
 					const errorText = await response.text();
-					if (attempt < MAX_RETRIES && isRetryableError(response.status, errorText)) {
+					if (attempt < maxRetries && isRetryableError(response.status, errorText)) {
 						let delayMs = BASE_DELAY_MS * 2 ** attempt;
 
 						const retryAfterMs = response.headers.get("retry-after-ms");
@@ -297,7 +305,7 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 					}
 					lastError = error instanceof Error ? error : new Error(String(error));
 					// Network errors are retryable
-					if (attempt < MAX_RETRIES && !lastError.message.includes("usage limit")) {
+					if (attempt < maxRetries && !lastError.message.includes("usage limit")) {
 						const delayMs = BASE_DELAY_MS * 2 ** attempt;
 						await sleep(delayMs, options?.signal);
 						continue;

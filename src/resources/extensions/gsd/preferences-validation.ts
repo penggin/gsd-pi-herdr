@@ -1043,6 +1043,42 @@ export function validatePreferences(preferences: GSDPreferences): {
         if (typeof chars === "number" && chars >= 200 && chars <= 10000) validCm.tool_result_max_chars = chars;
         else errors.push("context_management.tool_result_max_chars must be a number between 200 and 10000");
       }
+      if (cm.codex_remote_compaction !== undefined) {
+        if (typeof cm.codex_remote_compaction === "object" && cm.codex_remote_compaction !== null) {
+          const remote = cm.codex_remote_compaction as Record<string, unknown>;
+          const validRemote: Record<string, unknown> = {};
+          if (remote.enabled !== undefined) {
+            if (typeof remote.enabled === "boolean") validRemote.enabled = remote.enabled;
+            else errors.push("context_management.codex_remote_compaction.enabled must be a boolean");
+          }
+          if (remote.notify_on_fallback !== undefined) {
+            if (typeof remote.notify_on_fallback === "boolean") {
+              validRemote.notify_on_fallback = remote.notify_on_fallback;
+            } else {
+              errors.push("context_management.codex_remote_compaction.notify_on_fallback must be a boolean");
+            }
+          }
+          const boundedIntegers = [
+            ["request_timeout_ms", 30_000, 600_000],
+            ["max_retries", 0, 2],
+            ["replacement_token_budget", 8_000, 128_000],
+          ] as const;
+          for (const [field, minimum, maximum] of boundedIntegers) {
+            const value = remote[field];
+            if (value === undefined) continue;
+            if (typeof value === "number" && Number.isSafeInteger(value) && value >= minimum && value <= maximum) {
+              validRemote[field] = value;
+            } else {
+              errors.push(
+                `context_management.codex_remote_compaction.${field} must be an integer between ${minimum} and ${maximum}`,
+              );
+            }
+          }
+          validCm.codex_remote_compaction = validRemote;
+        } else {
+          errors.push("context_management.codex_remote_compaction must be an object");
+        }
+      }
 
       if (Object.keys(validCm).length > 0) {
         validated.context_management = validCm as any;

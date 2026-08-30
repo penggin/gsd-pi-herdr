@@ -19,6 +19,7 @@ import { writeCrashLog } from "./crash-log.js";
 import { logWarning, isGsdExtensionStderrEnabled } from "../workflow-logger.js";
 import { UNIT_TOOL_CONTRACTS } from "../unit-tool-contracts.js";
 import { installManifestFlushOnProcessTeardown } from "../workflow-manifest.js";
+import { registerCodexCompactCommand } from "../codex-compact/command.js";
 // Static import so cmux event listeners are registered synchronously during
 // extension bootstrap. Prior implementation used `void import().then()` which
 // queued listener registration as a microtask — any CMUX_CHANNELS emit fired
@@ -231,6 +232,7 @@ export function registerGsdExtension(pi: ExtensionAPI): void {
     ["memory-tools", () => registerMemoryTools(pi)],
     ["exec-tools", () => registerExecTools(pi)],
     ["schedule-wakeup-tool", () => registerScheduleWakeupTool(pi)],
+    ["codex-compact-command", () => registerCodexCompactCommand(pi)],
     ["shortcuts", () => registerShortcuts(pi)],
     // cmux is a library (no pi), so gsd sets up the event listeners on its
     // behalf using the shared event channel contract. Registration is

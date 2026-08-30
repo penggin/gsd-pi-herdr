@@ -810,6 +810,42 @@ test("auto_visualize, auto_report, context_selection reject invalid values", () 
   assert.ok(e4.some(e => e.includes("context_selection")));
 });
 
+test("Codex Remote V2 context-management settings validate bounded values", () => {
+  const valid = validatePreferences({
+    context_management: {
+      codex_remote_compaction: {
+        enabled: false,
+        request_timeout_ms: 30_000,
+        max_retries: 0,
+        replacement_token_budget: 128_000,
+        notify_on_fallback: false,
+      },
+    },
+  });
+  assert.equal(valid.errors.length, 0);
+  assert.deepEqual(valid.preferences.context_management?.codex_remote_compaction, {
+    enabled: false,
+    request_timeout_ms: 30_000,
+    max_retries: 0,
+    replacement_token_budget: 128_000,
+    notify_on_fallback: false,
+  });
+
+  const invalid = validatePreferences({
+    context_management: {
+      codex_remote_compaction: {
+        enabled: "yes",
+        request_timeout_ms: 1,
+        max_retries: 3,
+        replacement_token_budget: 1_000,
+        notify_on_fallback: "yes",
+      },
+    },
+  } as never);
+  assert.equal(invalid.errors.length, 5);
+  assert.ok(invalid.errors.every((error) => error.includes("codex_remote_compaction")));
+});
+
 test("all wizard fields together produce no errors", () => {
   const { errors, warnings } = validatePreferences({
     version: 1,
