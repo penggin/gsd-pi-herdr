@@ -650,9 +650,18 @@ this session does not merge, push, tag, or publish.
   operational check after installing the committed build is: finish one public
   subagent, confirm its agent row clears while its shell pane remains, manually
   close that idle pane/tab, and confirm the next distinct dispatch recreates
-  capacity without restarting root GSD. The code change itself is ready to
-  commit and push to `feature/herdr-integration-foundation` as explicitly
-  authorized.
+  capacity without restarting root GSD.
+- Implementation commit `e173909673bb49f652242e73ffcb3fdf7abbf190` was
+  pushed to `origin/feature/herdr-integration-foundation`. A clean
+  release-candidate tarball from that commit was installed globally; installed
+  `gsd --build-info` reports the same commit with `dirty=false`, the installed
+  backend contains the pre-launch recovery and authority-clear paths, the
+  `opengsd.gsd-workers` plugin remains enabled, and effective global preferences
+  remain `herdr.enabled=true` / `herdr.required=true` with no diagnostics.
+- Exact next task: restart the root GSD process so it loads the installed
+  implementation, then perform the non-destructive operational check above in
+  the existing Herdr session. No merge, tag, registry publish, or source-project
+  request was performed.
 
 ## 11. Working-session protocol
 
