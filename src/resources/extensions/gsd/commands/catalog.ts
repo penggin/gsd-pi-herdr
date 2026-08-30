@@ -17,7 +17,7 @@ export interface GsdCommandDefinition {
 type CompletionMap = Record<string, readonly GsdCommandDefinition[]>;
 
 export const GSD_COMMAND_DESCRIPTION =
-  "GSD — Git Ship Done: /gsd help|start|templates|next|auto|stop|pause|status|widget|visualize|brief|report|queue|quick|discuss|capture|triage|dispatch|verdict|history|undo|undo-task|reset-slice|rate|skip|export|cleanup|closeout|recover|rebuild|db|model|mode|prefs|config|keys|hooks|run-hook|skill-health|doctor|debug|logs|forensics|changelog|migrate|remote|steer|knowledge|memory|new-milestone|new-project|parallel|cmux|park|unpark|discard|init|setup|onboarding|inspect|extensions|update|upgrade|fast|mcp|rethink|workflow|codebase|notifications|ship|do|usage|context|session-report|backlog|pr-branch|add-tests|scan|language|worktree|eval-review";
+  "GSD — Git Ship Done: /gsd help|start|templates|next|auto|stop|pause|status|widget|visualize|brief|report|queue|quick|discuss|capture|triage|dispatch|verdict|history|undo|undo-task|reset-slice|rate|skip|export|cleanup|closeout|recover|rebuild|db|model|mode|prefs|config|keys|hooks|run-hook|skill-health|gate|doctor|debug|logs|forensics|changelog|migrate|remote|steer|knowledge|memory|new-milestone|new-project|parallel|cmux|park|unpark|discard|init|setup|onboarding|inspect|extensions|update|upgrade|fast|mcp|rethink|workflow|codebase|notifications|ship|do|usage|context|session-report|backlog|pr-branch|add-tests|scan|language|worktree|eval-review";
 
 export const TOP_LEVEL_SUBCOMMANDS: readonly GsdCommandDefinition[] = [
   { cmd: "help", desc: "Categorized command reference with descriptions" },
@@ -59,6 +59,7 @@ export const TOP_LEVEL_SUBCOMMANDS: readonly GsdCommandDefinition[] = [
   { cmd: "hooks", desc: "Show configured post-unit and pre-dispatch hooks" },
   { cmd: "run-hook", desc: "Manually trigger a specific hook" },
   { cmd: "skill-health", desc: "Skill lifecycle dashboard" },
+  { cmd: "gate", desc: "List and run optional report-only Assessment Gates" },
   { cmd: "notifications", desc: "View, filter, and clear persistent notification history" },
   { cmd: "doctor", desc: "Runtime health checks with auto-fix" },
   { cmd: "copilot-models", desc: "Inspect and manage the live GitHub Copilot model catalog (sync, changes, pricing, promos, doctor, why)" },
@@ -110,6 +111,14 @@ export const TOP_LEVEL_SUBCOMMANDS: readonly GsdCommandDefinition[] = [
 ];
 
 const NESTED_COMPLETIONS: CompletionMap = {
+  gate: [
+    { cmd: "list", desc: "List installed Assessment Gates and diagnostics" },
+    { cmd: "info", desc: "Show metadata for one Assessment Gate" },
+    { cmd: "run", desc: "Approve and start one report-only Assessment Run" },
+    { cmd: "status", desc: "Show Assessment Run status" },
+    { cmd: "findings", desc: "Show structured findings for one run" },
+    { cmd: "cancel", desc: "Cancel one running Assessment Run" },
+  ],
   brief: VISUAL_BRIEF_MODES.map((mode) => ({ cmd: mode.mode, desc: mode.description })),
   discuss: [
     { cmd: "--milestone", desc: "Target a specific milestone by ID (e.g. --milestone M014)" },

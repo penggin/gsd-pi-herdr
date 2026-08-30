@@ -284,6 +284,8 @@ importers:
         specifier: ^5.5.0
         version: 5.6.2
 
+  packages/gsd-assessment-pack-gstack: {}
+
   packages/mcp-server:
     dependencies:
       '@modelcontextprotocol/sdk':

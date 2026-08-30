@@ -25,6 +25,8 @@ import {
   type GSDPreferences,
   type GSDPhaseModelConfig,
   type GSDSkillRule,
+  type GSDSkillMatchAtom,
+  type GSDSkillStructuredMatch,
   type GSDThinkingLevel,
 } from "./preferences-types.js";
 import {
@@ -48,6 +50,56 @@ const VALID_UOK_TURN_ACTIONS = new Set<"commit" | "snapshot" | "status-only">([
   "snapshot",
   "status-only",
 ]);
+
+const STRUCTURED_SKILL_MATCH_KEYS = new Set([
+  "token", "phrase", "workspace", "unitType", "lifecycle", "requirementClass", "riskTag",
+]);
+
+function validateStructuredSkillMatch(value: unknown, errors: string[]): GSDSkillStructuredMatch | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    errors.push("skill_rules match must be an object");
+    return undefined;
+  }
+  const raw = value as Record<string, unknown>;
+  const unknownClauses = Object.keys(raw).filter((key) => !["all", "any", "none"].includes(key));
+  if (unknownClauses.length) errors.push(`skill_rules match has unknown clause: ${unknownClauses.join(", ")}`);
+  const result: GSDSkillStructuredMatch = {};
+  let atomCount = 0;
+  let invalid = unknownClauses.length > 0;
+  for (const clause of ["all", "any", "none"] as const) {
+    const list = raw[clause];
+    if (list === undefined) continue;
+    if (!Array.isArray(list)) {
+      errors.push(`skill_rules match.${clause} must be a list`);
+      invalid = true;
+      continue;
+    }
+    const atoms: GSDSkillMatchAtom[] = [];
+    for (const [index, item] of list.entries()) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        errors.push(`skill_rules match.${clause}[${index}] must be an object`);
+        invalid = true;
+        continue;
+      }
+      const entries = Object.entries(item as Record<string, unknown>);
+      if (entries.length !== 1 || !STRUCTURED_SKILL_MATCH_KEYS.has(entries[0]?.[0] ?? "")
+        || typeof entries[0]?.[1] !== "string" || !(entries[0]?.[1] as string).trim()) {
+        errors.push(`skill_rules match.${clause}[${index}] must contain exactly one supported non-empty matcher`);
+        invalid = true;
+        continue;
+      }
+      atoms.push({ [entries[0]![0]]: (entries[0]![1] as string).trim() } as GSDSkillMatchAtom);
+      atomCount++;
+    }
+    result[clause] = atoms;
+  }
+  if (atomCount === 0) {
+    errors.push("skill_rules match requires at least one matcher");
+    return undefined;
+  }
+  return invalid ? undefined : result;
+}
 /**
  * Sanitize a single model field that accepts either a bare model ID or the
  * extended `{ model, provider?, fallbacks? }` object form used by phase buckets
@@ -261,11 +313,15 @@ export function validatePreferences(preferences: GSDPreferences): {
         continue;
       }
       const when = typeof rule.when === "string" ? rule.when.trim() : "";
-      if (!when) {
-        errors.push("skill_rules entry missing when");
+      const match = validateStructuredSkillMatch((rule as unknown as Record<string, unknown>).match, errors);
+      if (!when && !match) {
+        errors.push("skill_rules entry requires when or match");
         continue;
       }
-      const validatedRule: GSDSkillRule = { when };
+      const validatedRule: GSDSkillRule = {
+        ...(when ? { when } : {}),
+        ...(match ? { match } : {}),
+      };
       for (const action of SKILL_ACTIONS) {
         const values = normalizeStringArray((rule as unknown as Record<string, unknown>)[action]);
         if (values.length > 0) {
@@ -273,7 +329,7 @@ export function validatePreferences(preferences: GSDPreferences): {
         }
       }
       if (!validatedRule.use && !validatedRule.prefer && !validatedRule.avoid) {
-        errors.push(`skill rule has no actions: ${when}`);
+        errors.push(`skill rule has no actions: ${when || "structured match"}`);
         continue;
       }
       validRules.push(validatedRule);

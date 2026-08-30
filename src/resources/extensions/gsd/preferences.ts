@@ -1150,7 +1150,7 @@ export function renderPreferencesForSystemPrompt(
   if (preferences.skill_rules && preferences.skill_rules.length > 0) {
     lines.push("- Situational rules:");
     for (const rule of preferences.skill_rules) {
-      lines.push(`  - When ${rule.when}:`);
+      lines.push(`  - When ${rule.when ?? `structured ${JSON.stringify(rule.match)}`}:`);
       if (rule.use && rule.use.length > 0) {
         lines.push(`    - use: ${rule.use.map(fmt).join(", ")}`);
       }

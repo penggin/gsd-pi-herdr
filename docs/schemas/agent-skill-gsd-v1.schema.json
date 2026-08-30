@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opengsd.dev/schemas/agent-skill-gsd-v1.schema.json",
+  "title": "GSD Agent Skill metadata v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "kind": { "enum": ["ordinary-skill", "assessment-gate"], "default": "ordinary-skill" },
+    "invocation": { "enum": ["auto", "suggest", "manual"] },
+    "lifecycle": {
+      "type": "array",
+      "items": { "enum": ["pre-milestone", "post-validation"] },
+      "uniqueItems": true
+    },
+    "effect": { "const": "report-only" },
+    "revisionBinding": { "enum": ["required", "optional"] },
+    "resultSchema": { "const": "gsd.findings/v1" },
+    "capabilities": {
+      "type": "array",
+      "items": { "enum": ["repository.read", "artifacts.read", "browser.inspect", "process.verification"] },
+      "uniqueItems": true
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "const": "assessment-gate" } }, "required": ["kind"] },
+      "then": {
+        "required": ["invocation", "lifecycle", "effect", "resultSchema", "capabilities"],
+        "properties": { "invocation": { "enum": ["suggest", "manual"] } }
+      }
+    },
+    {
+      "if": { "not": { "properties": { "kind": { "const": "assessment-gate" } }, "required": ["kind"] } },
+      "then": { "properties": { "invocation": { "const": "auto" } } }
+    },
+    {
+      "if": { "properties": { "lifecycle": { "contains": { "const": "post-validation" } } }, "required": ["lifecycle"] },
+      "then": { "properties": { "revisionBinding": { "const": "required" } }, "required": ["revisionBinding"] }
+    }
+  ]
+}

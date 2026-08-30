@@ -11,9 +11,11 @@ import {
   resolveSkillDiscoveryMode,
 } from "./preferences.js";
 import type { GSDPreferences } from "./preferences.js";
+import type { GSDSkillMatchAtom, GSDSkillStructuredMatch } from "./preferences-types.js";
 import { filterSkillsByManifest, resolveSkillManifest, warnIfManifestHasMissingSkills } from "./skill-manifest.js";
 import { getInstalledSkills } from "./skills.js";
 import { logWarning } from "./workflow-logger.js";
+import { buildAssessmentGateSuggestionBlock } from "./assessment-gates/suggestions.js";
 
 function normalizeSkillReference(ref: string): string {
   const normalized = ref.replace(/\\/g, "/").trim();
@@ -96,18 +98,75 @@ function ruleMatchesUnitType(when: string, unitType: string | undefined): boolea
   return [...unitTokens].some(token => whenTokens.has(token));
 }
 
+interface StructuredSkillContext {
+  tokens: Set<string>;
+  phraseText: string;
+  workspaces: string[];
+  unitType?: string;
+  lifecycle?: string;
+  requirementClasses: string[];
+  riskTags: string[];
+}
+
+function normalizeExact(value: string): string {
+  return value.trim().toLowerCase().replace(/[_\s]+/g, "-");
+}
+
+function atomMatches(atom: GSDSkillMatchAtom, context: StructuredSkillContext): boolean {
+  if ("token" in atom) return context.tokens.has(atom.token.trim().toLowerCase());
+  if ("phrase" in atom) {
+    const phrase = atom.phrase.trim().toLowerCase().replace(/[-_\s]+/g, " ");
+    if (!phrase) return false;
+    const words = context.phraseText.split(" ").filter(Boolean);
+    const expected = phrase.split(" ").filter(Boolean);
+    return words.some((_, index) => expected.every((word, offset) => words[index + offset] === word));
+  }
+  if ("workspace" in atom) {
+    const expected = atom.workspace.replace(/\\/g, "/").replace(/\/$/, "").toLowerCase();
+    return context.workspaces.some((workspace) => {
+      const current = workspace.replace(/\\/g, "/").replace(/\/$/, "").toLowerCase();
+      return current === expected || current.startsWith(`${expected}/`);
+    });
+  }
+  if ("unitType" in atom) return normalizeExact(context.unitType ?? "") === normalizeExact(atom.unitType);
+  if ("lifecycle" in atom) return normalizeExact(context.lifecycle ?? "") === normalizeExact(atom.lifecycle);
+  if ("requirementClass" in atom) {
+    return context.requirementClasses.some((value) => normalizeExact(value) === normalizeExact(atom.requirementClass));
+  }
+  return context.riskTags.some((value) => normalizeExact(value) === normalizeExact(atom.riskTag));
+}
+
+export function structuredSkillRuleMatches(
+  match: GSDSkillStructuredMatch,
+  context: StructuredSkillContext,
+): boolean {
+  const all = match.all ?? [];
+  const any = match.any ?? [];
+  const none = match.none ?? [];
+  if (all.length > 0 && !all.every((atom) => atomMatches(atom, context))) return false;
+  if (any.length > 0 && !any.some((atom) => atomMatches(atom, context))) return false;
+  if (none.some((atom) => atomMatches(atom, context))) return false;
+  return all.length + any.length + none.length > 0;
+}
+
 function resolveSkillRuleMatches(
   prefs: GSDPreferences | undefined,
   contextTokens: Set<string>,
   base: string,
   unitType?: string,
+  structuredContext?: StructuredSkillContext,
 ): { include: string[]; avoid: string[] } {
   if (!prefs?.skill_rules?.length) return { include: [], avoid: [] };
 
   const include: string[] = [];
   const avoid: string[] = [];
   for (const rule of prefs.skill_rules) {
-    if (!ruleMatchesContext(rule.when, contextTokens) && !ruleMatchesUnitType(rule.when, unitType)) continue;
+    const legacyMatch = typeof rule.when === "string"
+      && (ruleMatchesContext(rule.when, contextTokens) || ruleMatchesUnitType(rule.when, unitType));
+    const structuredMatch = rule.match && structuredContext
+      ? structuredSkillRuleMatches(rule.match, structuredContext)
+      : false;
+    if (!legacyMatch && !structuredMatch) continue;
     include.push(...resolvePreferenceSkillNames([...(rule.use ?? []), ...(rule.prefer ?? [])], base));
     avoid.push(...resolvePreferenceSkillNames(rule.avoid ?? [], base));
   }
@@ -180,6 +239,10 @@ export function buildSkillActivationBlock(params: {
   taskTitle?: string;
   extraContext?: string[];
   taskPlanContent?: string | null;
+  workspaces?: string[];
+  lifecycle?: string;
+  requirementClasses?: string[];
+  riskTags?: string[];
   preferences?: GSDPreferences;
   /**
    * Unit type dispatching this prompt. When provided, skills are filtered
@@ -199,6 +262,25 @@ export function buildSkillActivationBlock(params: {
     params.taskId,
     params.taskTitle,
   );
+  const structuredContext: StructuredSkillContext = {
+    tokens: new Set(
+      [params.milestoneTitle, params.sliceTitle, params.taskTitle]
+        .filter((value): value is string => Boolean(value))
+        .join(" ")
+        .toLowerCase()
+        .match(/[a-z0-9][a-z0-9+.#_-]*/g) ?? [],
+    ),
+    phraseText: [params.milestoneTitle, params.sliceTitle, params.taskTitle]
+      .filter((value): value is string => Boolean(value))
+      .join(" ")
+      .toLowerCase()
+      .replace(/[-_\s]+/g, " "),
+    workspaces: params.workspaces ?? [],
+    unitType: params.unitType,
+    lifecycle: params.lifecycle,
+    requirementClasses: params.requirementClasses ?? [],
+    riskTags: params.riskTags ?? [],
+  };
 
   const loaded = getInstalledSkills(params.skills).filter(skill => !skill.disableModelInvocation);
 
@@ -225,7 +307,7 @@ export function buildSkillActivationBlock(params: {
     matched.add(name);
   }
 
-  const ruleMatches = resolveSkillRuleMatches(prefs, contextTokens, params.base, params.unitType);
+  const ruleMatches = resolveSkillRuleMatches(prefs, contextTokens, params.base, params.unitType, structuredContext);
   for (const name of ruleMatches.include) matched.add(name);
   for (const name of ruleMatches.avoid) avoided.add(name);
 
@@ -279,10 +361,18 @@ export function buildSkillActivationBlock(params: {
     recommendationsBlock = formatSkillRecommendationsBlock(params.unitType, recommendations);
   }
 
-  if (!activationBlock && !recommendationsBlock) return "";
-  if (!activationBlock) return recommendationsBlock;
-  if (!recommendationsBlock) return activationBlock;
-  return `${activationBlock}\n${recommendationsBlock}`;
+  const gateLifecycle = params.unitType === "complete-milestone"
+    ? "post-validation"
+    : params.unitType === "research-milestone" || params.unitType === "plan-milestone"
+      ? "pre-milestone"
+      : undefined;
+  const gateSuggestions = gateLifecycle ? buildAssessmentGateSuggestionBlock({
+    lifecycle: gateLifecycle,
+    scopeId: params.milestoneId,
+    context: [params.milestoneTitle, params.sliceTitle, params.taskTitle].filter(Boolean).join(" "),
+    skills: getInstalledSkills(params.skills),
+  }) : "";
+  return [activationBlock, recommendationsBlock, gateSuggestions].filter(Boolean).join("\n");
 }
 
 /**

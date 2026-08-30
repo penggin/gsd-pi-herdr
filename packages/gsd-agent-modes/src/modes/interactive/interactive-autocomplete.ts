@@ -81,6 +81,7 @@ export function setupAutocomplete(host: InteractiveModeDelegateHost): void {
 	const skillCommandList: SlashCommand[] = [];
 	if (host.settingsManager.getEnableSkillCommands()) {
 		for (const skill of host.session.resourceLoader.getSkills().skills) {
+			if (skill.gsd?.kind === "assessment-gate") continue;
 			const commandName = `skill:${skill.name}`;
 			host.skillCommands.set(commandName, skill.filePath);
 			skillCommandList.push({ name: commandName, description: skill.description });

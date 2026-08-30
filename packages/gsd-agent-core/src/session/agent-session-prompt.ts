@@ -307,6 +307,14 @@ export class AgentSessionPromptModule {
 
 		const skill = this.host.resourceLoader.getSkills().skills.find((s) => s.name === skillName);
 		if (!skill) return text; // Unknown skill, pass through
+		if (skill.gsd?.kind === "assessment-gate") {
+			this.host._extensionRunner.emitError({
+				extensionPath: skill.filePath,
+				event: "skill_expansion",
+				error: `Assessment Gate "${skill.name}" must run through /gsd gate run ${skill.name} for approval and isolation.`,
+			});
+			return `Assessment Gate "${skill.name}" was not executed. Run /gsd gate run ${skill.name}.`;
+		}
 
 		try {
 			const content = readFileSync(skill.filePath, "utf-8");

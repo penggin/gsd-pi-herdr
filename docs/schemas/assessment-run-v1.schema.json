@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opengsd.dev/schemas/assessment-run-v1.schema.json",
+  "title": "GSD AssessmentRun v1",
+  "type": "object",
+  "required": ["runId", "gateId", "scope", "lifecycle", "effect", "status", "startedAt", "findings", "evidenceRefs", "toolProfile"],
+  "properties": {
+    "runId": { "type": "string" },
+    "gateId": { "type": "string" },
+    "gateVersion": { "type": "string" },
+    "scope": {
+      "type": "object",
+      "properties": { "projectId": { "type": "string" }, "milestoneId": { "type": "string" }, "sliceId": { "type": "string" } },
+      "additionalProperties": false
+    },
+    "lifecycle": { "enum": ["pre-milestone", "post-validation"] },
+    "effect": { "const": "report-only" },
+    "status": { "enum": ["pending", "running", "completed", "failed", "inconclusive", "cancelled", "stale", "policy-violation"] },
+    "verdict": { "enum": ["pass", "needs-attention", "inconclusive"] },
+    "testedSourceRevision": { "type": "string" },
+    "inputDigest": { "type": "string" },
+    "repositoryRevision": { "type": "string" },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "completedAt": { "type": "string", "format": "date-time" },
+    "findings": { "type": "array" },
+    "evidenceRefs": { "type": "array" },
+    "toolProfile": { "type": "array", "items": { "type": "string" } },
+    "targetUrl": { "type": "string" },
+    "failureReason": { "type": "string" }
+  }
+}

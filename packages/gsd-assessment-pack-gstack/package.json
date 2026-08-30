@@ -1,0 +1,23 @@
+{
+  "name": "@penggin/gsd-assessment-pack-gstack",
+  "version": "0.1.0",
+  "description": "Optional report-only GStack-derived Assessment Gate adapters for GSD Pi",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "gsd-assessment-gates",
+    "agent-skills"
+  ],
+  "license": "MIT",
+  "pi": {
+    "skills": [
+      "./skills"
+    ]
+  },
+  "files": [
+    "manifest.json",
+    "UPSTREAM.md",
+    "LICENSES",
+    "skills"
+  ]
+}

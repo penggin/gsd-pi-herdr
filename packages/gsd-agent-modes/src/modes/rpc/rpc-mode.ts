@@ -784,6 +784,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 
 				// Skills (source is always "user" | "project" | "path" in coding-agent)
 				for (const skill of session.resourceLoader.getSkills().skills) {
+					if (skill.gsd?.kind === "assessment-gate") continue;
 					commands.push({
 						name: `skill:${skill.name}`,
 						description: skill.description,

@@ -121,7 +121,169 @@ export interface SkillFrontmatter {
 	name?: string;
 	description?: string;
 	"disable-model-invocation"?: boolean;
+	gsd?: unknown;
 	[key: string]: unknown;
+}
+
+export type GsdSkillKind = "ordinary-skill" | "assessment-gate";
+export type GsdSkillInvocation = "auto" | "suggest" | "manual";
+export type GsdSkillLifecycle = "pre-milestone" | "post-validation";
+export type GsdSkillEffect = "report-only";
+export type GsdSkillRevisionBinding = "required" | "optional";
+export type GsdAssessmentCapability =
+	| "repository.read"
+	| "artifacts.read"
+	| "browser.inspect"
+	| "process.verification";
+
+export interface GsdSkillMetadata {
+	kind: GsdSkillKind;
+	invocation?: GsdSkillInvocation;
+	lifecycle: GsdSkillLifecycle[];
+	effect?: GsdSkillEffect;
+	revisionBinding?: GsdSkillRevisionBinding;
+	resultSchema?: "gsd.findings/v1";
+	capabilities: GsdAssessmentCapability[];
+}
+
+export interface GsdSkillMetadataValidation {
+	metadata?: GsdSkillMetadata;
+	diagnostics: string[];
+	fatal: boolean;
+	autoInvocationBlocked: boolean;
+}
+
+const GSD_METADATA_KEYS = new Set([
+	"kind",
+	"invocation",
+	"lifecycle",
+	"effect",
+	"revisionBinding",
+	"resultSchema",
+	"capabilities",
+]);
+const GSD_SKILL_KINDS = new Set<GsdSkillKind>(["ordinary-skill", "assessment-gate"]);
+const GSD_SKILL_INVOCATIONS = new Set<GsdSkillInvocation>(["auto", "suggest", "manual"]);
+const GSD_SKILL_LIFECYCLES = new Set<GsdSkillLifecycle>(["pre-milestone", "post-validation"]);
+const GSD_SKILL_REVISION_BINDINGS = new Set<GsdSkillRevisionBinding>(["required", "optional"]);
+const GSD_ASSESSMENT_CAPABILITIES = new Set<GsdAssessmentCapability>([
+	"repository.read",
+	"artifacts.read",
+	"browser.inspect",
+	"process.verification",
+]);
+
+function stringList(value: unknown): string[] | undefined {
+	if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) return undefined;
+	return value as string[];
+}
+
+/** Validate the optional GSD namespace without changing legacy Agent Skill semantics. */
+export function validateGsdSkillMetadata(
+	value: unknown,
+	disableModelInvocation: boolean,
+): GsdSkillMetadataValidation {
+	if (value === undefined) {
+		return { diagnostics: [], fatal: false, autoInvocationBlocked: false };
+	}
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		return {
+			diagnostics: ["gsd metadata must be a mapping"],
+			fatal: true,
+			autoInvocationBlocked: true,
+		};
+	}
+
+	const raw = value as Record<string, unknown>;
+	const diagnostics = Object.keys(raw)
+		.filter((key) => !GSD_METADATA_KEYS.has(key))
+		.map((key) => `unknown gsd metadata field: ${key}`);
+	const kind = raw.kind === undefined ? "ordinary-skill" : raw.kind;
+	if (typeof kind !== "string" || !GSD_SKILL_KINDS.has(kind as GsdSkillKind)) {
+		return {
+			diagnostics: [...diagnostics, `gsd.kind must be ordinary-skill or assessment-gate`],
+			fatal: true,
+			autoInvocationBlocked: true,
+		};
+	}
+
+	const invocation = raw.invocation;
+	if (invocation !== undefined && (
+		typeof invocation !== "string" || !GSD_SKILL_INVOCATIONS.has(invocation as GsdSkillInvocation)
+	)) {
+		return {
+			diagnostics: [...diagnostics, `gsd.invocation must be auto, suggest, or manual`],
+			fatal: true,
+			autoInvocationBlocked: true,
+		};
+	}
+	const autoInvocationBlocked = invocation === "auto" && disableModelInvocation;
+	if (autoInvocationBlocked) {
+		diagnostics.push("disable-model-invocation: true conflicts with gsd.invocation: auto");
+	}
+
+	const lifecycleValues = raw.lifecycle === undefined ? [] : stringList(raw.lifecycle);
+	if (!lifecycleValues || lifecycleValues.some((entry) => !GSD_SKILL_LIFECYCLES.has(entry as GsdSkillLifecycle))) {
+		return {
+			diagnostics: [...diagnostics, `gsd.lifecycle contains an unsupported lifecycle`],
+			fatal: true,
+			autoInvocationBlocked: true,
+		};
+	}
+	const capabilityValues = raw.capabilities === undefined ? [] : stringList(raw.capabilities);
+	if (!capabilityValues || capabilityValues.some((entry) => !GSD_ASSESSMENT_CAPABILITIES.has(entry as GsdAssessmentCapability))) {
+		return {
+			diagnostics: [...diagnostics, `gsd.capabilities contains an unsupported capability`],
+			fatal: true,
+			autoInvocationBlocked: true,
+		};
+	}
+
+	if (kind === "assessment-gate") {
+		if (invocation === "auto") diagnostics.push("assessment gates cannot use gsd.invocation: auto");
+		if (invocation !== "suggest" && invocation !== "manual") {
+			diagnostics.push("assessment gates require gsd.invocation: suggest or manual");
+		}
+		if (lifecycleValues.length === 0) diagnostics.push("assessment gates require at least one gsd.lifecycle value");
+		if (raw.effect !== "report-only") diagnostics.push("assessment gates require gsd.effect: report-only");
+		if (raw.resultSchema !== "gsd.findings/v1") diagnostics.push("assessment gates require gsd.resultSchema: gsd.findings/v1");
+		if (capabilityValues.length === 0) diagnostics.push("assessment gates require at least one gsd.capabilities value");
+		if (lifecycleValues.includes("post-validation") && raw.revisionBinding !== "required") {
+			diagnostics.push("post-validation assessment gates require gsd.revisionBinding: required");
+		}
+	} else if (invocation === "suggest" || invocation === "manual") {
+		diagnostics.push("ordinary skills may omit gsd.invocation or use gsd.invocation: auto");
+	}
+	if (raw.effect !== undefined && raw.effect !== "report-only") {
+		diagnostics.push("gsd.effect only supports report-only in v1");
+	}
+	if (raw.revisionBinding !== undefined && (
+		typeof raw.revisionBinding !== "string"
+		|| !GSD_SKILL_REVISION_BINDINGS.has(raw.revisionBinding as GsdSkillRevisionBinding)
+	)) {
+		diagnostics.push("gsd.revisionBinding must be required or optional");
+	}
+	if (raw.resultSchema !== undefined && raw.resultSchema !== "gsd.findings/v1") {
+		diagnostics.push("gsd.resultSchema only supports gsd.findings/v1");
+	}
+
+	const fatal = diagnostics.some((message) => !message.startsWith("unknown gsd metadata field:"));
+	return {
+		metadata: {
+			kind: kind as GsdSkillKind,
+			...(invocation ? { invocation: invocation as GsdSkillInvocation } : {}),
+			lifecycle: lifecycleValues as GsdSkillLifecycle[],
+			...(raw.effect === "report-only" ? { effect: "report-only" as const } : {}),
+			...(raw.revisionBinding === "required" || raw.revisionBinding === "optional"
+				? { revisionBinding: raw.revisionBinding }
+				: {}),
+			...(raw.resultSchema === "gsd.findings/v1" ? { resultSchema: "gsd.findings/v1" as const } : {}),
+			capabilities: capabilityValues as GsdAssessmentCapability[],
+		},
+		diagnostics,
+		fatal,
+		autoInvocationBlocked,
+	};
 }
 
 export interface Skill {
@@ -133,6 +295,14 @@ export interface Skill {
 	/** GSD compat: human-readable source label (package name or path). */
 	source: string;
 	disableModelInvocation: boolean;
+	/** Validated optional GSD policy metadata. Missing means legacy ordinary skill. */
+	gsd?: GsdSkillMetadata;
+	/** Loader diagnostics retained for gate health surfaces. */
+	gsdDiagnostics?: string[];
+	/** True when contradictory metadata requires fail-closed activation. */
+	gsdAutoInvocationBlocked?: boolean;
+	/** True when the GSD namespace cannot be executed safely. */
+	gsdMetadataFatal?: boolean;
 }
 
 export interface LoadSkillsResult {
@@ -356,6 +526,11 @@ function loadSkillFromFile(
 
 		// Use name from frontmatter, or fall back to parent directory name
 		const name = frontmatter.name || parentDirName;
+		const disableModelInvocation = frontmatter["disable-model-invocation"] === true;
+		const gsd = validateGsdSkillMetadata(frontmatter.gsd, disableModelInvocation);
+		for (const message of gsd.diagnostics) {
+			diagnostics.push({ type: gsd.fatal ? "error" : "warning", message, path: filePath });
+		}
 
 		// Validate name
 		const nameErrors = validateName(name);
@@ -376,7 +551,15 @@ function loadSkillFromFile(
 				baseDir: skillDir,
 				sourceInfo: createSkillSourceInfo(filePath, skillDir, source),
 				source,
-				disableModelInvocation: frontmatter["disable-model-invocation"] === true,
+				disableModelInvocation:
+					disableModelInvocation
+					|| gsd.metadata?.kind === "assessment-gate"
+					|| gsd.autoInvocationBlocked
+					|| gsd.fatal,
+				...(gsd.metadata ? { gsd: gsd.metadata } : {}),
+				...(gsd.diagnostics.length > 0 ? { gsdDiagnostics: gsd.diagnostics } : {}),
+				...(gsd.autoInvocationBlocked ? { gsdAutoInvocationBlocked: true } : {}),
+				...(gsd.fatal ? { gsdMetadataFatal: true } : {}),
 			},
 			diagnostics,
 		};

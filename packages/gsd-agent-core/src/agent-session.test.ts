@@ -138,6 +138,33 @@ describe("AgentSessionNavigationModule", () => {
 });
 
 describe("AgentSessionPromptModule", () => {
+  test("refuses to expand Assessment Gates through ordinary /skill commands", () => {
+    const errors: Array<{ error: string }> = [];
+    const gate = {
+      ...makeSkill("security-review"),
+      gsd: {
+        kind: "assessment-gate",
+        invocation: "manual",
+        lifecycle: ["post-validation"],
+        effect: "report-only",
+        revisionBinding: "required",
+        resultSchema: "gsd.findings/v1",
+        capabilities: ["repository.read"],
+      },
+    };
+    const host = {
+      resourceLoader: { getSkills: () => ({ skills: [gate] }) },
+      _extensionRunner: { emitError: (error: { error: string }) => errors.push(error) },
+    };
+    const mod = new AgentSessionPromptModule(host as any);
+
+    const expanded = mod.expandSkillCommand("/skill:security-review inspect this");
+
+    assert.equal(expanded, 'Assessment Gate "security-review" was not executed. Run /gsd gate run security-review.');
+    assert.match(errors[0]?.error ?? "", /approval and isolation/);
+    assert.doesNotMatch(expanded, /inspect this/);
+  });
+
   test("keeps no-progress terminal fingerprint across other retryable errors", async () => {
     const userMessage = {
       role: "user",

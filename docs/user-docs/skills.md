@@ -107,6 +107,23 @@ The `skill_discovery` preference controls how GSD finds skills during auto mode:
 | `suggest` | Skills are identified but require confirmation (default) |
 | `off` | No skill discovery |
 
+## Optional Assessment Gates
+
+Assessment Gates are a separate, report-only class of Agent Skill for product/design review, security assessment, staging QA, benchmarks, or an independent second opinion. They are not Task Attempts and never change milestone, validation, remediation, Git, ship, or release state by themselves.
+
+```text
+/gsd gate list
+/gsd gate info <gate-name>
+/gsd gate run <gate-name> [--milestone M001]
+/gsd gate status [run-id]
+/gsd gate findings <run-id>
+/gsd gate cancel <run-id>
+```
+
+`suggest` gates may be recommended once with compact metadata, but never run automatically. `manual` gates are visible only through gate commands. Every run shows its lifecycle, scope, capabilities, target, report-only guarantee, and cost before asking for explicit approval. A post-validation gate must match the source revision recorded by current GSD validation.
+
+Gate findings are advisory. Use an explicit GSD remediation/reopen/rework action to act on them. See the [Assessment Gate author guide](../extension-sdk/assessment-gates.md).
+
 ## Skill Preferences
 
 Control which skills are used via preferences:
@@ -127,6 +144,24 @@ skill_rules:
     prefer: [frontend-design]
 ---
 ```
+
+Structured rules avoid false positives from loose substring matching while legacy `when` rules remain supported:
+
+```yaml
+skill_rules:
+  - match:
+      all:
+        - token: regression
+        - workspace: apps/ytext
+      any:
+        - phrase: cross-service
+        - riskTag: high
+      none:
+        - unitType: documentation
+    use: [systematic-debugging, conditional-tdd]
+```
+
+Supported matchers are exact `token`, normalized consecutive `phrase`, `workspace`, `unitType`, `lifecycle`, `requirementClass`, and `riskTag`, composed with `all`, `any`, and `none`. Arbitrary regular expressions are not supported.
 
 ### Resolution Order
 

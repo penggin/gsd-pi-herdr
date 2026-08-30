@@ -29,6 +29,75 @@ function createTestSkill(options: {
 
 describe("skills", () => {
 	describe("loadSkillsFromDir", () => {
+		it("loads namespaced GSD metadata without changing legacy skill defaults", () => {
+			const root = mkdtempSync(join(tmpdir(), "pi-gsd-skill-metadata-"));
+			const legacyDir = join(root, "legacy");
+			const gateDir = join(root, "security-review");
+			mkdirSync(legacyDir, { recursive: true });
+			mkdirSync(gateDir, { recursive: true });
+			writeFileSync(join(legacyDir, "SKILL.md"), "---\nname: legacy\ndescription: Legacy skill\n---\nLegacy body\n");
+			writeFileSync(join(gateDir, "SKILL.md"), [
+				"---",
+				"name: security-review",
+				"description: Report-only security review",
+				"gsd:",
+				"  kind: assessment-gate",
+				"  invocation: suggest",
+				"  lifecycle: [post-validation]",
+				"  effect: report-only",
+				"  revisionBinding: required",
+				"  resultSchema: gsd.findings/v1",
+				"  capabilities: [repository.read, artifacts.read]",
+				"---",
+				"Gate body",
+			].join("\n"));
+			try {
+				const { skills, diagnostics } = loadSkillsFromDir({ dir: root, source: "test" });
+				const legacy = skills.find((skill) => skill.name === "legacy");
+				const gate = skills.find((skill) => skill.name === "security-review");
+				expect(legacy?.gsd).toBeUndefined();
+				expect(legacy?.disableModelInvocation).toBe(false);
+				expect(gate?.gsd?.kind).toBe("assessment-gate");
+				expect(gate?.gsd?.capabilities).toEqual(["repository.read", "artifacts.read"]);
+				expect(gate?.disableModelInvocation).toBe(true);
+				expect(diagnostics).toHaveLength(0);
+				expect(formatSkillsForPrompt(skills)).not.toContain("security-review");
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+			}
+		});
+
+		it("fails closed on invalid assessment metadata and auto/disabled conflicts", () => {
+			const root = mkdtempSync(join(tmpdir(), "pi-gsd-skill-invalid-"));
+			const invalidDir = join(root, "invalid-gate");
+			const conflictDir = join(root, "conflict-skill");
+			mkdirSync(invalidDir, { recursive: true });
+			mkdirSync(conflictDir, { recursive: true });
+			writeFileSync(join(invalidDir, "SKILL.md"), [
+				"---", "name: invalid-gate", "description: Invalid gate", "gsd:",
+				"  kind: assessment-gate", "  invocation: auto", "  lifecycle: [during-task]",
+				"  effect: source-write", "  resultSchema: prose", "  capabilities: [repository.write]",
+				"---", "Invalid body",
+			].join("\n"));
+			writeFileSync(join(conflictDir, "SKILL.md"), [
+				"---", "name: conflict-skill", "description: Contradictory ordinary skill",
+				"disable-model-invocation: true", "gsd:", "  kind: ordinary-skill", "  invocation: auto",
+				"---", "Conflict body",
+			].join("\n"));
+			try {
+				const { skills, diagnostics } = loadSkillsFromDir({ dir: root, source: "test" });
+				const invalid = skills.find((skill) => skill.name === "invalid-gate");
+				const conflict = skills.find((skill) => skill.name === "conflict-skill");
+				expect(invalid?.disableModelInvocation).toBe(true);
+				expect(conflict?.gsdAutoInvocationBlocked).toBe(true);
+				expect(diagnostics.some((diagnostic) => diagnostic.type === "error" && diagnostic.message.includes("unsupported lifecycle"))).toBe(true);
+				expect(diagnostics.some((diagnostic) => diagnostic.message.includes("conflicts with gsd.invocation: auto"))).toBe(true);
+				expect(formatSkillsForPrompt(skills)).toBe("");
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+			}
+		});
+
 		it("should load a valid skill", () => {
 			const { skills, diagnostics } = loadSkillsFromDir({
 				dir: join(fixturesDir, "valid-skill"),

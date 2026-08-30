@@ -9,7 +9,7 @@ import type { AgentConfig } from "../agents.js";
 import { createHerdrSubagentBackend } from "../execution/herdr-backend.js";
 import type { HerdrPaneReservation } from "../execution/herdr-pane-pool.js";
 import type { SubagentExecutionBackend } from "../execution/types.js";
-import { __subagentLocalRunnerTestHooks } from "../index.js";
+import { __subagentLocalRunnerTestHooks, runRestrictedSubagent } from "../index.js";
 
 const ZERO_USAGE = {
 	input: 0,
@@ -201,6 +201,35 @@ process.stderr.write('fixture stderr\\n');
 		assert.deepEqual(updates.map((update) => update.content[0].text), ["draft", "draft", "final answer"]);
 		assert.ok(updates.every((update) => update.details.results[0].running === true));
 		assert.ok(updates.every((update) => update.details.results[0].exitCode === -1));
+	});
+
+	it("restricted child disables ambient resources and loads only explicit extensions and tools", async () => {
+		dir ??= mkdtempSync(join(tmpdir(), "gsd-local-runner-characterization-"));
+		const argsPath = join(dir, "args.json");
+		const finalMessage = makeAssistantMessage("restricted result", { stopReason: "stop" });
+		createFixtureChild(`
+import { writeFileSync } from "node:fs";
+writeFileSync(process.env.ARGS_PATH, JSON.stringify(process.argv.slice(2)));
+process.stdout.write(${JSON.stringify(jsonLine({ type: "message_end", message: finalMessage }))});
+`);
+		process.env.GSD_BUNDLED_EXTENSION_PATHS = "/tmp/ambient-extension.ts";
+
+		const result = await runRestrictedSubagent({
+			defaultCwd: dir,
+			agent: makeAgent({ tools: ["assessment_read"] }),
+			task: "restricted task",
+			env: { ARGS_PATH: argsPath },
+			extensionPaths: ["/tmp/assessment-extension.ts"],
+		});
+		const args = JSON.parse(readFileSync(argsPath, "utf8")) as string[];
+
+		assert.equal(result.output, "restricted result");
+		for (const flag of ["--bare", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes"]) {
+			assert.ok(args.includes(flag), `missing ${flag}`);
+		}
+		assert.deepEqual(args.slice(args.indexOf("--tools"), args.indexOf("--tools") + 2), ["--tools", "assessment_read"]);
+		assert.ok(args.includes("/tmp/assessment-extension.ts"));
+		assert.equal(args.includes("/tmp/ambient-extension.ts"), false);
 	});
 
 	it("converts exit 0 with no assistant final text into the canonical missing-final failure", async () => {

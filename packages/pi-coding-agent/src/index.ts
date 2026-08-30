@@ -181,8 +181,17 @@ export {
 	type LoadSkillsResult,
 	loadSkills,
 	loadSkillsFromDir,
+	type GsdAssessmentCapability,
+	type GsdSkillEffect,
+	type GsdSkillInvocation,
+	type GsdSkillKind,
+	type GsdSkillLifecycle,
+	type GsdSkillMetadata,
+	type GsdSkillMetadataValidation,
+	type GsdSkillRevisionBinding,
 	type Skill,
 	type SkillFrontmatter,
+	validateGsdSkillMetadata,
 } from "./core/skills.js";
 export {
 	collectAncestorAgentsSkillDirs,

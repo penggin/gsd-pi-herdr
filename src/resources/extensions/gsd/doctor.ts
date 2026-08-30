@@ -88,7 +88,9 @@ function validatePreferenceShape(preferences: GSDPreferences): string[] {
           issues.push(`skill_rules[${index}] must be an object`);
           continue;
         }
-        if (typeof rule.when !== "string") {
+        if (rule.when === undefined && rule.match === undefined) {
+          issues.push(`skill_rules[${index}] requires when or match`);
+        } else if (rule.when !== undefined && typeof rule.when !== "string") {
           issues.push(`skill_rules[${index}].when must be a string`);
         }
         for (const key of ["use", "prefer", "avoid"] as const) {

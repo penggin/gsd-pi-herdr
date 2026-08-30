@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "gsd-assessment-pack-gstack",
+  "version": "0.1.0",
+  "description": "Optional GStack-derived adapters for the provider-neutral GSD Assessment Gate contract.",
+  "coreDependency": false,
+  "skills": [
+    {
+      "id": "gstack-design-review",
+      "path": "skills/gstack-design-review/SKILL.md",
+      "lifecycle": "pre-milestone",
+      "invocation": "suggest"
+    },
+    {
+      "id": "gstack-second-opinion",
+      "path": "skills/gstack-second-opinion/SKILL.md",
+      "lifecycle": "post-validation",
+      "invocation": "manual"
+    }
+  ]
+}

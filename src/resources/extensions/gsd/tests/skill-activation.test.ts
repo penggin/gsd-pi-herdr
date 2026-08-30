@@ -29,6 +29,34 @@ function writeSkill(base: string, name: string, description: string): void {
   writeFileSync(join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: ${description}\n---\n\n# ${name}\n`);
 }
 
+function writeGate(
+  base: string,
+  name: string,
+  description: string,
+  lifecycle: "pre-milestone" | "post-validation",
+): void {
+  const dir = join(base, "skills", name);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "SKILL.md"), [
+    "---",
+    `name: ${name}`,
+    `description: ${description}`,
+    "gsd:",
+    "  kind: assessment-gate",
+    "  invocation: suggest",
+    "  lifecycle:",
+    `    - ${lifecycle}`,
+    "  effect: report-only",
+    `  revisionBinding: ${lifecycle === "post-validation" ? "required" : "optional"}`,
+    "  resultSchema: gsd.findings/v1",
+    "  capabilities:",
+    "    - repository.read",
+    "---",
+    "",
+    "SECRET GATE BODY MUST NOT APPEAR IN NORMAL PROMPTS.",
+  ].join("\n"));
+}
+
 function loadOnlyTestSkills(base: string): void {
   loadSkills({
     cwd: base,
@@ -417,4 +445,134 @@ test("skill manifest strict warnings require GSD_SKILL_MANIFEST_STRICT=1", (t) =
     logs.some(log => log.message.includes("skill-manifest: references uninstalled skill")),
     "strict=1 should warn about missing manifest entries",
   );
+});
+
+test("structured skill matcher covers the fixed A-E policy scenarios", () => {
+  const base = makeTempBase();
+  try {
+    for (const name of ["systematic-debugging", "conditional-tdd", "verification-discipline", "superpowers"]) {
+      writeSkill(base, name, `${name} methodology`);
+    }
+    writeGate(base, "staging-qa", "Report-only staging QA assessment after validation", "post-validation");
+    loadOnlyTestSkills(base);
+    const preferences: GSDPreferences = {
+      skill_rules: [
+        { match: { any: [{ token: "truncated" }, { token: "regression" }] }, use: ["systematic-debugging"] },
+        { match: { all: [{ token: "reproducible" }, { token: "regression" }] }, use: ["conditional-tdd"] },
+        { match: { any: [{ token: "regression" }] }, use: ["verification-discipline"] },
+      ],
+    };
+
+    const a = buildBlock(base, { taskTitle: "ytext generated WebM file is sometimes truncated" }, preferences);
+    assert.ok(a.includes(expectedSkillRead(base, "systematic-debugging")), "A activates systematic debugging");
+
+    const b = buildBlock(base, { taskTitle: "redesign the landing page" }, preferences);
+    assert.equal(b, "", "B does not activate debugging or TDD");
+
+    const c = buildBlock(base, {
+      taskTitle: "premium entitlement calculation has a reproducible regression",
+    }, preferences);
+    assert.ok(c.includes(expectedSkillRead(base, "systematic-debugging")));
+    assert.ok(c.includes(expectedSkillRead(base, "conditional-tdd")));
+    assert.ok(c.includes(expectedSkillRead(base, "verification-discipline")));
+
+    const d = buildBlock(base, {
+      unitType: "complete-milestone",
+      milestoneTitle: "validation completed and staging needs QA",
+    }, preferences);
+    assert.doesNotMatch(d, /superpowers/);
+    assert.match(d, /<assessment_gate_suggestions/);
+    assert.match(d, /<name>staging-qa<\/name>/);
+    assert.doesNotMatch(d, /SECRET GATE BODY/);
+
+    const e = buildBlock(base, { unitType: "quick", taskTitle: "fix one README typo" }, preferences);
+    assert.equal(e, "", "E is trivial and activates no specialist skill or gate");
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("structured token matcher never uses substring matches", () => {
+  const base = makeTempBase();
+  try {
+    writeSkill(base, "specialist", "A specialist method.");
+    loadOnlyTestSkills(base);
+    const words = ["media", "remediation", "task", "fix", "test", "deterministic"];
+    const preferences: GSDPreferences = {
+      skill_rules: words.map((token) => ({ match: { any: [{ token }] }, use: ["specialist"] })),
+    };
+    for (const title of [
+      "multimedia playback",
+      "premedication schedule",
+      "multitasking layout",
+      "prefix parser",
+      "contest entry",
+      "nondeterministically rendered output",
+    ]) {
+      assert.equal(buildBlock(base, { taskTitle: title }, preferences), "", title);
+    }
+    assert.ok(buildBlock(base, { taskTitle: "deterministic output" }, preferences).includes("specialist"));
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("structured phrase matcher requires a normalized consecutive word sequence", () => {
+  const base = makeTempBase();
+  try {
+    writeSkill(base, "phrase-policy", "Phrase policy.");
+    loadOnlyTestSkills(base);
+    const preferences: GSDPreferences = {
+      skill_rules: [{ match: { any: [{ phrase: "test media" }] }, use: ["phrase-policy"] }],
+    };
+    assert.equal(buildBlock(base, { taskTitle: "contest multimedia parser" }, preferences), "");
+    assert.ok(buildBlock(base, { taskTitle: "Test-media output" }, preferences).includes("phrase-policy"));
+    assert.equal(buildBlock(base, { taskTitle: "test generated media output" }, preferences), "");
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("structured matcher supports workspace, unit type, lifecycle, risk and none", () => {
+  const base = makeTempBase();
+  try {
+    writeSkill(base, "targeted-policy", "Targeted policy.");
+    loadOnlyTestSkills(base);
+    const preferences: GSDPreferences = {
+      skill_rules: [{
+        match: {
+          all: [
+            { workspace: "apps/ytext" },
+            { unitType: "execute-task" },
+            { lifecycle: "implementation" },
+            { requirementClass: "security" },
+            { riskTag: "high" },
+            { phrase: "cross service" },
+          ],
+          none: [{ token: "documentation" }],
+        },
+        use: ["targeted-policy"],
+      }],
+    };
+    const match = buildBlock(base, {
+      taskTitle: "Fix cross-service authorization",
+      workspaces: ["apps/ytext/src"],
+      unitType: "execute-task",
+      lifecycle: "implementation",
+      requirementClasses: ["security"],
+      riskTags: ["high"],
+    }, preferences);
+    assert.ok(match.includes("targeted-policy"));
+    const excluded = buildBlock(base, {
+      taskTitle: "Documentation for cross-service authorization",
+      workspaces: ["apps/ytext"],
+      unitType: "execute-task",
+      lifecycle: "implementation",
+      requirementClasses: ["security"],
+      riskTags: ["high"],
+    }, preferences);
+    assert.equal(excluded, "");
+  } finally {
+    cleanup(base);
+  }
 });

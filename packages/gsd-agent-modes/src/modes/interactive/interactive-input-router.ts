@@ -169,7 +169,9 @@ export function isKnownSlashCommand(host: InteractiveModeDelegateHost, text: str
 
 		if (commandName.startsWith("skill:") && host.settingsManager.getEnableSkillCommands()) {
 			const skillName = commandName.slice("skill:".length);
-			return host.session.resourceLoader.getSkills().skills.some((skill: Skill) => skill.name === skillName);
+			return host.session.resourceLoader.getSkills().skills.some(
+				(skill: Skill) => skill.name === skillName && skill.gsd?.kind !== "assessment-gate",
+			);
 		}
 
 		return false;

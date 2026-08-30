@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opengsd.dev/schemas/gsd-findings-v1.schema.json",
+  "title": "GSD Assessment Findings v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "runId", "gateId", "lifecycle", "verdict", "summary", "findings"],
+  "properties": {
+    "schemaVersion": { "const": "gsd.findings/v1" },
+    "runId": { "type": "string", "minLength": 1 },
+    "gateId": { "type": "string", "minLength": 1 },
+    "lifecycle": { "enum": ["pre-milestone", "post-validation"] },
+    "testedSourceRevision": { "type": "string", "minLength": 1 },
+    "inputDigest": { "type": "string", "minLength": 1 },
+    "verdict": { "enum": ["pass", "needs-attention", "inconclusive"] },
+    "summary": { "type": "string", "minLength": 1 },
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/finding" }
+    }
+  },
+  "$defs": {
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "ref"],
+      "properties": {
+        "kind": { "enum": ["source", "diff", "command", "browser", "screenshot", "network", "console", "artifact", "runtime-log"] },
+        "ref": { "type": "string", "minLength": 1 },
+        "note": { "type": "string" }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "severity", "category", "title", "description", "affectedPaths", "evidence"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "severity": { "enum": ["critical", "high", "medium", "low", "info"] },
+        "category": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "affectedPaths": { "type": "array", "items": { "type": "string" } },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" } },
+        "recommendedAction": { "type": "string" }
+      },
+      "if": { "properties": { "severity": { "enum": ["critical", "high", "medium", "low"] } } },
+      "then": { "properties": { "evidence": { "minItems": 1 } } }
+    }
+  }
+}

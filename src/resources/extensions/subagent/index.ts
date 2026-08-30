@@ -407,6 +407,12 @@ interface SubagentRunOptions {
 	projectRoot?: string;
 	projectRootSourceCwd?: string;
 	executionIdentity?: Partial<SubagentExecutionIdentity>;
+	/** Additional child environment for host-owned restricted runtimes. */
+	envOverrides?: NodeJS.ProcessEnv;
+	/** Additional extension entry points required by a restricted child. */
+	extensionPaths?: string[];
+	/** Load normal bundled extensions. Restricted runtimes set this false. */
+	includeBundledExtensions?: boolean;
 }
 
 async function runSingleAgentWithBackend(
@@ -432,6 +438,9 @@ async function runSingleAgentWithBackend(
 		projectRoot,
 		projectRootSourceCwd,
 		executionIdentity,
+		envOverrides,
+		extensionPaths,
+		includeBundledExtensions = true,
 	} = options;
 	const agent = agents.find((a) => a.name === agentName);
 
@@ -523,12 +532,19 @@ async function runSingleAgentWithBackend(
 			projectRoot,
 			projectRootSourceCwd,
 		});
+		if (envOverrides) launch.env = { ...launch.env, ...envOverrides };
 		if (launch.session.mode === "fork") currentResult.sessionFile = launch.session.sessionFile;
-		const bundledPaths = (process.env.GSD_BUNDLED_EXTENSION_PATHS ?? "")
+		const bundledPaths = (includeBundledExtensions ? process.env.GSD_BUNDLED_EXTENSION_PATHS ?? "" : "")
 			.split(path.delimiter)
 			.map((value) => value.trim())
 			.filter(Boolean);
-		const extensionArgs = bundledPaths.flatMap((extensionPath) => ["--extension", extensionPath]);
+		const extensionArgs = [
+			...(!includeBundledExtensions
+				? ["--bare", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes"]
+				: []),
+			...[...new Set([...bundledPaths, ...(extensionPaths ?? [])])]
+				.flatMap((extensionPath) => ["--extension", extensionPath]),
+		];
 		const execution = await backend.execute(
 			{
 				launch,
@@ -621,6 +637,68 @@ export const __subagentLocalRunnerTestHooks = {
 	getLiveProcessCount: getLiveLocalSubagentProcessCount,
 	getLiveCmuxExecutionCount: getLiveCmuxSubagentExecutionCount,
 };
+
+export interface RestrictedSubagentRequest {
+	defaultCwd: string;
+	agent: AgentConfig;
+	task: string;
+	model?: string;
+	thinking?: string;
+	signal?: AbortSignal;
+	env?: NodeJS.ProcessEnv;
+	extensionPaths?: string[];
+}
+
+export interface RestrictedSubagentResult {
+	exitCode: number;
+	output: string;
+	stderr: string;
+	stopReason?: string;
+	errorMessage?: string;
+	model?: string;
+	usage: UsageStats;
+}
+
+/**
+ * Host-owned fresh-context execution seam for restricted runtimes such as
+ * report-only Assessment Gates. It reuses the canonical JSON-mode parser and
+ * local backend while allowing the host to provide a deliberately tiny tool
+ * surface through an environment-selected extension mode.
+ */
+export async function runRestrictedSubagent(
+	request: RestrictedSubagentRequest,
+): Promise<RestrictedSubagentResult> {
+	const result = await runSingleAgentWithBackend(
+		request.defaultCwd,
+		[request.agent],
+		request.agent.name,
+		request.task,
+		request.defaultCwd,
+		undefined,
+		request.signal,
+		undefined,
+		(results) => ({ mode: "single", agentScope: "project", projectAgentsDir: null, results }),
+		{
+			contextMode: "fresh",
+			modelOverride: request.model,
+			thinkingOverride: request.thinking,
+			envOverrides: request.env,
+			extensionPaths: request.extensionPaths,
+			includeBundledExtensions: false,
+			executionIdentity: { mode: "single", affinityKey: `restricted:${request.agent.name}` },
+		},
+		localSubagentBackend,
+	);
+	return {
+		exitCode: result.exitCode,
+		output: getFinalOutput(result.messages),
+		stderr: result.stderr,
+		stopReason: result.stopReason,
+		errorMessage: result.errorMessage,
+		model: result.model,
+		usage: result.usage,
+	};
+}
 
 const ThinkingLevelSchema = StringEnum(["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const, {
 	description:

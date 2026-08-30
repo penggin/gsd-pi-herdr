@@ -214,7 +214,9 @@ export class AgentSessionExtensionsModule {
 				sourceInfo: template.sourceInfo,
 			}));
 
-			const skills: SlashCommandInfo[] = this.host.resourceLoader.getSkills().skills.map((skill) => ({
+			const skills: SlashCommandInfo[] = this.host.resourceLoader.getSkills().skills
+				.filter((skill) => skill.gsd?.kind !== "assessment-gate")
+				.map((skill) => ({
 				name: `skill:${skill.name}`,
 				description: skill.description,
 				source: "skill",

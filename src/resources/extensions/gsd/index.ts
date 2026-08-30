@@ -16,6 +16,15 @@ export {
 } from "./bootstrap/write-gate.js";
 
 export default async function registerExtension(pi: ExtensionAPI) {
+  const assessmentContextPath = process.env.GSD_ASSESSMENT_CONTEXT_PATH;
+  if (assessmentContextPath) {
+    // Assessment children get a deliberately tiny, path-bounded tool surface.
+    // Do not register /gsd, DB writers, hooks, exec tools, or lifecycle tools.
+    const { registerAssessmentGateTools } = await import("./assessment-gates/tool-profile.js");
+    registerAssessmentGateTools(pi, assessmentContextPath);
+    return;
+  }
+
   // Always register the core /gsd command first, in isolation.
   // This ensures /gsd is available even if the full bootstrap (shortcuts,
   // tools, hooks) fails — e.g. due to a Windows-specific import error.

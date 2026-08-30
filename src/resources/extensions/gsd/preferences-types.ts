@@ -259,8 +259,26 @@ export type PlanningSubagentRegistryConfig = Record<string, PlanningSubagentRegi
 
 export const SKILL_ACTIONS = new Set(["use", "prefer", "avoid"]);
 
+export type GSDSkillMatchAtom =
+  | { token: string }
+  | { phrase: string }
+  | { workspace: string }
+  | { unitType: string }
+  | { lifecycle: string }
+  | { requirementClass: string }
+  | { riskTag: string };
+
+export interface GSDSkillStructuredMatch {
+  all?: GSDSkillMatchAtom[];
+  any?: GSDSkillMatchAtom[];
+  none?: GSDSkillMatchAtom[];
+}
+
 export interface GSDSkillRule {
-  when: string;
+  /** Legacy loose matcher, retained for backward compatibility. */
+  when?: string;
+  /** Deterministic matcher. No regex or substring semantics. */
+  match?: GSDSkillStructuredMatch;
   use?: string[];
   prefer?: string[];
   avoid?: string[];

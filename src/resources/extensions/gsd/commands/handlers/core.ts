@@ -156,6 +156,7 @@ export function showHelp(ctx: ExtensionCommandContext, args = ""): void {
     "  /gsd hooks          Show post-unit hook configuration",
     "  /gsd run-hook       Manually trigger a specific hook",
     "  /gsd skill-health   Skill lifecycle dashboard",
+    "  /gsd gate           Optional report-only Assessment Gates  [list|info|run|status|findings|cancel]",
     "  /gsd extensions     Manage extensions  [list|enable|disable|info]",
     "  /gsd fast           Toggle OpenAI service tier  [on|off|flex|status]",
     "  /gsd mcp            MCP server management  [status|check|discover|test|enable|disable|import|delete|init]",
@@ -573,6 +574,11 @@ export async function handleCoreCommand(
   }
   if (trimmed === "cmux" || trimmed.startsWith("cmux ")) {
     await handleCmux(trimmed.replace(/^cmux\s*/, "").trim(), ctx);
+    return true;
+  }
+  if (trimmed === "gate" || trimmed.startsWith("gate ")) {
+    const { handleGateCommand } = await import("../../commands-gate.js");
+    await handleGateCommand(trimmed.replace(/^gate\s*/, "").trim(), ctx);
     return true;
   }
   if (trimmed === "usage" || trimmed.startsWith("usage ")) {
