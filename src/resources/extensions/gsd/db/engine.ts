@@ -1049,9 +1049,13 @@ function createFileBoundDatabaseAdapter(rawDb: unknown, databasePath: string, ex
   return fileBoundAdapter;
 }
 
-function openCorrelatedRawDatabase(path: string, open: () => unknown): { raw: unknown; identity?: FileIdentity } {
+function openCorrelatedRawDatabase(
+  path: string,
+  open: () => unknown,
+  createIfMissing = true,
+): { raw: unknown; identity?: FileIdentity } {
   if (path === ":memory:") return { raw: open() };
-  const capture = captureSqliteOpenIdentity(path, true);
+  const capture = captureSqliteOpenIdentity(path, createIfMissing);
   _databaseOpenBeforeRawForTest?.(path);
   let raw: unknown;
   try {
@@ -2299,7 +2303,7 @@ function retainOrCloseFailedOpen(
   }
 }
 
-function openDatabaseInternal(path: string, allowReplacementWrite: boolean): boolean {
+function openDatabaseInternal(path: string, allowReplacementWrite: boolean, createIfMissing = true): boolean {
   _dbOpenState.markAttempted();
   cleanupPendingDatabaseMaintenance();
   cleanupPendingStartup();
@@ -2346,7 +2350,11 @@ function openDatabaseInternal(path: string, allowReplacementWrite: boolean): boo
     }
   } else {
     try {
-      ({ raw: rawDb, identity: openedIdentity } = openCorrelatedRawDatabase(path, () => providerLoader.openRaw(path)));
+      ({ raw: rawDb, identity: openedIdentity } = openCorrelatedRawDatabase(
+        path,
+        () => providerLoader.openRaw(path, { createIfMissing }),
+        createIfMissing,
+      ));
     } catch (error) {
       _dbOpenState.recordError(isSqliteBusyError(error) ? "locked" : "open", error);
       throw error;
@@ -2405,7 +2413,11 @@ function openDatabaseInternal(path: string, allowReplacementWrite: boolean): boo
 
     let runtimeAdapterOpened = false;
     try {
-      ({ raw: rawDb, identity: openedIdentity } = openCorrelatedRawDatabase(path, () => providerLoader.openRaw(path)));
+      ({ raw: rawDb, identity: openedIdentity } = openCorrelatedRawDatabase(
+        path,
+        () => providerLoader.openRaw(path, { createIfMissing }),
+        createIfMissing,
+      ));
       if (!rawDb) {
         completeDatabaseMaintenanceCleanup(startupMaintenance);
         startupMaintenance = undefined;
@@ -2433,16 +2445,24 @@ function openDatabaseInternal(path: string, allowReplacementWrite: boolean): boo
   return true;
 }
 
-export function openDatabase(path: string): boolean {
+function openDatabaseWithMode(path: string, createIfMissing: boolean): boolean {
   for (let attempt = 0; ; attempt += 1) {
     try {
-      return openDatabaseInternal(path, false);
+      return openDatabaseInternal(path, false, createIfMissing);
     } catch (error) {
       const backoffMs = DB_OPEN_BUSY_BACKOFF_MS[attempt];
       if (!isSqliteBusyError(error) || backoffMs === undefined) throw error;
       Atomics.wait(DB_OPEN_BUSY_SLEEP, 0, 0, backoffMs);
     }
   }
+}
+
+export function openDatabase(path: string): boolean {
+  return openDatabaseWithMode(path, true);
+}
+
+export function openExistingDatabase(path: string): boolean {
+  return openDatabaseWithMode(path, false);
 }
 
 export function promoteDatabaseForReplacementRecovery(): void {
