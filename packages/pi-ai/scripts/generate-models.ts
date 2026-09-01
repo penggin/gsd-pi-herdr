@@ -10,6 +10,7 @@ import {
 	CLOUDFLARE_WORKERS_AI_BASE_URL,
 } from "../src/providers/cloudflare.ts";
 import type { AnthropicMessagesCompat, Api, KnownProvider, Model, OpenAICompletionsCompat } from "../src/types.ts";
+import { formatCost, roundCost } from "./lib/model-cost.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -318,14 +319,6 @@ function getBedrockBaseUrl(modelId: string): string {
 	return modelId.startsWith("eu.")
 		? "https://bedrock-runtime.eu-central-1.amazonaws.com"
 		: "https://bedrock-runtime.us-east-1.amazonaws.com";
-}
-
-function formatCost(value: number): string {
-	if (!Number.isFinite(value)) {
-		throw new Error("Model costs must be finite numbers.");
-	}
-	const rounded = Number(value.toFixed(12));
-	return Object.is(rounded, -0) ? "0" : String(rounded);
 }
 
 function formatFiniteNumber(value: unknown, field: string, modelId: string): string {
@@ -2407,6 +2400,24 @@ async function generateModels() {
 		// Only add if not already present (models.dev takes priority over OpenRouter)
 		if (!providers[model.provider][model.id]) {
 			providers[model.provider][model.id] = model;
+		}
+	}
+
+	// Round costs in place so the JSON snapshot mirrors the TypeScript catalog
+	// exactly; raw floats carry binary noise that formatCost only strips from
+	// the .ts output.
+	for (const models of Object.values(providers)) {
+		for (const model of Object.values(models)) {
+			model.cost.input = roundCost(model.cost.input);
+			model.cost.output = roundCost(model.cost.output);
+			model.cost.cacheRead = roundCost(model.cost.cacheRead);
+			model.cost.cacheWrite = roundCost(model.cost.cacheWrite);
+			for (const tier of model.cost.tiers ?? []) {
+				if (tier.input !== undefined) tier.input = roundCost(tier.input);
+				if (tier.output !== undefined) tier.output = roundCost(tier.output);
+				if (tier.cacheRead !== undefined) tier.cacheRead = roundCost(tier.cacheRead);
+				if (tier.cacheWrite !== undefined) tier.cacheWrite = roundCost(tier.cacheWrite);
+			}
 		}
 	}
 
