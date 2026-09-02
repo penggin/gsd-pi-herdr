@@ -2105,6 +2105,22 @@ this session does not merge, push, tag, or publish.
 - Exact next task: review, commit, and push this opt-in vLLM compatibility
   slice; then audit the remaining low-risk upstream corrections (`e583b290a`,
   current NO_PROXY behavior) without importing metadata-only version spoofing.
+- Ported upstream `a63fb12c1` to the shared Node HTTP proxy resolver. A
+  `NO_PROXY=example.com` entry now excludes both the root and true subdomains,
+  but not `notexample.com`; `.domain`, `*.domain`, port-qualified IPv4, and
+  bracketed or bare IPv6 entries are normalized consistently. Scoped provider
+  environments and ambient proxy precedence are unchanged.
+- Focused proxy-resolution evidence passes **5/5**, including root/subdomain
+  boundaries, wildcard forms, IPv6, port matching, unsupported proxy protocols,
+  and scoped environment isolation. Final gates pass: `verify:pi-patches`,
+  extension typecheck, `test:changed:src` (no root-source tests for this
+  package-only slice), the pi-ai build, `build:core`, `test:packages`, and
+  `git diff --check`. Compiled package totals remain GSD agent-core **139/139**,
+  agent-modes **287/287**, native **223 pass / 1 skip**, pi-agent-core **3/3**,
+  pi-ai **49/49**, pi-coding-agent **72/72**, pi-tui **8/8**, contracts
+  **9/9**, MCP server **377/377**, and RPC client **30/30**.
+- Exact next task: review, commit, and push this proxy-resolution slice; then
+  apply the isolated write-result wording correction from `e583b290a`.
 
 ## 11. Working-session protocol
 
