@@ -63,6 +63,22 @@ describe("loadEntriesFromFile", () => {
 		const entries = loadEntriesFromFile(file);
 		expect(entries).toHaveLength(2);
 	});
+
+	it("repairs a valid resumed session that lacks a trailing newline", () => {
+		const file = join(tempDir, "unterminated.jsonl");
+		const header = '{"type":"session","id":"abc","timestamp":"2025-01-01T00:00:00Z","cwd":"/tmp"}';
+		const assistant = '{"type":"message","id":"1","parentId":null,"timestamp":"2025-01-01T00:00:01Z","message":{"role":"assistant","content":[],"api":"test","provider":"test","model":"test","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":1}}';
+		writeFileSync(file, `${header}\n${assistant}`);
+
+		expect(loadEntriesFromFile(file)).toHaveLength(2);
+		expect(readFileSync(file, "utf8")).toBe(`${header}\n${assistant}\n`);
+
+		const sm = SessionManager.open(file, tempDir);
+		sm.appendCustomMessageEntry("resume-test", "next", true);
+		const lines = readFileSync(file, "utf8").trim().split("\n");
+		expect(lines).toHaveLength(3);
+		expect(lines.map((line) => JSON.parse(line).type)).toEqual(["session", "message", "custom_message"]);
+	});
 });
 
 describe("findMostRecentSession", () => {

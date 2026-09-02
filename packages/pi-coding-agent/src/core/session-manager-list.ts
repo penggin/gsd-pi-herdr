@@ -1,6 +1,7 @@
 import type { AgentMessage } from "@gsd/pi-agent-core";
 import type { Message, TextContent } from "@gsd/pi-ai";
 import {
+	appendFileSync,
 	closeSync,
 	existsSync,
 	mkdirSync,
@@ -57,6 +58,13 @@ export function loadEntriesFromFile(filePath: string): FileEntry[] {
 	const header = entries[0];
 	if (header.type !== "session" || typeof (header as SessionHeader).id !== "string") {
 		return [];
+	}
+
+	// A resumed append-only session must end on a record boundary. Repair a
+	// valid file before the next entry is appended so its JSON does not become
+	// concatenated with an unterminated final line.
+	if (content.length > 0 && !content.endsWith("\n")) {
+		appendFileSync(resolvedFilePath, "\n");
 	}
 
 	return entries;
