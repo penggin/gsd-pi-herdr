@@ -21,6 +21,22 @@ The practical target is a semi-durable harness:
 - the host app is responsible for recreating compatible non-persistable dependencies on resume
 - recovery restarts from durable boundaries, not from an in-flight provider stream
 
+## Session repository compatibility boundary
+
+New harness callers construct JSONL repositories with `createSessionRepository()`.
+The returned version-aware adapter keeps legacy v3 as the only writable/default
+format while format migration is in progress. Its diagnostics can identify
+harness-v4, future, malformed, and symbolic-link candidates without opening or
+rewriting them. Regular `list()` results contain only readable legacy sessions;
+use `listDiagnostics()` when a migration or support UI needs the excluded-file
+reason.
+
+`JsonlSessionRepo` remains exported for compatibility and low-level storage
+tests, but it is the legacy backend rather than the application construction
+path. A recognized v4 file must fail with `unsupported_version` until the v4
+read-only codec passes its conformance gate. No open or list operation performs
+an implicit format migration.
+
 ## Session owns durable state
 
 Treat session as all durable agent state, not just transcript history.

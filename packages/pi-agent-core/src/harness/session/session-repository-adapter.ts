@@ -34,6 +34,17 @@ export interface ReadOnlyJsonlSessionSnapshot {
 	entries: readonly SessionTreeEntry[];
 }
 
+export interface JsonlSessionCatalogDiagnostic {
+	path: string;
+	modifiedAt: number;
+	detection: JsonlSessionFormatDetection;
+}
+
+/** Canonical construction path for version-aware JSONL session repositories. */
+export function createSessionRepository(options: SessionRepositoryAdapterOptions): SessionRepositoryAdapter {
+	return new SessionRepositoryAdapter(options);
+}
+
 function detectionMessage(detection: JsonlSessionFormatDetection): string {
 	if (detection.status === "invalid") return detection.message;
 	if (detection.status === "unsupported") {
@@ -92,6 +103,17 @@ export class SessionRepositoryAdapter implements JsonlSessionRepoApi {
 
 	list(options?: JsonlSessionListOptions): Promise<JsonlSessionMetadata[]> {
 		return this.legacy.list(options);
+	}
+
+	async listDiagnostics(options?: JsonlSessionListOptions): Promise<JsonlSessionCatalogDiagnostic[]> {
+		const diagnostics = await Promise.all(
+			(await this.legacy.listFiles(options)).map(async (file) => ({
+				path: file.path,
+				modifiedAt: file.mtimeMs,
+				detection: await this.detect(file.path),
+			})),
+		);
+		return diagnostics.sort((left, right) => right.modifiedAt - left.modifiedAt);
 	}
 
 	async delete(metadata: JsonlSessionMetadata): Promise<void> {

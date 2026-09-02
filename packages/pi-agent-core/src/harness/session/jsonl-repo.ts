@@ -4,6 +4,7 @@ import type {
 	JsonlSessionListOptions,
 	JsonlSessionMetadata,
 	JsonlSessionRepoApi,
+	FileInfo,
 	Session,
 } from "../types.js";
 import { SessionError, toError } from "../types.js";
@@ -100,27 +101,37 @@ export class JsonlSessionRepo implements JsonlSessionRepoApi {
 	}
 
 	async list(options: JsonlSessionListOptions = {}): Promise<JsonlSessionMetadata[]> {
-		const dirs = options.cwd ? [await this.getSessionDir(options.cwd)] : await this.listSessionDirs();
 		const sessions: JsonlSessionMetadata[] = [];
-		for (const dir of dirs) {
-			if (!getFileSystemResultOrThrow(await this.fs.exists(dir), `Failed to check session directory ${dir}`)) {
-				continue;
-			}
-			const files = getFileSystemResultOrThrow(
-				await this.fs.listDir(dir),
-				`Failed to list sessions in ${dir}`,
-			).filter((file) => file.kind !== "directory" && file.name.endsWith(".jsonl"));
-			for (const file of files) {
-				try {
-					sessions.push(await loadJsonlSessionMetadata(this.fs, file.path));
-				} catch (error) {
-					const cause = toError(error);
-					if (!(cause instanceof SessionError) || cause.code !== "invalid_session") throw cause;
-				}
+		for (const file of await this.listFiles(options)) {
+			// Catalog diagnostics need to see symlink candidates, but the legacy
+			// session list must never follow one into an arbitrary target.
+			if (file.kind !== "file") continue;
+			try {
+				sessions.push(await loadJsonlSessionMetadata(this.fs, file.path));
+			} catch (error) {
+				const cause = toError(error);
+				if (!(cause instanceof SessionError) || cause.code !== "invalid_session") throw cause;
 			}
 		}
 		sessions.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 		return sessions;
+	}
+
+	/** Enumerate candidate files without parsing or mutating them. */
+	async listFiles(options: JsonlSessionListOptions = {}): Promise<FileInfo[]> {
+		const dirs = options.cwd ? [await this.getSessionDir(options.cwd)] : await this.listSessionDirs();
+		const files: FileInfo[] = [];
+		for (const dir of dirs) {
+			if (!getFileSystemResultOrThrow(await this.fs.exists(dir), `Failed to check session directory ${dir}`)) {
+				continue;
+			}
+			files.push(
+				...getFileSystemResultOrThrow(await this.fs.listDir(dir), `Failed to list sessions in ${dir}`).filter(
+					(file) => file.kind !== "directory" && file.name.endsWith(".jsonl"),
+				),
+			);
+		}
+		return files;
 	}
 
 	async delete(metadata: JsonlSessionMetadata): Promise<void> {

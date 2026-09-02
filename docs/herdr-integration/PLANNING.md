@@ -1662,6 +1662,26 @@ this session does not merge, push, tag, or publish.
   `SessionRepositoryAdapter`, preserving the public `SessionRepo` API and v3
   default. Then add list diagnostics for recognized v4 files without making
   them openable, before starting the isolated P3.2 v4 codec port.
+- Completed the remaining P3.1 construction and catalog boundary. Production
+  code has no raw `JsonlSessionRepo` constructor outside the adapter; new
+  callers now have the exported `createSessionRepository()` factory while the
+  low-level class remains compatible for storage tests and existing imports.
+  The default and only writable format remains legacy v3.
+- Added non-mutating `listDiagnostics()` across all JSONL candidates. It
+  distinguishes readable v3, recognized-but-disabled v4, future/corrupt
+  formats, and symbolic links without making excluded files appear in normal
+  `list()` results. Legacy listing now refuses to follow symlink candidates.
+  The durable-harness author documentation records this construction and
+  migration boundary.
+- Verification for this P3.1 slice: focused repository/adapter tests **10/10**,
+  `@gsd/pi-agent-core` build, `typecheck:extensions`, all compiled package
+  suites via `test:packages`, `build:core`, and `git diff --check` pass. No
+  session file, GSD database, Herdr state, or default writer format changed.
+- Exact next task: commit and push the completed P3.1 catalog slice, then start
+  P3.2 by porting the minimum upstream v4 header/mutation decoder and immutable
+  read-only state reducer. Keep all v4 write/CLI paths disabled until the
+  corruption, bounds, parent-linkage, and upstream-fixture conformance gates
+  pass.
 
 ## 11. Working-session protocol
 
