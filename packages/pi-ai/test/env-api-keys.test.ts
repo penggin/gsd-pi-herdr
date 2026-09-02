@@ -8,6 +8,7 @@ const originalAnthropicVertexProjectId = process.env.ANTHROPIC_VERTEX_PROJECT_ID
 const originalCursorApiKey = process.env.CURSOR_API_KEY;
 const originalGoogleCloudProject = process.env.GOOGLE_CLOUD_PROJECT;
 const originalGcloudProject = process.env.GCLOUD_PROJECT;
+const originalOpenAIApiKey = process.env.OPENAI_API_KEY;
 
 afterEach(() => {
 	if (originalCopilotGitHubToken === undefined) {
@@ -51,6 +52,12 @@ afterEach(() => {
 	} else {
 		process.env.GCLOUD_PROJECT = originalGcloudProject;
 	}
+
+	if (originalOpenAIApiKey === undefined) {
+		delete process.env.OPENAI_API_KEY;
+	} else {
+		process.env.OPENAI_API_KEY = originalOpenAIApiKey;
+	}
 });
 
 describe("environment API keys", () => {
@@ -88,5 +95,13 @@ describe("environment API keys", () => {
 		expect(getApiKeyEnvVars("anthropic-vertex")).toEqual(["ANTHROPIC_VERTEX_PROJECT_ID"]);
 		expect(findEnvKeys("anthropic-vertex")).toEqual(["ANTHROPIC_VERTEX_PROJECT_ID"]);
 		expect(getEnvApiKey("anthropic-vertex")).toBe("<authenticated>");
+	});
+
+	it("prefers request-scoped provider credentials without mutating process.env", () => {
+		process.env.OPENAI_API_KEY = "ambient-key";
+
+		expect(findEnvKeys("openai", { OPENAI_API_KEY: "scoped-key" })).toEqual(["OPENAI_API_KEY"]);
+		expect(getEnvApiKey("openai", { OPENAI_API_KEY: "scoped-key" })).toBe("scoped-key");
+		expect(process.env.OPENAI_API_KEY).toBe("ambient-key");
 	});
 });

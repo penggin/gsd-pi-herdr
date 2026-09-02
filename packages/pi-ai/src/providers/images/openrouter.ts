@@ -51,7 +51,7 @@ export const generateImagesOpenRouter: ImagesFunction<"openrouter-images", Image
 	};
 
 	try {
-		const apiKey = options?.apiKey || getEnvApiKey(model.provider);
+		const apiKey = options?.apiKey || getEnvApiKey(model.provider, options?.env);
 		if (!apiKey) {
 			throw new Error(`No API key available for provider: ${model.provider}`);
 		}

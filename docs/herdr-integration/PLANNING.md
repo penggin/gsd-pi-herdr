@@ -1453,6 +1453,32 @@ this session does not merge, push, tag, or publish.
 - Exact next task: commit and push the affinity-format slice, then audit the
   provider-scoped environment boundary from v0.80 so per-provider endpoint and
   auth configuration can be injected without mutating global `process.env`.
+- Added the first bounded v0.80 provider-scoped environment slice.
+  `StreamOptions` and image options now accept an `env` overlay, simple option
+  mapping preserves it, and provider key discovery consults the overlay before
+  ambient environment or the Bun sandbox fallback without mutating
+  `process.env`. All current simple/raw OpenAI, Codex, Azure, Anthropic,
+  Anthropic Vertex, Google, Mistral, and OpenRouter image entrypoints now pass
+  that scoped overlay into API-key discovery.
+- Scoped `PI_CACHE_RETENTION` now reaches OpenAI Responses/completions,
+  Anthropic Messages, and Bedrock. Azure additionally resolves scoped API key,
+  base URL, resource name, API version, and deployment-name mapping. Existing
+  explicit option precedence and ambient-environment fallback remain unchanged;
+  no environment values are logged or persisted.
+- Focused provider-env/cache/Azure verification passes **45/45** with **4**
+  expected live-credential skips. `typecheck:extensions`, `build:core`,
+  `git diff --check`, and all ten compiled package suites pass; counts remain
+  agent-core **136/136**, agent-modes **287/287**, native **223 pass / 1
+  platform skip**, pi-agent-core **3/3**, pi-ai **49/49**, coding-agent
+  **66/66**, pi-tui **8/8**, contracts **9/9**, MCP **377/377**, and RPC client
+  **30/30**. No dependency or lockfile change was introduced.
+- Risk/limitation: Bedrock credential/client configuration, Google Vertex
+  project/location/ADC resolution, and proxy environment selection still read
+  their established ambient sources internally; this slice does not claim the
+  full upstream provider-env migration.
+- Exact next task: commit and push this scoped-env core, then isolate the
+  Bedrock and Google Vertex scoped configuration paths with dedicated tests
+  before extending the overlay into proxy selection.
 
 ## 11. Working-session protocol
 

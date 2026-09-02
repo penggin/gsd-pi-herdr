@@ -9,6 +9,7 @@ import type {
 	Context,
 	Model,
 	OpenAIResponsesCompat,
+	ProviderEnv,
 	ProviderHeaders,
 	SimpleStreamOptions,
 	StreamFunction,
@@ -17,6 +18,7 @@ import type {
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { headersToRecord } from "../utils/headers.js";
+import { getProviderEnvValue } from "../utils/provider-env.js";
 import { splitDeferredTools } from "../utils/deferred-tools.js";
 import { isCloudflareProvider, resolveCloudflareBaseUrl } from "./cloudflare.js";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.js";
@@ -31,11 +33,11 @@ const OPENAI_RESPONSES_MIN_OUTPUT_TOKENS = 16;
  * Resolve cache retention preference.
  * Defaults to "short" and uses PI_CACHE_RETENTION for backward compatibility.
  */
-function resolveCacheRetention(cacheRetention?: CacheRetention): CacheRetention {
+function resolveCacheRetention(cacheRetention?: CacheRetention, env?: ProviderEnv): CacheRetention {
 	if (cacheRetention) {
 		return cacheRetention;
 	}
-	if (typeof process !== "undefined" && process.env.PI_CACHE_RETENTION === "long") {
+	if (getProviderEnvValue("PI_CACHE_RETENTION", env) === "long") {
 		return "long";
 	}
 	return "short";
@@ -120,8 +122,8 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses", OpenAIRes
 
 		try {
 			// Create OpenAI client
-			const apiKey = options?.apiKey || getEnvApiKey(model.provider) || "";
-			const cacheRetention = resolveCacheRetention(options?.cacheRetention);
+			const apiKey = options?.apiKey || getEnvApiKey(model.provider, options?.env) || "";
+			const cacheRetention = resolveCacheRetention(options?.cacheRetention, options?.env);
 			const cacheSessionId = cacheRetention === "none" ? undefined : options?.sessionId;
 			const client = createClient(model, context, apiKey, options?.headers, cacheSessionId);
 			let params = buildParams(model, context, options);
@@ -174,7 +176,7 @@ export const streamSimpleOpenAIResponses: StreamFunction<"openai-responses", Sim
 	context: Context,
 	options?: SimpleStreamOptions,
 ): AssistantMessageEventStream => {
-	const apiKey = options?.apiKey || getEnvApiKey(model.provider);
+	const apiKey = options?.apiKey || getEnvApiKey(model.provider, options?.env);
 	if (!apiKey) {
 		throw new Error(`No API key for provider: ${model.provider}`);
 	}
@@ -251,7 +253,7 @@ function createClient(
 }
 
 function buildParams(model: Model<"openai-responses">, context: Context, options?: OpenAIResponsesOptions) {
-	const cacheRetention = resolveCacheRetention(options?.cacheRetention);
+	const cacheRetention = resolveCacheRetention(options?.cacheRetention, options?.env);
 	const compat = getCompat(model);
 	const deferredToolsMode = compat.supportsAdditionalTools
 		? "additional-tools"

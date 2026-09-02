@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getModel } from "../src/models.ts";
-import { streamOpenAICompletions } from "../src/providers/openai-completions.ts";
+import { streamOpenAICompletions, streamSimpleOpenAICompletions } from "../src/providers/openai-completions.ts";
 import type { Model } from "../src/types.ts";
 
 interface FakeOpenAIClientOptions {
@@ -64,6 +64,7 @@ vi.mock("openai", () => {
 
 describe("openai-completions prompt caching", () => {
 	const originalEnv = process.env.PI_CACHE_RETENTION;
+	const originalOpenAIApiKey = process.env.OPENAI_API_KEY;
 
 	beforeEach(() => {
 		mockState.lastParams = undefined;
@@ -76,6 +77,11 @@ describe("openai-completions prompt caching", () => {
 			delete process.env.PI_CACHE_RETENTION;
 		} else {
 			process.env.PI_CACHE_RETENTION = originalEnv;
+		}
+		if (originalOpenAIApiKey === undefined) {
+			delete process.env.OPENAI_API_KEY;
+		} else {
+			process.env.OPENAI_API_KEY = originalOpenAIApiKey;
 		}
 	});
 
@@ -93,6 +99,7 @@ describe("openai-completions prompt caching", () => {
 			cacheRetention?: "none" | "short" | "long";
 			sessionId?: string;
 			headers?: Record<string, string>;
+			env?: Record<string, string>;
 		},
 		model: Model<"openai-completions"> = createModel(),
 	) {
@@ -156,6 +163,29 @@ describe("openai-completions prompt caching", () => {
 
 		expect(payload?.prompt_cache_key).toBe("session-env");
 		expect(payload?.prompt_cache_retention).toBe("24h");
+	});
+
+	it("uses request-scoped PI_CACHE_RETENTION without mutating process.env", async () => {
+		const { payload } = await captureRequest({
+			sessionId: "session-scoped",
+			env: { PI_CACHE_RETENTION: "long" },
+		});
+
+		expect(payload?.prompt_cache_key).toBe("session-scoped");
+		expect(payload?.prompt_cache_retention).toBe("24h");
+		expect(process.env.PI_CACHE_RETENTION).toBeUndefined();
+	});
+
+	it("resolves a simple request API key from scoped provider env", async () => {
+		delete process.env.OPENAI_API_KEY;
+		await streamSimpleOpenAICompletions(
+			createModel(),
+			{ messages: [{ role: "user", content: "hi", timestamp: Date.now() }] },
+			{ env: { OPENAI_API_KEY: "scoped-openai-key" } },
+		).result();
+
+		expect(mockState.lastClientOptions?.apiKey).toBe("scoped-openai-key");
+		expect(process.env.OPENAI_API_KEY).toBeUndefined();
 	});
 
 	it("sends known session-affinity headers when compat.sendSessionAffinityHeaders is enabled", async () => {

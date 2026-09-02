@@ -20,6 +20,7 @@ import type {
 	Message,
 	Model,
 	OpenAICompletionsCompat,
+	ProviderEnv,
 	ProviderHeaders,
 	SimpleStreamOptions,
 	StopReason,
@@ -34,6 +35,7 @@ import type {
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { headersToRecord } from "../utils/headers.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
+import { getProviderEnvValue } from "../utils/provider-env.js";
 import { sanitizeToolSchema } from "../utils/sanitize-tool-schema.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { isCloudflareProvider, resolveCloudflareBaseUrl } from "./cloudflare.js";
@@ -184,11 +186,11 @@ type ChatCompletionToolWithCacheControl = OpenAI.Chat.Completions.ChatCompletion
 	cache_control?: OpenAICompatCacheControl;
 };
 
-function resolveCacheRetention(cacheRetention?: CacheRetention): CacheRetention {
+function resolveCacheRetention(cacheRetention?: CacheRetention, env?: ProviderEnv): CacheRetention {
 	if (cacheRetention) {
 		return cacheRetention;
 	}
-	if (typeof process !== "undefined" && process.env.PI_CACHE_RETENTION === "long") {
+	if (getProviderEnvValue("PI_CACHE_RETENTION", env) === "long") {
 		return "long";
 	}
 	return "short";
@@ -221,9 +223,9 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 		};
 
 		try {
-			const apiKey = options?.apiKey || getEnvApiKey(model.provider) || "";
+			const apiKey = options?.apiKey || getEnvApiKey(model.provider, options?.env) || "";
 			const compat = getCompat(model);
-			const cacheRetention = resolveCacheRetention(options?.cacheRetention);
+			const cacheRetention = resolveCacheRetention(options?.cacheRetention, options?.env);
 			const cacheSessionId = cacheRetention === "none" ? undefined : options?.sessionId;
 			const client = createClient(model, context, apiKey, options?.headers, cacheSessionId, compat);
 			let params = buildParams(model, context, options, compat, cacheRetention);
@@ -532,7 +534,7 @@ export const streamSimpleOpenAICompletions: StreamFunction<"openai-completions",
 	context: Context,
 	options?: SimpleStreamOptions,
 ): AssistantMessageEventStream => {
-	const apiKey = options?.apiKey || getEnvApiKey(model.provider);
+	const apiKey = options?.apiKey || getEnvApiKey(model.provider, options?.env);
 	if (!apiKey) {
 		throw new Error(`No API key for provider: ${model.provider}`);
 	}
@@ -615,7 +617,7 @@ function buildParams(
 	context: Context,
 	options?: OpenAICompletionsOptions,
 	compat: ResolvedOpenAICompletionsCompat = getCompat(model),
-	cacheRetention: CacheRetention = resolveCacheRetention(options?.cacheRetention),
+	cacheRetention: CacheRetention = resolveCacheRetention(options?.cacheRetention, options?.env),
 ) {
 	const messages = convertMessages(model, context, compat);
 	const cacheControl = getCompatCacheControl(compat, cacheRetention);

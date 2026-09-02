@@ -80,6 +80,9 @@ export type CacheRetention = "none" | "short" | "long";
 
 export type Transport = "sse" | "websocket" | "websocket-cached" | "auto";
 
+/** Request-scoped provider environment overrides. Values take precedence over `process.env`. */
+export type ProviderEnv = Record<string, string>;
+
 /** Header convention used to route append-only requests to the same provider cache replica. */
 export type SessionAffinityFormat = "openai" | "openai-nosession" | "openrouter";
 
@@ -104,6 +107,8 @@ export interface StreamOptions {
 	maxTokens?: number;
 	signal?: AbortSignal;
 	apiKey?: string;
+	/** Provider environment values scoped to this request; never mutates global `process.env`. */
+	env?: ProviderEnv;
 	/** Pass through the provenance returned by getOAuthApiKey() when using OAuth credentials. */
 	apiKeyProvenance?: ApiKeyProvenance;
 	/**
@@ -169,6 +174,8 @@ export type ProviderStreamOptions = StreamOptions & Record<string, unknown>;
 export interface ImagesOptions {
 	signal?: AbortSignal;
 	apiKey?: string;
+	/** Provider environment values scoped to this request; never mutates global `process.env`. */
+	env?: ProviderEnv;
 	/**
 	 * Optional callback for inspecting or replacing provider payloads before sending.
 	 * Return undefined to keep the payload unchanged.

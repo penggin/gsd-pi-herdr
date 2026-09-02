@@ -132,7 +132,10 @@ export const streamSimpleAnthropicVertex: StreamFunction<"anthropic-vertex", Sim
 	context: Context,
 	options?: SimpleStreamOptions,
 ): AssistantMessageEventStream => {
-	const apiKey = options?.apiKey || getEnvApiKey(model.provider) || getEnvApiKey("anthropic-vertex");
+	const apiKey =
+		options?.apiKey ||
+		getEnvApiKey(model.provider, options?.env) ||
+		getEnvApiKey("anthropic-vertex", options?.env);
 	if (!apiKey) {
 		throw new Error(
 			`No API key for provider: ${model.provider}. Set ANTHROPIC_VERTEX_PROJECT_ID or configure Google Application Default Credentials to use Claude on Vertex AI.`,

@@ -18,6 +18,7 @@ import type {
 	ImageContent,
 	Message,
 	Model,
+	ProviderEnv,
 	ProviderHeaders,
 	ServerToolUse,
 	SimpleStreamOptions,
@@ -35,6 +36,7 @@ import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { splitDeferredTools } from "../utils/deferred-tools.js";
 import { headersToRecord } from "../utils/headers.js";
 import { parseJsonWithRepair, parseStreamingJson } from "../utils/json-parse.js";
+import { getProviderEnvValue } from "../utils/provider-env.js";
 import { sanitizeToolSchema } from "../utils/sanitize-tool-schema.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 
@@ -51,11 +53,11 @@ import {
  * Resolve cache retention preference.
  * Defaults to "short" and uses PI_CACHE_RETENTION for backward compatibility.
  */
-function resolveCacheRetention(cacheRetention?: CacheRetention): CacheRetention {
+function resolveCacheRetention(cacheRetention?: CacheRetention, env?: ProviderEnv): CacheRetention {
 	if (cacheRetention) {
 		return cacheRetention;
 	}
-	if (typeof process !== "undefined" && process.env.PI_CACHE_RETENTION === "long") {
+	if (getProviderEnvValue("PI_CACHE_RETENTION", env) === "long") {
 		return "long";
 	}
 	return "short";
@@ -64,8 +66,9 @@ function resolveCacheRetention(cacheRetention?: CacheRetention): CacheRetention 
 function getCacheControl(
 	model: Model<"anthropic-messages">,
 	cacheRetention?: CacheRetention,
+	env?: ProviderEnv,
 ): { retention: CacheRetention; cacheControl?: CacheControlEphemeral } {
-	const retention = resolveCacheRetention(cacheRetention);
+	const retention = resolveCacheRetention(cacheRetention, env);
 	if (retention === "none") {
 		return { retention };
 	}
@@ -499,7 +502,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 				client = options.client;
 				isOAuth = false;
 			} else {
-				const apiKey = options?.apiKey ?? getEnvApiKey(model.provider) ?? "";
+				const apiKey = options?.apiKey ?? getEnvApiKey(model.provider, options?.env) ?? "";
 
 				let copilotDynamicHeaders: Record<string, string> | undefined;
 				if (model.provider === "github-copilot") {
@@ -510,7 +513,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 					});
 				}
 
-				const cacheRetention = options?.cacheRetention ?? resolveCacheRetention();
+				const cacheRetention = resolveCacheRetention(options?.cacheRetention, options?.env);
 				const cacheSessionId = cacheRetention === "none" ? undefined : options?.sessionId;
 
 				const created = createClient(
@@ -792,7 +795,7 @@ export const streamSimpleAnthropic: StreamFunction<"anthropic-messages", SimpleS
 	context: Context,
 	options?: SimpleStreamOptions,
 ): AssistantMessageEventStream => {
-	const apiKey = options?.apiKey || getEnvApiKey(model.provider);
+	const apiKey = options?.apiKey || getEnvApiKey(model.provider, options?.env);
 	if (!apiKey) {
 		throw new Error(`No API key for provider: ${model.provider}`);
 	}
@@ -957,7 +960,7 @@ function buildParams(
 	isOAuthToken: boolean,
 	options?: AnthropicOptions,
 ): MessageCreateParamsStreaming {
-	const { cacheControl } = getCacheControl(model, options?.cacheRetention);
+	const { cacheControl } = getCacheControl(model, options?.cacheRetention, options?.env);
 	const compat = getAnthropicCompat(model);
 	const normalizeToolName = isOAuthToken ? toClaudeCodeName : (name: string) => name;
 	const toolPlacement = splitDeferredTools(context, compat.supportsToolReferences, normalizeToolName);

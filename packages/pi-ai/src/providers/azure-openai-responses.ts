@@ -13,6 +13,7 @@ import type {
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { headersToRecord } from "../utils/headers.js";
+import { getProviderEnvValue } from "../utils/provider-env.js";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.js";
 import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.js";
 import { buildBaseOptions } from "./simple-options.js";
@@ -39,7 +40,9 @@ function resolveDeploymentName(model: Model<"azure-openai-responses">, options?:
 	if (options?.azureDeploymentName) {
 		return options.azureDeploymentName;
 	}
-	const mappedDeployment = parseDeploymentNameMap(process.env.AZURE_OPENAI_DEPLOYMENT_NAME_MAP).get(model.id);
+	const mappedDeployment = parseDeploymentNameMap(
+		getProviderEnvValue("AZURE_OPENAI_DEPLOYMENT_NAME_MAP", options?.env),
+	).get(model.id);
 	return mappedDeployment || model.id;
 }
 
@@ -104,7 +107,7 @@ export const streamAzureOpenAIResponses: StreamFunction<"azure-openai-responses"
 
 		try {
 			// Create Azure OpenAI client
-			const apiKey = options?.apiKey || getEnvApiKey(model.provider) || "";
+			const apiKey = options?.apiKey || getEnvApiKey(model.provider, options?.env) || "";
 			const client = createClient(model, apiKey, options);
 			let params = buildParams(model, context, options, deploymentName);
 			const nextParams = await options?.onPayload?.(params, model);
@@ -153,7 +156,7 @@ export const streamSimpleAzureOpenAIResponses: StreamFunction<"azure-openai-resp
 	context: Context,
 	options?: SimpleStreamOptions,
 ): AssistantMessageEventStream => {
-	const apiKey = options?.apiKey || getEnvApiKey(model.provider);
+	const apiKey = options?.apiKey || getEnvApiKey(model.provider, options?.env);
 	if (!apiKey) {
 		throw new Error(`No API key for provider: ${model.provider}`);
 	}
@@ -200,10 +203,14 @@ function resolveAzureConfig(
 	model: Model<"azure-openai-responses">,
 	options?: AzureOpenAIResponsesOptions,
 ): { baseUrl: string; apiVersion: string } {
-	const apiVersion = options?.azureApiVersion || process.env.AZURE_OPENAI_API_VERSION || DEFAULT_AZURE_API_VERSION;
+	const apiVersion =
+		options?.azureApiVersion ||
+		getProviderEnvValue("AZURE_OPENAI_API_VERSION", options?.env) ||
+		DEFAULT_AZURE_API_VERSION;
 
-	const baseUrl = options?.azureBaseUrl?.trim() || process.env.AZURE_OPENAI_BASE_URL?.trim() || undefined;
-	const resourceName = options?.azureResourceName || process.env.AZURE_OPENAI_RESOURCE_NAME;
+	const baseUrl =
+		options?.azureBaseUrl?.trim() || getProviderEnvValue("AZURE_OPENAI_BASE_URL", options?.env)?.trim() || undefined;
+	const resourceName = options?.azureResourceName || getProviderEnvValue("AZURE_OPENAI_RESOURCE_NAME", options?.env);
 
 	let resolvedBaseUrl = baseUrl;
 
@@ -229,12 +236,13 @@ function resolveAzureConfig(
 
 function createClient(model: Model<"azure-openai-responses">, apiKey: string, options?: AzureOpenAIResponsesOptions) {
 	if (!apiKey) {
-		if (!process.env.AZURE_OPENAI_API_KEY) {
+		const envApiKey = getProviderEnvValue("AZURE_OPENAI_API_KEY", options?.env);
+		if (!envApiKey) {
 			throw new Error(
 				"Azure OpenAI API key is required. Set AZURE_OPENAI_API_KEY environment variable or pass it as an argument.",
 			);
 		}
-		apiKey = process.env.AZURE_OPENAI_API_KEY;
+		apiKey = envApiKey;
 	}
 
 	const headers = { ...model.headers };

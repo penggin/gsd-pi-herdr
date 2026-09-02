@@ -28,6 +28,7 @@ import type {
 	CacheRetention,
 	Context,
 	Model,
+	ProviderEnv,
 	SimpleStreamOptions,
 	StopReason,
 	StreamFunction,
@@ -42,6 +43,7 @@ import type {
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
+import { getProviderEnvValue } from "../utils/provider-env.js";
 import { createHttpProxyAgentsForTarget } from "../utils/node-http-proxy.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import {
@@ -186,7 +188,7 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream", BedrockOpt
 
 		try {
 			const client = new BedrockRuntimeClient(config);
-			const cacheRetention = resolveCacheRetention(options.cacheRetention);
+			const cacheRetention = resolveCacheRetention(options.cacheRetention, options.env);
 			const inferenceMaxTokens = options.maxTokens ?? (isAnthropicClaudeModel(model) ? model.maxTokens : undefined);
 			let commandInput = {
 				modelId: model.id,
@@ -529,11 +531,11 @@ function mapThinkingLevelToEffort(
  * Resolve cache retention preference.
  * Defaults to "short" and uses PI_CACHE_RETENTION for backward compatibility.
  */
-function resolveCacheRetention(cacheRetention?: CacheRetention): CacheRetention {
+function resolveCacheRetention(cacheRetention?: CacheRetention, env?: ProviderEnv): CacheRetention {
 	if (cacheRetention) {
 		return cacheRetention;
 	}
-	if (typeof process !== "undefined" && process.env.PI_CACHE_RETENTION === "long") {
+	if (getProviderEnvValue("PI_CACHE_RETENTION", env) === "long") {
 		return "long";
 	}
 	return "short";

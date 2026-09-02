@@ -16,6 +16,7 @@ interface CapturedAzureClientOptions {
 }
 
 interface CapturedAzureResponsesPayload {
+	model?: string;
 	prompt_cache_key?: string;
 	max_output_tokens?: number;
 	tool_choice?: unknown;
@@ -200,5 +201,26 @@ describe("azure-openai-responses base URL normalization", () => {
 		await streamAzureOpenAIResponses(model, context, { apiKey: "test-api-key" }).result();
 		expect(azureMock.constructorCalls).toHaveLength(1);
 		expect(azureMock.constructorCalls[0].baseURL).toBe("https://my-resource.openai.azure.com/openai/v1");
+	});
+
+	it("resolves simple requests from a scoped Azure environment", async () => {
+		const model = getModel("azure-openai-responses", "gpt-4o-mini");
+		await streamSimpleAzureOpenAIResponses(model, context, {
+			env: {
+				AZURE_OPENAI_API_KEY: "scoped-key",
+				AZURE_OPENAI_BASE_URL: "https://scoped-resource.openai.azure.com",
+				AZURE_OPENAI_API_VERSION: "2026-08-01",
+				AZURE_OPENAI_DEPLOYMENT_NAME_MAP: "gpt-4o-mini=scoped-deployment",
+			},
+		}).result();
+
+		expect(azureMock.constructorCalls).toHaveLength(1);
+		expect(azureMock.constructorCalls[0]).toMatchObject({
+			apiKey: "scoped-key",
+			apiVersion: "2026-08-01",
+			baseURL: "https://scoped-resource.openai.azure.com/openai/v1",
+		});
+		expect(azureMock.lastParams?.model).toBe("scoped-deployment");
+		expect(process.env.AZURE_OPENAI_API_KEY).toBeUndefined();
 	});
 });

@@ -964,6 +964,8 @@ If `compat` is not set, the library falls back to URL-based detection. If `compa
 
 Models are typed by their API, which keeps the model metadata accurate. Provider-specific option types are enforced when you call the provider functions directly. The generic `stream` and `complete` functions accept `StreamOptions` with additional provider fields.
 
+`StreamOptions.env` and `ImagesOptions.env` provide request-scoped provider environment values. These values take precedence over ambient `process.env` without mutating it, which is useful when one process routes requests through multiple provider accounts or endpoints.
+
 ```typescript
 import { streamAnthropic, type AnthropicOptions } from '@earendil-works/pi-ai';
 
