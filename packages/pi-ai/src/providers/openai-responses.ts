@@ -41,9 +41,16 @@ function resolveCacheRetention(cacheRetention?: CacheRetention): CacheRetention 
 	return "short";
 }
 
+function detectSessionAffinityFormat(model: Pick<Model<"openai-responses">, "provider" | "baseUrl">) {
+	return model.provider === "openrouter" || model.baseUrl.includes("openrouter.ai") ? "openrouter" : "openai";
+}
+
 function getCompat(model: Model<"openai-responses">): Required<OpenAIResponsesCompat> {
+	const legacySessionAffinityFormat = model.compat?.sendSessionIdHeader === false ? "openai-nosession" : undefined;
 	return {
 		sendSessionIdHeader: model.compat?.sendSessionIdHeader ?? true,
+		sessionAffinityFormat:
+			model.compat?.sessionAffinityFormat ?? legacySessionAffinityFormat ?? detectSessionAffinityFormat(model),
 		supportsLongCacheRetention: model.compat?.supportsLongCacheRetention ?? true,
 		supportsAdditionalTools: model.compat?.supportsAdditionalTools ?? false,
 		supportsToolSearch: model.compat?.supportsToolSearch ?? false,
@@ -211,10 +218,14 @@ function createClient(
 	}
 
 	if (sessionId) {
-		if (compat.sendSessionIdHeader) {
-			headers.session_id = sessionId;
+		if (compat.sessionAffinityFormat === "openrouter") {
+			headers["x-session-id"] = sessionId;
+		} else {
+			if (compat.sessionAffinityFormat === "openai") {
+				headers.session_id = sessionId;
+			}
+			headers["x-client-request-id"] = sessionId;
 		}
-		headers["x-client-request-id"] = sessionId;
 	}
 
 	// Merge options headers last so they can override defaults

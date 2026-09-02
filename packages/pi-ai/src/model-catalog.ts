@@ -76,6 +76,9 @@ const CompatSchema = Type.Object({
 	cacheControlFormat: Type.Optional(Type.Literal("anthropic")),
 	sendSessionIdHeader: Type.Optional(Type.Boolean()),
 	sendSessionAffinityHeaders: Type.Optional(Type.Boolean()),
+	sessionAffinityFormat: Type.Optional(
+		Type.Union([Type.Literal("openai"), Type.Literal("openai-nosession"), Type.Literal("openrouter")]),
+	),
 	supportsLongCacheRetention: Type.Optional(Type.Boolean()),
 	supportsEagerToolInputStreaming: Type.Optional(Type.Boolean()),
 	supportsCacheControlOnTools: Type.Optional(Type.Boolean()),

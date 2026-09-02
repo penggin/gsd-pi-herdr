@@ -162,10 +162,17 @@ const OpenAICompletionsCompatSchema = Type.Object({
 	vercelGatewayRouting: Type.Optional(VercelGatewayRoutingSchema),
 	supportsStrictMode: Type.Optional(Type.Boolean()),
 	supportsLongCacheRetention: Type.Optional(Type.Boolean()),
+	sendSessionAffinityHeaders: Type.Optional(Type.Boolean()),
+	sessionAffinityFormat: Type.Optional(
+		Type.Union([Type.Literal("openai"), Type.Literal("openai-nosession"), Type.Literal("openrouter")]),
+	),
 });
 
 const OpenAIResponsesCompatSchema = Type.Object({
 	sendSessionIdHeader: Type.Optional(Type.Boolean()),
+	sessionAffinityFormat: Type.Optional(
+		Type.Union([Type.Literal("openai"), Type.Literal("openai-nosession"), Type.Literal("openrouter")]),
+	),
 	supportsLongCacheRetention: Type.Optional(Type.Boolean()),
 	supportsAdditionalTools: Type.Optional(Type.Boolean()),
 	supportsToolSearch: Type.Optional(Type.Boolean()),

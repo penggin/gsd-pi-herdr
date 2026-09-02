@@ -426,6 +426,8 @@ describe("ModelRegistry", () => {
 					compat: {
 						supportsUsageInStreaming: false,
 						maxTokensField: "max_tokens",
+						sendSessionAffinityHeaders: true,
+						sessionAffinityFormat: "openrouter",
 					},
 					models: [
 						{
@@ -445,6 +447,8 @@ describe("ModelRegistry", () => {
 
 			expect(compat?.supportsUsageInStreaming).toBe(false);
 			expect(compat?.maxTokensField).toBe("max_tokens");
+			expect(compat?.sendSessionAffinityHeaders).toBe(true);
+			expect(compat?.sessionAffinityFormat).toBe("openrouter");
 		});
 
 		test("Codex-compatible proxy auth and endpoint compat load from provider config", () => {

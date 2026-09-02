@@ -1432,6 +1432,27 @@ this session does not merge, push, tag, or publish.
 - Exact next task: commit and push this concurrent output-slot fix, then audit
   the remaining v0.80 session-affinity representation as the next bounded
   compatibility unit before considering the larger sampling/API migrations.
+- Imported the v0.80 structured session-affinity contract without replacing
+  downstream session identity. OpenAI-compatible models can select `openai`,
+  `openai-nosession`, or `openrouter`; Responses auto-detects OpenRouter's
+  `x-session-id`, while other endpoints keep the aligned OpenAI headers.
+  Completions only emits affinity headers when its existing opt-in flag is set.
+- Preserved configuration compatibility: legacy Responses
+  `sendSessionIdHeader: false` maps to `openai-nosession`, and the existing
+  completions `sendSessionAffinityHeaders` boolean remains authoritative for
+  whether headers are sent. The new enum is validated by both remote-catalog
+  and `models.json` schemas, and explicit caller headers still override all
+  generated values.
+- Focused affinity/provider verification passes **81/81** plus the targeted
+  `ModelRegistry` compatibility case **1/1**. `typecheck:extensions`,
+  `build:core`, `git diff --check`, and all ten compiled package suites pass;
+  counts remain agent-core **136/136**, agent-modes **287/287**, native **223
+  pass / 1 platform skip**, pi-agent-core **3/3**, pi-ai **49/49**,
+  coding-agent **66/66**, pi-tui **8/8**, contracts **9/9**, MCP **377/377**,
+  and RPC client **30/30**. No dependency or lockfile change was introduced.
+- Exact next task: commit and push the affinity-format slice, then audit the
+  provider-scoped environment boundary from v0.80 so per-provider endpoint and
+  auth configuration can be injected without mutating global `process.env`.
 
 ## 11. Working-session protocol
 

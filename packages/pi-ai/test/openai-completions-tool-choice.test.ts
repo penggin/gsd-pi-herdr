@@ -1071,6 +1071,7 @@ describe("openai-completions tool_choice", () => {
 				zaiToolStream: false,
 				supportsStrictMode: true,
 				sendSessionAffinityHeaders: false,
+				sessionAffinityFormat: "openai",
 				supportsLongCacheRetention: true,
 			},
 		);

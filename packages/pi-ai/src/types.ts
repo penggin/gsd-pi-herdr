@@ -80,6 +80,9 @@ export type CacheRetention = "none" | "short" | "long";
 
 export type Transport = "sse" | "websocket" | "websocket-cached" | "auto";
 
+/** Header convention used to route append-only requests to the same provider cache replica. */
+export type SessionAffinityFormat = "openai" | "openai-nosession" | "openrouter";
+
 /** Provider-neutral tool selection supported by simple streaming calls. */
 export type ToolChoice = "auto" | "none";
 
@@ -479,14 +482,18 @@ export interface OpenAICompletionsCompat {
 	cacheControlFormat?: "anthropic";
 	/** Whether to send known session-affinity headers (`session_id`, `x-client-request-id`, `x-session-affinity`) from `options.sessionId` when caching is enabled. Default: false. */
 	sendSessionAffinityHeaders?: boolean;
+	/** Session-affinity header convention. Default: OpenRouter endpoints use `openrouter`; all others use `openai`. */
+	sessionAffinityFormat?: SessionAffinityFormat;
 	/** Whether the provider supports long prompt cache retention (`prompt_cache_retention: "24h"` or Anthropic-style `cache_control.ttl: "1h"`, depending on format). Default: true. */
 	supportsLongCacheRetention?: boolean;
 }
 
 /** Compatibility settings for OpenAI Responses APIs. */
 export interface OpenAIResponsesCompat {
-	/** Whether to send the OpenAI `session_id` cache-affinity header from `options.sessionId` when caching is enabled. Default: true. */
+	/** @deprecated Use `sessionAffinityFormat: "openai-nosession"` to omit `session_id`. */
 	sendSessionIdHeader?: boolean;
+	/** Session-affinity header convention. Default: OpenRouter endpoints use `openrouter`; all others use `openai`. */
+	sessionAffinityFormat?: SessionAffinityFormat;
 	/** Whether the provider supports `prompt_cache_retention: "24h"`. Default: true. */
 	supportsLongCacheRetention?: boolean;
 	/** Whether the model supports message-anchored `additional_tools` input items. Default: false. */

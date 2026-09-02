@@ -25,11 +25,16 @@ function getHeader(headers: CapturedHeaders, name: string): string | null {
 async function captureOpenAIResponseHeaders(
 	options: Parameters<typeof streamOpenAIResponses>[2],
 	model: Model<"openai-responses"> = getModel("openai", "gpt-5.4"),
-): Promise<{ sessionId: string | null; clientRequestId: string | null }> {
-	const captured = { sessionId: null as string | null, clientRequestId: null as string | null };
+): Promise<{ sessionId: string | null; clientRequestId: string | null; openRouterSessionId: string | null }> {
+	const captured = {
+		sessionId: null as string | null,
+		clientRequestId: null as string | null,
+		openRouterSessionId: null as string | null,
+	};
 	vi.spyOn(globalThis, "fetch").mockImplementation(async (_input, init) => {
 		captured.sessionId = getHeader(init?.headers, "session_id");
 		captured.clientRequestId = getHeader(init?.headers, "x-client-request-id");
+		captured.openRouterSessionId = getHeader(init?.headers, "x-session-id");
 		return new Response("data: [DONE]\n\n", {
 			status: 200,
 			headers: { "content-type": "text/event-stream" },
@@ -290,7 +295,11 @@ describe("openai-responses provider defaults", () => {
 	it("sets cache-affinity headers for official OpenAI Responses requests with a sessionId", async () => {
 		const captured = await captureOpenAIResponseHeaders({ sessionId: "session-123" });
 
-		expect(captured).toEqual({ sessionId: "session-123", clientRequestId: "session-123" });
+		expect(captured).toEqual({
+			sessionId: "session-123",
+			clientRequestId: "session-123",
+			openRouterSessionId: null,
+		});
 	});
 
 	it("clamps prompt_cache_key to OpenAI's 64-character limit", async () => {
@@ -333,7 +342,11 @@ describe("openai-responses provider defaults", () => {
 		};
 		const captured = await captureOpenAIResponseHeaders({ sessionId: "session-123" }, proxyModel);
 
-		expect(captured).toEqual({ sessionId: "session-123", clientRequestId: "session-123" });
+		expect(captured).toEqual({
+			sessionId: "session-123",
+			clientRequestId: "session-123",
+			openRouterSessionId: null,
+		});
 	});
 
 	it("can omit the session_id header while preserving other cache-affinity headers", async () => {
@@ -345,7 +358,42 @@ describe("openai-responses provider defaults", () => {
 		};
 		const captured = await captureOpenAIResponseHeaders({ sessionId: "session-123" }, proxyModel);
 
-		expect(captured).toEqual({ sessionId: null, clientRequestId: "session-123" });
+		expect(captured).toEqual({
+			sessionId: null,
+			clientRequestId: "session-123",
+			openRouterSessionId: null,
+		});
+	});
+
+	it("uses OpenRouter's x-session-id affinity convention when auto-detected", async () => {
+		const openRouterModel: Model<"openai-responses"> = {
+			...getModel("openai", "gpt-5.4"),
+			provider: "openrouter",
+			baseUrl: "https://openrouter.ai/api/v1",
+		};
+		const captured = await captureOpenAIResponseHeaders({ sessionId: "session-123" }, openRouterModel);
+
+		expect(captured).toEqual({
+			sessionId: null,
+			clientRequestId: null,
+			openRouterSessionId: "session-123",
+		});
+	});
+
+	it("lets the structured affinity format omit only session_id", async () => {
+		const proxyModel: Model<"openai-responses"> = {
+			...getModel("openai", "gpt-5.4"),
+			provider: "opencode",
+			baseUrl: "https://proxy.example.com/v1",
+			compat: { sessionAffinityFormat: "openai-nosession" },
+		};
+		const captured = await captureOpenAIResponseHeaders({ sessionId: "session-123" }, proxyModel);
+
+		expect(captured).toEqual({
+			sessionId: null,
+			clientRequestId: "session-123",
+			openRouterSessionId: null,
+		});
 	});
 
 	it("lets explicit headers override the default OpenAI cache-affinity headers", async () => {
@@ -357,13 +405,17 @@ describe("openai-responses provider defaults", () => {
 			},
 		});
 
-		expect(captured).toEqual({ sessionId: "override-session", clientRequestId: "override-request" });
+		expect(captured).toEqual({
+			sessionId: "override-session",
+			clientRequestId: "override-request",
+			openRouterSessionId: null,
+		});
 	});
 
 	it("omits OpenAI cache-affinity headers when cacheRetention is none", async () => {
 		const captured = await captureOpenAIResponseHeaders({ cacheRetention: "none", sessionId: "session-123" });
 
-		expect(captured).toEqual({ sessionId: null, clientRequestId: null });
+		expect(captured).toEqual({ sessionId: null, clientRequestId: null, openRouterSessionId: null });
 	});
 
 	it.each([
