@@ -1515,6 +1515,21 @@ async function runCloseoutGitAction(
           failureLogPath,
         });
         const hasPartialCommits = Object.keys(gitResult.commitMessages ?? {}).length > 0;
+        if (opts?.softFailure && gitResult.failureClass === "policy") {
+          // Branch/protected-checkout policy is external to the completed task's
+          // source content. Retrying execute-task here would try to claim a
+          // lifecycle that has already been published as completed, producing
+          // `invalid workflow lifecycle transition` and eventually a liveness
+          // wedge. Pause with the original repository guidance instead.
+          s.pendingVerificationRetry = null;
+          s.verificationRetryCount.delete(gitCommitRemediationRetryKey(unit.type, unit.id));
+          ctx.ui.notify(
+            `${failureMsg}\nRepository policy blocked Git closeout. The completed task will not be re-dispatched; move or recover the work in an allowed branch/worktree, then resume auto-mode.`,
+            "error",
+          );
+          await pauseAuto(ctx, pi);
+          return "dispatched";
+        }
         if (
           opts?.softFailure &&
           turnAction === "commit" &&

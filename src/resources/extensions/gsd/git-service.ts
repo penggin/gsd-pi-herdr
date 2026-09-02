@@ -119,7 +119,7 @@ export interface CommitOptions {
 }
 
 export type TurnGitActionMode = "commit" | "snapshot" | "status-only";
-export type TurnGitFailureClass = "transient" | "hook-content" | "unknown";
+export type TurnGitFailureClass = "transient" | "hook-content" | "policy" | "unknown";
 
 export interface TurnGitActionResult {
   action: TurnGitActionMode;
@@ -1359,11 +1359,28 @@ const GIT_OWNED_TRANSIENT_GIT_FAILURE_PATTERNS: readonly RegExp[] = [
   /(?:^|\n)another git process seems to be running/i,
 ];
 
+/**
+ * Repository policy hooks reject the checkout/branch the commit is running in,
+ * not the task's source content. Re-dispatching an already-completed task cannot
+ * repair these failures and crosses the strict completed -> in_progress
+ * lifecycle boundary. Keep the patterns vendor-neutral so downstream branch
+ * guards and hosted protected-branch hooks receive the same fail-closed routing.
+ */
+const GIT_POLICY_FAILURE_PATTERNS: readonly RegExp[] = [
+  /\b(?:protected|restricted)\s+branch\b/i,
+  /\bbranch\s+guard\b/i,
+  /\brefus(?:e|es|ed|ing)\s+to\s+commit\s+directly\b/i,
+  /\b(?:must\s+not|do\s+not|cannot|can't)\s+commit\s+directly\s+(?:on|to)\b/i,
+];
+
 function classifyTurnGitActionFailure(action: TurnGitActionMode, err: unknown): TurnGitFailureClass {
   const errorWithStreams = err as { stderr?: string; message?: string; status?: number };
   const stderr = errorWithStreams.stderr?.trim() ?? "";
   const message = errorWithStreams.message ?? getErrorMessage(err);
   const combined = `${stderr}\n${message}`;
+  if (action === "commit" && GIT_POLICY_FAILURE_PATTERNS.some((pattern) => pattern.test(combined))) {
+    return "policy";
+  }
   // A clean exit-1 is git's canonical "a hook rejected the commit" signal, but the
   // numeric status can be missing or rewritten (wrapped errors, signal kills). When
   // status is absent, fall back to output shape: git announces its own commit
@@ -1388,6 +1405,7 @@ function classifyTurnGitActionFailure(action: TurnGitActionMode, err: unknown): 
 }
 
 function mergeTurnGitFailureClasses(classes: readonly TurnGitFailureClass[]): TurnGitFailureClass {
+  if (classes.includes("policy")) return "policy";
   if (classes.includes("hook-content")) return "hook-content";
   if (classes.includes("unknown")) return "unknown";
   if (classes.includes("transient")) return "transient";

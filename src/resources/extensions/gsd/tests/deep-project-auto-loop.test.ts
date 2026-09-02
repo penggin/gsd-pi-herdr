@@ -1729,6 +1729,61 @@ test("verified task git closeout hook failure pauses after remediation cap", asy
   }
 });
 
+test("verified task protected-branch closeout pauses without re-dispatching the completed task", async () => {
+  const base = makeBase();
+  try {
+    execFileSync("git", ["init"], { cwd: base, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: base, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Test User"], { cwd: base, stdio: "ignore" });
+    const hookPath = join(base, ".git", "hooks", "pre-commit");
+    writeFileSync(
+      hookPath,
+      [
+        "#!/bin/sh",
+        "echo 'project main branch guard: refusing to commit directly on main.' >&2",
+        "echo 'Create a work/feature branch and retry.' >&2",
+        "exit 1",
+      ].join("\n"),
+    );
+    chmodSync(hookPath, 0o755);
+    writeFileSync(join(base, "work.txt"), "changed\n");
+
+    const s = new AutoSession();
+    s.active = true;
+    s.basePath = base;
+    s.originalBasePath = base;
+    s.currentUnit = { type: "execute-task", id: "M001/S01/T01", startedAt: Date.now() };
+
+    let pauseCalled = false;
+    const notifications: Array<{ message: string; severity?: string }> = [];
+    const result = await postUnitPostVerification({
+      s,
+      ctx: { ui: { notify: (message: string, severity?: string) => notifications.push({ message, severity }) } } as any,
+      pi: {} as any,
+      buildSnapshotOpts: () => ({}) as any,
+      lockBase: () => base,
+      stopAuto: async () => {},
+      pauseAuto: async () => { pauseCalled = true; },
+      updateProgressWidget: () => {},
+    });
+
+    assert.equal(result, "stopped");
+    assert.equal(pauseCalled, true);
+    assert.equal(s.pendingVerificationRetry, null);
+    assert.equal(s.verificationRetryCount.has("git-commit:execute-task:M001/S01/T01"), false);
+    assert.ok(
+      notifications.some((entry) =>
+        entry.severity === "error" &&
+        entry.message.includes("Repository policy blocked Git closeout") &&
+        entry.message.includes("will not be re-dispatched")
+      ),
+      "protected-branch policy should pause with recovery guidance instead of retrying the task",
+    );
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test("verified task git closeout partial multi-repo commit pauses instead of redoing task", async () => {
   const root = join(tmpdir(), `gsd-deep-project-parent-commit-${randomUUID()}`);
   const initChildRepo = (dir: string) => {

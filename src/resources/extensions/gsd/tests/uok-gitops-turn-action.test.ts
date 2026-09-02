@@ -255,6 +255,20 @@ test("uok gitops turn action classifies hook rejection with missing exit status 
   assert.equal(signalResult.failureClass, "hook-content");
 });
 
+test("uok gitops turn action classifies protected-branch hook rejection as policy", () => {
+  const err = Object.assign(new Error("git commit failed: repository policy rejected commit"), {
+    stderr: [
+      "project main branch guard: refusing to commit directly on main.",
+      "Create a work/feature branch and retry.",
+    ].join("\n"),
+    status: 1,
+  });
+
+  const result = handleTurnGitActionError("commit", err);
+  assert.equal(result.status, "failed");
+  assert.equal(result.failureClass, "policy");
+});
+
 test("uok gitops turn action classifies exit-1 git lock output as transient", () => {
   const err = Object.assign(new Error("git commit failed: fatal: Unable to create '.git/index.lock'"), {
     stderr: [
