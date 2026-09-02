@@ -2,7 +2,12 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { findMostRecentSession, loadEntriesFromFile, SessionManager } from "../../src/core/session-manager.ts";
+import {
+	findMostRecentSession,
+	listSessionsFromDir,
+	loadEntriesFromFile,
+	SessionManager,
+} from "../../src/core/session-manager.ts";
 
 describe("loadEntriesFromFile", () => {
 	let tempDir: string;
@@ -78,6 +83,29 @@ describe("loadEntriesFromFile", () => {
 		const lines = readFileSync(file, "utf8").trim().split("\n");
 		expect(lines).toHaveLength(3);
 		expect(lines.map((line) => JSON.parse(line).type)).toEqual(["session", "message", "custom_message"]);
+	});
+
+	it("streams records and preserves UTF-8 across read-buffer boundaries", async () => {
+		const file = join(tempDir, "large-unicode.jsonl");
+		const header = { type: "session", id: "large", timestamp: "2025-01-01T00:00:00Z", cwd: "/tmp" };
+		const largeText = `${"x".repeat(1024 * 1024 - 3)}한글-${"y".repeat(1024 * 1024)}`;
+		const message = {
+			type: "message",
+			id: "1",
+			parentId: null,
+			timestamp: "2025-01-01T00:00:01Z",
+			message: { role: "user", content: largeText, timestamp: 1 },
+		};
+		writeFileSync(file, `${JSON.stringify(header)}\n${JSON.stringify(message)}\n`);
+
+		const entries = loadEntriesFromFile(file);
+		expect(entries).toHaveLength(2);
+		expect((entries[1] as typeof message).message.content).toBe(largeText);
+
+		const infos = await listSessionsFromDir(tempDir);
+		expect(infos).toHaveLength(1);
+		expect(infos[0].messageCount).toBe(1);
+		expect(infos[0].allMessagesText).toContain("한글-");
 	});
 });
 

@@ -3,16 +3,18 @@ import type { Message, TextContent } from "@gsd/pi-ai";
 import {
 	appendFileSync,
 	closeSync,
+	createReadStream,
 	existsSync,
 	mkdirSync,
 	openSync,
 	readdirSync,
-	readFileSync,
 	readSync,
 	statSync,
 } from "fs";
-import { readdir, readFile, stat } from "fs/promises";
+import { readdir, stat } from "fs/promises";
 import { join } from "path";
+import { createInterface } from "readline";
+import { StringDecoder } from "string_decoder";
 
 import { getAgentDir as getDefaultAgentDir } from "../config.js";
 import { normalizePath, resolvePath } from "../utils/paths.js";
@@ -36,22 +38,49 @@ export function getDefaultSessionDir(cwd: string, agentDir: string = getDefaultA
 	return sessionDir;
 }
 
+const SESSION_READ_BUFFER_SIZE = 1024 * 1024;
+
+function parseSessionEntryLine(line: string): FileEntry | null {
+	if (!line.trim()) return null;
+	try {
+		return JSON.parse(line) as FileEntry;
+	} catch {
+		return null;
+	}
+}
+
 export function loadEntriesFromFile(filePath: string): FileEntry[] {
 	const resolvedFilePath = normalizePath(filePath);
 	if (!existsSync(resolvedFilePath)) return [];
 
-	const content = readFileSync(resolvedFilePath, "utf8");
 	const entries: FileEntry[] = [];
-	const lines = content.trim().split("\n");
+	let pending = "";
+	const fd = openSync(resolvedFilePath, "r");
+	try {
+		const decoder = new StringDecoder("utf8");
+		const buffer = Buffer.allocUnsafe(SESSION_READ_BUFFER_SIZE);
 
-	for (const line of lines) {
-		if (!line.trim()) continue;
-		try {
-			const entry = JSON.parse(line) as FileEntry;
-			entries.push(entry);
-		} catch {
-			// Skip malformed lines
+		while (true) {
+			const bytesRead = readSync(fd, buffer, 0, buffer.length, null);
+			if (bytesRead === 0) break;
+
+			pending += decoder.write(buffer.subarray(0, bytesRead));
+			let lineStart = 0;
+			let newlineIndex = pending.indexOf("\n", lineStart);
+			while (newlineIndex !== -1) {
+				const entry = parseSessionEntryLine(pending.slice(lineStart, newlineIndex));
+				if (entry) entries.push(entry);
+				lineStart = newlineIndex + 1;
+				newlineIndex = pending.indexOf("\n", lineStart);
+			}
+			pending = pending.slice(lineStart);
 		}
+
+		pending += decoder.end();
+		const finalEntry = parseSessionEntryLine(pending);
+		if (finalEntry) entries.push(finalEntry);
+	} finally {
+		closeSync(fd);
 	}
 
 	if (entries.length === 0) return entries;
@@ -63,7 +92,7 @@ export function loadEntriesFromFile(filePath: string): FileEntry[] {
 	// A resumed append-only session must end on a record boundary. Repair a
 	// valid file before the next entry is appended so its JSON does not become
 	// concatenated with an unterminated final line.
-	if (content.length > 0 && !content.endsWith("\n")) {
+	if (pending) {
 		appendFileSync(resolvedFilePath, "\n");
 	}
 
@@ -116,70 +145,43 @@ function extractTextContent(message: Message): string {
 		.join(" ");
 }
 
-function getLastActivityTime(entries: FileEntry[]): number | undefined {
-	let lastActivityTime: number | undefined;
+function getMessageActivityTime(entry: SessionMessageEntry): number | undefined {
+	const message = entry.message;
+	if (!isMessageWithContent(message)) return undefined;
+	if (message.role !== "user" && message.role !== "assistant") return undefined;
 
-	for (const entry of entries) {
-		if (entry.type !== "message") continue;
+	const msgTimestamp = (message as { timestamp?: number }).timestamp;
+	if (typeof msgTimestamp === "number") return msgTimestamp;
 
-		const message = (entry as SessionMessageEntry).message;
-		if (!isMessageWithContent(message)) continue;
-		if (message.role !== "user" && message.role !== "assistant") continue;
-
-		const msgTimestamp = (message as { timestamp?: number }).timestamp;
-		if (typeof msgTimestamp === "number") {
-			lastActivityTime = Math.max(lastActivityTime ?? 0, msgTimestamp);
-			continue;
-		}
-
-		const entryTimestamp = (entry as SessionEntryBase).timestamp;
-		if (typeof entryTimestamp === "string") {
-			const t = new Date(entryTimestamp).getTime();
-			if (!Number.isNaN(t)) {
-				lastActivityTime = Math.max(lastActivityTime ?? 0, t);
-			}
-		}
-	}
-
-	return lastActivityTime;
-}
-
-function getSessionModifiedDate(entries: FileEntry[], header: SessionHeader, statsMtime: Date): Date {
-	const lastActivityTime = getLastActivityTime(entries);
-	if (typeof lastActivityTime === "number" && lastActivityTime > 0) {
-		return new Date(lastActivityTime);
-	}
-
-	const headerTime = typeof header.timestamp === "string" ? new Date(header.timestamp).getTime() : NaN;
-	return !Number.isNaN(headerTime) ? new Date(headerTime) : statsMtime;
+	const timestamp = (entry as SessionEntryBase).timestamp;
+	const parsed = typeof timestamp === "string" ? new Date(timestamp).getTime() : NaN;
+	return Number.isNaN(parsed) ? undefined : parsed;
 }
 
 async function buildSessionInfo(filePath: string): Promise<SessionInfo | null> {
 	try {
-		const content = await readFile(filePath, "utf8");
-		const entries: FileEntry[] = [];
-		const lines = content.trim().split("\n");
-
-		for (const line of lines) {
-			if (!line.trim()) continue;
-			try {
-				entries.push(JSON.parse(line) as FileEntry);
-			} catch {
-				// Skip malformed lines
-			}
-		}
-
-		if (entries.length === 0) return null;
-		const header = entries[0];
-		if (header.type !== "session") return null;
-
 		const stats = await stat(filePath);
+		let header: SessionHeader | null = null;
 		let messageCount = 0;
 		let firstMessage = "";
 		const allMessages: string[] = [];
 		let name: string | undefined;
+		let lastActivityTime: number | undefined;
 
-		for (const entry of entries) {
+		const lines = createInterface({
+			input: createReadStream(filePath, { encoding: "utf8" }),
+			crlfDelay: Infinity,
+		});
+		for await (const line of lines) {
+			const entry = parseSessionEntryLine(line);
+			if (!entry) continue;
+
+			if (!header) {
+				if (entry.type !== "session") return null;
+				header = entry;
+				continue;
+			}
+
 			if (entry.type === "session_info") {
 				const infoEntry = entry as SessionInfoEntry;
 				name = infoEntry.name?.trim() || undefined;
@@ -188,7 +190,13 @@ async function buildSessionInfo(filePath: string): Promise<SessionInfo | null> {
 			if (entry.type !== "message") continue;
 			messageCount++;
 
-			const message = (entry as SessionMessageEntry).message;
+			const messageEntry = entry as SessionMessageEntry;
+			const activityTime = getMessageActivityTime(messageEntry);
+			if (typeof activityTime === "number") {
+				lastActivityTime = Math.max(lastActivityTime ?? 0, activityTime);
+			}
+
+			const message = messageEntry.message;
 			if (!isMessageWithContent(message)) continue;
 			if (message.role !== "user" && message.role !== "assistant") continue;
 
@@ -200,10 +208,17 @@ async function buildSessionInfo(filePath: string): Promise<SessionInfo | null> {
 				firstMessage = textContent;
 			}
 		}
+		if (!header) return null;
 
 		const cwd = typeof header.cwd === "string" ? header.cwd : "";
 		const parentSessionPath = header.parentSession;
-		const modified = getSessionModifiedDate(entries, header, stats.mtime);
+		const headerTime = typeof header.timestamp === "string" ? new Date(header.timestamp).getTime() : NaN;
+		const modified =
+			typeof lastActivityTime === "number" && lastActivityTime > 0
+				? new Date(lastActivityTime)
+				: !Number.isNaN(headerTime)
+					? new Date(headerTime)
+					: stats.mtime;
 
 		return {
 			path: filePath,
