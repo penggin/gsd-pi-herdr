@@ -56,6 +56,13 @@ import {
 	setDisabledModelProviders as applyDisabledModelProviders,
 	type ProviderAuthMode,
 } from "./provider-readiness.js";
+import {
+	applyExtensionProviderModels,
+	mergeProviderConfig,
+	type ProviderConfigInput,
+} from "./provider-composer.js";
+
+export type { ProviderConfigInput } from "./provider-composer.js";
 
 export type { ProviderAuthMode } from "./provider-readiness.js";
 
@@ -580,18 +587,6 @@ export class ModelRegistry {
 
 				this.storeProviderRequestConfig(providerName, providerConfig);
 
-				// Register custom providers so isProviderRequestReady() can find
-				// them (#3531). Without this, models.json providers with apiKey
-				// fail the auth check and are invisible to the fallback resolver.
-				if (!this.registeredProviders.has(providerName)) {
-					this.registeredProviders.set(providerName, {
-						authMode: providerConfig.apiKey ? "apiKey" : "none",
-						apiKey: providerConfig.apiKey,
-						baseUrl: providerConfig.baseUrl,
-						isReady: providerConfig.apiKey ? () => true : undefined,
-					});
-				}
-
 				if (providerConfig.modelOverrides) {
 					modelOverrides.set(providerName, new Map(Object.entries(providerConfig.modelOverrides)));
 					for (const [modelId, modelOverride] of Object.entries(providerConfig.modelOverrides)) {
@@ -941,9 +936,18 @@ export class ModelRegistry {
 	 * If provider has oauth: registers OAuth provider for /login support.
 	 */
 	registerProvider(providerName: string, config: ProviderConfigInput): void {
-		this.validateProviderConfig(providerName, config);
-		this.applyProviderConfig(providerName, config);
-		this.upsertRegisteredProvider(providerName, config);
+		const previous = this.registeredProviders.get(providerName);
+		const composed = mergeProviderConfig(previous, config);
+		this.validateProviderConfig(providerName, composed);
+		this.registeredProviders.set(providerName, composed);
+		try {
+			this.refresh();
+		} catch (error) {
+			if (previous) this.registeredProviders.set(providerName, previous);
+			else this.registeredProviders.delete(providerName);
+			this.refresh();
+			throw error;
+		}
 	}
 
 	/**
@@ -959,25 +963,6 @@ export class ModelRegistry {
 		if (!this.registeredProviders.has(providerName)) return;
 		this.registeredProviders.delete(providerName);
 		this.refresh();
-	}
-
-	/**
-	 * Upsert a provider config into registeredProviders.
-	 * If the provider is already registered, defined values in the incoming config
-	 * override existing ones; undefined values are preserved from the stored config.
-	 * If the provider is not registered, the incoming config is stored as-is.
-	 */
-	private upsertRegisteredProvider(providerName: string, config: ProviderConfigInput): void {
-		const existing = this.registeredProviders.get(providerName);
-		if (!existing) {
-			this.registeredProviders.set(providerName, config);
-			return;
-		}
-		for (const k of Object.keys(config) as (keyof ProviderConfigInput)[]) {
-			if (config[k] !== undefined) {
-				(existing as Record<string, unknown>)[k] = config[k];
-			}
-		}
 	}
 
 	private validateProviderConfig(providerName: string, config: ProviderConfigInput): void {
@@ -1031,31 +1016,12 @@ export class ModelRegistry {
 
 		this.storeProviderRequestConfig(providerName, config);
 
+		for (const modelDef of config.models ?? []) {
+			this.storeModelHeaders(providerName, modelDef.id, modelDef.headers);
+		}
+		this.models = applyExtensionProviderModels(this.models, providerName, config);
+
 		if (config.models && config.models.length > 0) {
-			// Full replacement: remove existing models for this provider
-			this.models = this.models.filter((m) => m.provider !== providerName);
-
-			// Parse and add new models
-			for (const modelDef of config.models) {
-				const api = modelDef.api || config.api;
-				this.storeModelHeaders(providerName, modelDef.id, modelDef.headers);
-
-				this.models.push({
-					id: modelDef.id,
-					name: modelDef.name,
-					api: api as Api,
-					provider: providerName,
-					baseUrl: modelDef.baseUrl ?? config.baseUrl!,
-					reasoning: modelDef.reasoning,
-					thinkingLevelMap: modelDef.thinkingLevelMap,
-					input: modelDef.input as ("text" | "image")[],
-					cost: modelDef.cost,
-					contextWindow: modelDef.contextWindow,
-					maxTokens: modelDef.maxTokens,
-					headers: undefined,
-					compat: modelDef.compat,
-				} as Model<Api>);
-			}
 
 			// Apply OAuth modifyModels if credentials exist (e.g., to update baseUrl)
 			if (config.oauth?.modifyModels) {
@@ -1064,15 +1030,6 @@ export class ModelRegistry {
 					this.models = config.oauth.modifyModels(this.models, cred);
 				}
 			}
-		} else if (config.baseUrl || config.headers) {
-			// Override-only: update baseUrl for existing models. Request headers are resolved per request.
-			this.models = this.models.map((m) => {
-				if (m.provider !== providerName) return m;
-				return {
-					...m,
-					baseUrl: config.baseUrl ?? m.baseUrl,
-				};
-			});
 		}
 	}
 
@@ -1328,35 +1285,4 @@ export class ModelRegistry {
 	}
 
 	static isLocalModel = isLocalModel;
-}
-
-/**
- * Input type for registerProvider API.
- */
-export interface ProviderConfigInput {
-	name?: string;
-	baseUrl?: string;
-	apiKey?: string;
-	api?: Api;
-	authMode?: ProviderAuthMode;
-	isReady?: () => boolean;
-	streamSimple?: (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => AssistantMessageEventStream;
-	headers?: Record<string, string>;
-	authHeader?: boolean;
-	/** OAuth provider for /login support */
-	oauth?: Omit<OAuthProviderInterface, "id">;
-	models?: Array<{
-		id: string;
-		name: string;
-		api?: Api;
-		baseUrl?: string;
-		reasoning: boolean;
-		thinkingLevelMap?: Model<Api>["thinkingLevelMap"];
-		input: ("text" | "image")[];
-		cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
-		contextWindow: number;
-		maxTokens: number;
-		headers?: Record<string, string>;
-		compat?: Model<Api>["compat"];
-	}>;
 }
