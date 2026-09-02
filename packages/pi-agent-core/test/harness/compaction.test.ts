@@ -606,8 +606,13 @@ describe("harness compaction", () => {
 
 	it("isolates branch summaries from root provider affinity and prompt cache", async () => {
 		const seenOptions: Array<Record<string, unknown> | undefined> = [];
+		const retryEvents: string[] = [];
 		const { faux, model } = createFauxModel(false);
 		faux.setResponses([
+			(_context, options) => {
+				seenOptions.push(options as Record<string, unknown> | undefined);
+				return fauxAssistantMessage("", { stopReason: "error", errorMessage: "HTTP 503 overloaded" });
+			},
 			(_context, options) => {
 				seenOptions.push(options as Record<string, unknown> | undefined);
 				return fauxAssistantMessage("## Goal\nBranch summary");
@@ -620,10 +625,21 @@ describe("harness compaction", () => {
 			apiKey: "test-key",
 			headers: { "x-test": "summary" },
 			signal: new AbortController().signal,
-			requestOptions: { timeoutMs: 4321, maxRetries: 1, metadata: { purpose: "branch" } },
+			requestOptions: {
+				timeoutMs: 4321,
+				maxRetries: 1,
+				metadata: { purpose: "branch" },
+				retry: { enabled: true, maxRetries: 1, baseDelayMs: 0 },
+				retryCallbacks: {
+					onRetryScheduled: (attempt) => retryEvents.push(`scheduled:${attempt}`),
+					onRetryAttemptStart: () => retryEvents.push("started"),
+					onRetryFinished: (success, attempt) => retryEvents.push(`finished:${success}:${attempt}`),
+				},
+			},
 		});
 
 		expect(result.ok).toBe(true);
+		expect(seenOptions).toHaveLength(2);
 		expect(seenOptions[0]).toMatchObject({
 			cacheRetention: "none",
 			timeoutMs: 4321,
@@ -632,6 +648,8 @@ describe("harness compaction", () => {
 			headers: { "x-test": "summary" },
 		});
 		expect(seenOptions[0]?.sessionId).toEqual(expect.any(String));
+		expect(seenOptions[1]?.sessionId).toBe(seenOptions[0]?.sessionId);
+		expect(retryEvents).toEqual(["scheduled:1", "started", "finished:true:1"]);
 	});
 
 	it("returns compaction error results without throwing", async () => {

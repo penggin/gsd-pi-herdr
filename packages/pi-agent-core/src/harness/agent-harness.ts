@@ -2,6 +2,8 @@ import {
 	type AssistantMessage,
 	type ImageContent,
 	type Model,
+	type RetryCallbacks,
+	type RetryPolicy,
 	streamSimple,
 	type UserMessage,
 } from "@gsd/pi-ai";
@@ -181,6 +183,7 @@ export class AgentHarness<
 	private thinkingLevel: ThinkingLevel;
 	private systemPrompt: AgentHarnessOptions<TSkill, TPromptTemplate, TTool>["systemPrompt"];
 	private streamOptions: AgentHarnessStreamOptions;
+	private retry: RetryPolicy | undefined;
 	private getApiKeyAndHeaders?: AgentHarnessOptions["getApiKeyAndHeaders"];
 	private resources: AgentHarnessResources<TSkill, TPromptTemplate>;
 	private tools = new Map<string, TTool>();
@@ -197,6 +200,7 @@ export class AgentHarness<
 		this.session = options.session;
 		this.resources = options.resources ?? {};
 		this.streamOptions = cloneStreamOptions(options.streamOptions);
+		this.retry = options.retry;
 		this.systemPrompt = options.systemPrompt;
 		this.getApiKeyAndHeaders = options.getApiKeyAndHeaders;
 		for (const tool of options.tools ?? []) {
@@ -295,13 +299,28 @@ export class AgentHarness<
 		return current;
 	}
 
-	private summaryRequestOptions(model: Model<any>): SummaryRequestOptions {
+	private retryCallbacks(operation: "compaction" | "branch_summary"): RetryCallbacks {
+		return {
+			onRetryScheduled: (attempt, maxAttempts, delayMs, errorMessage) =>
+				this.emitOwn({ type: "retry_scheduled", operation, attempt, maxAttempts, delayMs, errorMessage }),
+			onRetryAttemptStart: () => this.emitOwn({ type: "retry_attempt_start", operation }),
+			onRetryFinished: (success, attempt, finalError) =>
+				this.emitOwn({ type: "retry_finished", operation, success, attempt, finalError }),
+		};
+	}
+
+	private summaryRequestOptions(
+		model: Model<any>,
+		operation: "compaction" | "branch_summary",
+	): SummaryRequestOptions {
 		return {
 			transport: this.streamOptions.transport,
 			timeoutMs: this.streamOptions.timeoutMs,
 			maxRetries: this.streamOptions.maxRetries,
 			maxRetryDelayMs: this.streamOptions.maxRetryDelayMs,
 			metadata: this.streamOptions.metadata,
+			retry: this.retry,
+			retryCallbacks: this.retryCallbacks(operation),
 			beforeRequest: async (sessionId, options) =>
 				await this.emitBeforeProviderRequest(model, sessionId, options),
 			onPayload: async (payload) => await this.emitBeforeProviderPayload(model, payload),
@@ -736,7 +755,7 @@ export class AgentHarness<
 						customInstructions,
 						undefined,
 						this.thinkingLevel,
-						this.summaryRequestOptions(model),
+						this.summaryRequestOptions(model, "compaction"),
 					);
 			if (!compactResult.ok) throw compactResult.error;
 			const result = compactResult.value;
@@ -799,7 +818,7 @@ export class AgentHarness<
 					signal: new AbortController().signal,
 					customInstructions: hookResult?.customInstructions ?? options?.customInstructions,
 					replaceInstructions: hookResult?.replaceInstructions ?? options?.replaceInstructions,
-					requestOptions: this.summaryRequestOptions(model),
+					requestOptions: this.summaryRequestOptions(model, "branch_summary"),
 				});
 				if (!branchSummary.ok) {
 					if (branchSummary.error.code === "aborted") return { cancelled: true };

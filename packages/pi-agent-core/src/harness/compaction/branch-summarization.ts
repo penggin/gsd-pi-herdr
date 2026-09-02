@@ -1,5 +1,5 @@
 import type { Model } from "@gsd/pi-ai";
-import { completeSimple } from "@gsd/pi-ai";
+import { completeSimple, retryAssistantCall } from "@gsd/pi-ai";
 import type { AgentMessage } from "../../types.js";
 import {
 	convertToLlm,
@@ -246,15 +246,22 @@ export async function generateBranchSummary(
 		},
 	];
 	const isolatedOptions = await isolatedSummaryRequestOptions(requestOptions, headers);
-	const response = await completeSimple(
-		model,
-		{ systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages },
-		{
-			...isolatedOptions,
-			apiKey,
-			signal,
-			maxTokens: 2048,
-		},
+	const completionOptions = {
+		...isolatedOptions,
+		apiKey,
+		signal,
+		maxTokens: 2048,
+	};
+	const response = await retryAssistantCall(
+		() =>
+			completeSimple(
+				model,
+				{ systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages },
+				completionOptions,
+			),
+		requestOptions?.retry,
+		signal,
+		requestOptions?.retryCallbacks,
 	);
 	if (response.stopReason === "aborted") {
 		return err(new BranchSummaryError("aborted", response.errorMessage || "Branch summary aborted"));

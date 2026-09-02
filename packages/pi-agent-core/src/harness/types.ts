@@ -1,4 +1,4 @@
-import type { ImageContent, Model, SimpleStreamOptions, TextContent, Transport } from "@gsd/pi-ai";
+import type { ImageContent, Model, RetryPolicy, SimpleStreamOptions, TextContent, Transport } from "@gsd/pi-ai";
 import type { AgentEvent, AgentMessage, AgentTool, QueueMode, ThinkingLevel } from "../index.js";
 import type { Session } from "./session/session.js";
 
@@ -600,6 +600,28 @@ export interface SessionTreeEvent {
 	fromHook?: boolean;
 }
 
+export interface RetryScheduledEvent {
+	type: "retry_scheduled";
+	operation: "compaction" | "branch_summary";
+	attempt: number;
+	maxAttempts: number;
+	delayMs: number;
+	errorMessage: string;
+}
+
+export interface RetryAttemptStartEvent {
+	type: "retry_attempt_start";
+	operation: "compaction" | "branch_summary";
+}
+
+export interface RetryFinishedEvent {
+	type: "retry_finished";
+	operation: "compaction" | "branch_summary";
+	success: boolean;
+	attempt: number;
+	finalError?: string;
+}
+
 export interface ModelSelectEvent {
 	type: "model_select";
 	model: Model<any>;
@@ -641,6 +663,9 @@ export type AgentHarnessOwnEvent<
 	| SessionCompactEvent
 	| SessionBeforeTreeEvent
 	| SessionTreeEvent
+	| RetryScheduledEvent
+	| RetryAttemptStartEvent
+	| RetryFinishedEvent
 	| ModelSelectEvent
 	| ThinkingLevelSelectEvent
 	| ResourcesUpdateEvent<TSkill, TPromptTemplate>;
@@ -704,6 +729,9 @@ export type AgentHarnessEventResultMap = {
 	session_compact: undefined;
 	session_before_tree: SessionBeforeTreeResult | undefined;
 	session_tree: undefined;
+	retry_scheduled: undefined;
+	retry_attempt_start: undefined;
+	retry_finished: undefined;
 	model_select: undefined;
 	thinking_level_select: undefined;
 	resources_update: undefined;
@@ -813,6 +841,8 @@ export interface AgentHarnessOptions<
 	) => Promise<{ apiKey: string; headers?: Record<string, string> } | undefined>;
 	/** Curated stream/provider request options. Snapshotted at turn start. */
 	streamOptions?: AgentHarnessStreamOptions;
+	/** Optional bounded retry policy for generated summaries. */
+	retry?: RetryPolicy;
 	model: Model<any>;
 	thinkingLevel?: ThinkingLevel;
 	activeToolNames?: string[];

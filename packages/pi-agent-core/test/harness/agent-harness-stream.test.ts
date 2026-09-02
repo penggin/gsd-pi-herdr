@@ -209,10 +209,12 @@ describe("AgentHarness stream configuration", () => {
 		const payloads: unknown[] = [];
 		const responses: number[] = [];
 		const requestSessionIds: string[] = [];
+		const retryEvents: string[] = [];
 		const registration = registerFauxProvider();
 		registrations.push(registration);
 		registration.setResponses([
 			fauxAssistantMessage("initial response"),
+			fauxAssistantMessage("", { stopReason: "error", errorMessage: "HTTP 503 overloaded" }),
 			async (_context, options, _state, model) => {
 				summaryOptions = captureOptions(options);
 				await options?.onPayload?.({ purpose: "summary" }, model);
@@ -234,6 +236,7 @@ describe("AgentHarness stream configuration", () => {
 				metadata: { root: true },
 				cacheRetention: "long",
 			},
+			retry: { enabled: true, maxRetries: 1, baseDelayMs: 0 },
 			getApiKeyAndHeaders: async () => ({ apiKey: "secret", headers: { "x-auth": "auth" } }),
 		});
 
@@ -247,6 +250,9 @@ describe("AgentHarness stream configuration", () => {
 		});
 		harness.subscribe((event) => {
 			if (event.type === "after_provider_response") responses.push(event.status);
+			if (event.type === "retry_scheduled") retryEvents.push(`scheduled:${event.attempt}`);
+			if (event.type === "retry_attempt_start") retryEvents.push("started");
+			if (event.type === "retry_finished") retryEvents.push(`finished:${event.success}:${event.attempt}`);
 		});
 
 		await harness.prompt("hello");
@@ -265,6 +271,7 @@ describe("AgentHarness stream configuration", () => {
 		});
 		expect(summaryOptions?.sessionId).toBe(requestSessionIds[1]);
 		expect(payloads).toEqual([{ purpose: "summary" }]);
-		expect(responses).toEqual([200, 200]);
+		expect(responses).toEqual([200, 200, 200]);
+		expect(retryEvents).toEqual(["scheduled:1", "started", "finished:true:1"]);
 	});
 });

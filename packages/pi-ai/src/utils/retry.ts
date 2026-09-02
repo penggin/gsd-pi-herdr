@@ -59,6 +59,102 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
 	"ResourceExhausted",
 ]);
 
+/** Bounded exponential-backoff policy for assistant-producing calls. */
+export interface RetryPolicy {
+	enabled: boolean;
+	/** Maximum retries after the initial call. */
+	maxRetries: number;
+	/** Base backoff in milliseconds; attempt N waits `baseDelayMs * 2^(N - 1)`. */
+	baseDelayMs: number;
+}
+
+/** Lifecycle callbacks emitted around retry attempts. */
+export interface RetryCallbacks {
+	onRetryScheduled?: (
+		attempt: number,
+		maxAttempts: number,
+		delayMs: number,
+		errorMessage: string,
+	) => void | Promise<void>;
+	onRetryAttemptStart?: () => void | Promise<void>;
+	onRetryFinished?: (success: boolean, attempt: number, finalError?: string) => void | Promise<void>;
+}
+
+class RetrySleepAbortError extends Error {
+	constructor() {
+		super("Aborted");
+	}
+}
+
+function sleepForRetry(ms: number, signal?: AbortSignal): Promise<void> {
+	return new Promise((resolve, reject) => {
+		if (signal?.aborted) {
+			reject(new RetrySleepAbortError());
+			return;
+		}
+		let settled = false;
+		const finish = (callback: () => void) => {
+			if (settled) return;
+			settled = true;
+			signal?.removeEventListener("abort", onAbort);
+			callback();
+		};
+		const timeout = setTimeout(() => finish(resolve), Math.max(0, ms));
+		const onAbort = () => {
+			clearTimeout(timeout);
+			finish(() => reject(new RetrySleepAbortError()));
+		};
+		signal?.addEventListener("abort", onAbort, { once: true });
+	});
+}
+
+/**
+ * Retry transient assistant failures without retrying aborts, quota exhaustion,
+ * billing failures, or other deterministic errors.
+ */
+export async function retryAssistantCall(
+	produce: () => Promise<AssistantMessage>,
+	policy: RetryPolicy | undefined,
+	signal: AbortSignal | undefined,
+	callbacks?: RetryCallbacks,
+): Promise<AssistantMessage> {
+	const maxRetries = policy?.enabled ? Math.max(0, Math.floor(policy.maxRetries)) : 0;
+	let attempt = 0;
+	let lastRetry: { attempt: number; errorMessage: string } | undefined;
+
+	for (;;) {
+		const response = await produce();
+		if (response.stopReason === "aborted") {
+			if (lastRetry) await callbacks?.onRetryFinished?.(false, lastRetry.attempt);
+			return response;
+		}
+		if (response.stopReason !== "error") {
+			if (lastRetry) await callbacks?.onRetryFinished?.(true, lastRetry.attempt);
+			return response;
+		}
+		if (attempt >= maxRetries || !isRetryableAssistantError(response)) {
+			if (lastRetry) await callbacks?.onRetryFinished?.(false, lastRetry.attempt, response.errorMessage);
+			return response;
+		}
+
+		attempt += 1;
+		const errorMessage = response.errorMessage || "Unknown error";
+		lastRetry = { attempt, errorMessage };
+		const delayMs = Math.max(0, policy!.baseDelayMs) * 2 ** (attempt - 1);
+		await callbacks?.onRetryScheduled?.(attempt, maxRetries, delayMs, errorMessage);
+		try {
+			await sleepForRetry(delayMs, signal);
+		} catch (error) {
+			await callbacks?.onRetryFinished?.(false, attempt, errorMessage);
+			if (error instanceof RetrySleepAbortError) {
+				return { ...response, stopReason: "aborted", errorMessage: undefined };
+			}
+			throw error;
+		}
+		await callbacks?.onRetryAttemptStart?.();
+	}
+}
+
 /** Classify transient provider and transport failures without applying retry policy. */
 export function isRetryableAssistantError(message: AssistantMessage): boolean {
 	if (message.stopReason !== "error" || !message.errorMessage) return false;

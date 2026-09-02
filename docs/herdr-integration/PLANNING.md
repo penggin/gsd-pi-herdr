@@ -1842,10 +1842,23 @@ this session does not merge, push, tag, or publish.
   result reduction, steer/follow-up queues, retry classification, abort, and
   shutdown against the working downstream contracts. Then run the same harness
   parity matrix over memory and v4 JSONL before enabling an adapter.
-- Exact next task: commit and push the isolated-summary slice, then compare the
-  downstream event/reducer/result and retry/shutdown behavior with upstream
-  v0.81–v0.84 capability history. Do not replace the downstream harness with the
-  v0.84.4 scaffold and do not select v4 at runtime yet.
+- Imported the missing bounded assistant retry primitive on top of the existing
+  downstream transient-error classifier. Summary retries are opt-in, use
+  exponential backoff, honor cancellation during backoff, and emit scheduled,
+  attempt-start, and finished lifecycle events. Quota, billing, disabled-policy,
+  abort, and deterministic errors remain terminal. Compaction and branch-summary
+  retries keep one isolated request identity across attempts and do not inherit
+  root affinity.
+- Focused retry verification passes **16/16** in pi-ai and the combined harness
+  suites remain **37/37**, including transient recovery in both compaction and
+  branch-summary paths plus retry lifecycle ordering. `verify:pi-patches`,
+  `typecheck:extensions`, `build:core`, the full compiled package suite, and
+  `git diff --check` pass with the established package counts unchanged.
+- Exact next task: document, gate, commit, and push the bounded-summary-retry
+  slice, then reconcile abort/shutdown task ownership and pending session-write
+  settlement against upstream `82c485983` through `9cde1725d`. Do not replace
+  the downstream harness with the v0.84.4 scaffold and do not select v4 at
+  runtime yet.
 
 ## 11. Working-session protocol
 

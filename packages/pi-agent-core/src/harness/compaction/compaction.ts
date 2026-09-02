@@ -1,5 +1,14 @@
-import type { AssistantMessage, ImageContent, Model, SimpleStreamOptions, TextContent, Usage } from "@gsd/pi-ai";
-import { completeSimple } from "@gsd/pi-ai";
+import type {
+	AssistantMessage,
+	ImageContent,
+	Model,
+	RetryCallbacks,
+	RetryPolicy,
+	SimpleStreamOptions,
+	TextContent,
+	Usage,
+} from "@gsd/pi-ai";
+import { completeSimple, retryAssistantCall } from "@gsd/pi-ai";
 import type { AgentMessage, ThinkingLevel } from "../../types.js";
 import {
 	convertToLlm,
@@ -48,6 +57,10 @@ export interface SummaryRequestOptions
 		SimpleStreamOptions,
 		"transport" | "timeoutMs" | "maxRetries" | "maxRetryDelayMs" | "metadata" | "onPayload" | "onResponse"
 	> {
+	/** Optional bounded retry policy for transient summary failures. */
+	retry?: RetryPolicy;
+	/** Lifecycle callbacks for summary retries. */
+	retryCallbacks?: RetryCallbacks;
 	/** Apply provider lifecycle hooks after the isolated request identity is assigned. */
 	beforeRequest?: (
 		sessionId: string,
@@ -60,7 +73,7 @@ export async function isolatedSummaryRequestOptions(
 	options?: SummaryRequestOptions,
 	headers?: Record<string, string>,
 ): Promise<SummaryProviderRequestOptions & { cacheRetention: "none"; sessionId: string }> {
-	const { beforeRequest, ...forwarded } = options ?? {};
+	const { beforeRequest, retry: _retry, retryCallbacks: _retryCallbacks, ...forwarded } = options ?? {};
 	const sessionId = uuidv7();
 	const initial = {
 		...forwarded,
@@ -550,10 +563,16 @@ export async function generateSummary(
 			? { ...isolatedOptions, maxTokens, signal, apiKey, reasoning: thinkingLevel }
 			: { ...isolatedOptions, maxTokens, signal, apiKey };
 
-	const response = await completeSimple(
-		model,
-		{ systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages },
-		completionOptions,
+	const response = await retryAssistantCall(
+		() =>
+			completeSimple(
+				model,
+				{ systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages },
+				completionOptions,
+			),
+		requestOptions?.retry,
+		signal,
+		requestOptions?.retryCallbacks,
 	);
 	if (response.stopReason === "aborted") {
 		return err(new CompactionError("aborted", response.errorMessage || "Summarization aborted"));
@@ -791,9 +810,7 @@ async function generateTurnPrefixSummary(
 	];
 
 	const isolatedOptions = await isolatedSummaryRequestOptions(requestOptions, headers);
-	const response = await completeSimple(
-		model,
-		{ systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages },
+	const completionOptions =
 		model.reasoning && thinkingLevel && thinkingLevel !== "off"
 			? {
 					...isolatedOptions,
@@ -802,7 +819,17 @@ async function generateTurnPrefixSummary(
 					apiKey,
 					reasoning: thinkingLevel,
 				}
-			: { ...isolatedOptions, maxTokens, signal, apiKey },
+			: { ...isolatedOptions, maxTokens, signal, apiKey };
+	const response = await retryAssistantCall(
+		() =>
+			completeSimple(
+				model,
+				{ systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages },
+				completionOptions,
+			),
+		requestOptions?.retry,
+		signal,
+		requestOptions?.retryCallbacks,
 	);
 	if (response.stopReason === "aborted") {
 		return err(new CompactionError("aborted", response.errorMessage || "Turn prefix summarization aborted"));
