@@ -413,3 +413,29 @@ without the marker keep the complete active tool list. Mixed tool-set
 contractions are never represented as append-only provenance, and an Anthropic
 request with no immediate definition falls back to an eager tool list. These
 fallbacks preserve replay correctness ahead of prompt-cache optimization.
+
+---
+
+## ADR-H027 — Migrate session formats through dual readers, never startup rewrite
+
+**Status:** Accepted
+**Date:** 2026-09-03
+
+The Pi v0.84 harness/session-v4 migration must preserve existing version-3
+conversation logs as user data. Runtime startup may detect and read both
+formats, but it cannot rewrite a v3 file in place, silently replace a failed
+open with an empty session, or mix v3 and v4 records in one file. A session is
+written only in the format selected when that file is created.
+
+The migration proceeds behind a version-neutral repository adapter. The
+legacy-v3 implementation remains the default and rollback path until v4 memory
+and JSONL conformance, coding-agent/headless/web parity, GSD lifecycle
+regressions, Assessment Gate isolation, and real Herdr worker E2E all pass. Any
+later migration command must copy to a new file, validate semantic equivalence,
+and retain the source.
+
+Provider directory reorganization is explicitly independent of session format.
+Provider behavior may be imported when a tested semantic gap exists, but file
+moves or API renames are not a migration goal and may not share a cutover commit
+with session persistence changes. GSD databases and AssessmentRun records remain
+canonical for workflow state; Herdr remains authoritative for terminal runtime.

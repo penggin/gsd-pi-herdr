@@ -1589,6 +1589,20 @@ this session does not merge, push, tag, or publish.
   priority-3 code import, write a dedicated migration plan for the v0.84
   harness/session-v4 and provider-directory reorganization, including GSD DB,
   Herdr worker, JSONL, compaction, and Assessment Gate compatibility boundaries.
+- Added `docs/dev/pi-v084-major-migration-plan.md` after measuring the actual
+  upstream boundary: 69 harness/test files and a distinct version-4 JSONL
+  schema versus downstream's two version-3 session surfaces. The plan requires
+  dual readers, one format per file, no startup rewrite, legacy-v3 rollback,
+  version-neutral adapters, memory/JSONL conformance, downstream lifecycle
+  parity, and real Herdr E2E before any default cutover.
+- Architectural decision for the migration plan: provider directory churn is
+  not itself a deliverable. Provider behavior is imported only when a tested
+  semantic gap remains, and provider moves never share a commit with session
+  format changes. GSD DB/AssessmentRun authority and Herdr runtime authority
+  remain outside the conversation session store.
+- Exact next task: commit and push the priority-3 plan, then implement P3.0
+  characterization only—version detection and immutable v3/v4/corrupt/torn-tail
+  fixtures—without adding or selecting a v4 writer.
 
 ## 11. Working-session protocol
 
