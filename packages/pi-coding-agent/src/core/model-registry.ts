@@ -402,7 +402,9 @@ export class ModelRegistry {
 	) {
 		this.authStorage = authStorage;
 		this._modelsJsonPath = modelsJsonPath ? normalizePath(modelsJsonPath) : undefined;
-		this.discoveryCache = new ModelDiscoveryCache();
+		this.discoveryCache = new ModelDiscoveryCache(
+			this._modelsJsonPath ? join(dirname(this._modelsJsonPath), "discovery-cache.json") : undefined,
+		);
 		this.modelsStore =
 			modelsStore ??
 			(this._modelsJsonPath
@@ -1047,6 +1049,7 @@ export class ModelRegistry {
 							},
 							options,
 						);
+						this.discoveryCache.clear(providerName);
 						results.push(result);
 						continue;
 					}

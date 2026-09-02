@@ -1,5 +1,8 @@
 import { strict as assert } from "node:assert";
 import { createServer } from "node:http";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import type { Api, Model } from "@gsd/pi-ai";
 import { AuthStorage } from "../core/auth-storage.js";
@@ -91,4 +94,32 @@ test("forced discovery revalidates a stored catalog and preserves it on 304", as
 	assert.equal(requestEtag, '"catalog-v1"');
 	assert.equal(requestModified, new Date(lastModified).toUTCString());
 	assert.ok((await store.read("test-proxy"))!.checkedAt! > 1);
+});
+
+test("model registry promotes and removes a fresh legacy discovery entry", async (t) => {
+	const directory = mkdtempSync(join(tmpdir(), "gsd-model-registry-legacy-"));
+	t.after(() => rmSync(directory, { recursive: true, force: true }));
+	const legacyPath = join(directory, "discovery-cache.json");
+	writeFileSync(legacyPath, JSON.stringify({
+		version: 1,
+		entries: {
+			openai: {
+				models: [{ id: "legacy-model", name: "Legacy model", input: ["text"] }],
+				fetchedAt: Date.now(),
+				ttlMs: 60_000,
+			},
+		},
+	}));
+	const store = new InMemoryCodingAgentModelsStore();
+	const registry = ModelRegistry.create(
+		AuthStorage.create(join(directory, "auth.json")),
+		join(directory, "models.json"),
+		store,
+	);
+
+	const result = await registry.discoverModels(["openai"]);
+	assert.equal(result[0]?.models[0]?.id, "legacy-model");
+	assert.equal((await store.read("openai"))?.models[0]?.id, "legacy-model");
+	const legacy = JSON.parse(readFileSync(legacyPath, "utf8")) as { entries: Record<string, unknown> };
+	assert.equal(legacy.entries.openai, undefined);
 });
