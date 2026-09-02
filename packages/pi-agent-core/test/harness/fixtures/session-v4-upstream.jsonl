@@ -1,0 +1,2 @@
+{"kind":"header","version":4,"id":"fixture-v4","createdAt":1788393600000,"cwd":"/fixture/project","metadata":{"source":"upstream-v0.84.4"}}
+{"kind":"entry","seq":1,"lane":"main","type":"message","id":"user-1","parentId":null,"timestamp":1788393601000,"message":{"role":"user","content":[{"type":"text","text":"hello v4"}],"timestamp":1788393601000}}

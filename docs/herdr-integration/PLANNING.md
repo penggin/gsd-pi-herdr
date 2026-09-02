@@ -1603,6 +1603,28 @@ this session does not merge, push, tag, or publish.
 - Exact next task: commit and push the priority-3 plan, then implement P3.0
   characterization only—version detection and immutable v3/v4/corrupt/torn-tail
   fixtures—without adding or selecting a v4 writer.
+- Completed priority-3 P3.0 format characterization without changing the
+  active session reader or writer. `pi-agent-core` now exposes a read-only
+  JSONL detector that distinguishes legacy v3, upstream harness v4,
+  unsupported versions, malformed/ambiguous headers, non-files, and symlinks;
+  symlink targets are rejected before any content read.
+- Added immutable v3/v4/future/malformed/torn-tail fixtures. The v3 opaque
+  fixture proves that Remote V2-style checkpoint data and GSD Assessment Gate
+  metadata survive the legacy reader unchanged. The torn-tail contract proves
+  header detection does not conceal the later parse failure or rewrite the
+  source file. No v4 codec or writer was introduced or selected.
+- Verification: focused JSONL compatibility suite **6/6**,
+  `@gsd/pi-agent-core` build, `typecheck:extensions`, `test:packages`,
+  `build:core`, and `git diff --check` pass. The compiled package counts remain
+  agent-core **136/136**, agent-modes **287/287**, native **223 pass / 1
+  platform skip**, pi-agent-core **3/3**, pi-ai **49/49**, coding-agent
+  **69/69**, pi-tui **8/8**, contracts **9/9**, MCP **377/377**, and RPC client
+  **30/30**. `test:changed:src` reported no focused root-source tests because
+  this slice is confined to the workspace package.
+- Exact next task: commit and push P3.0, then begin P3.1 by introducing the
+  version-neutral repository contract over the existing legacy-v3 backend.
+  Keep legacy-v3 as the only creatable/default format and reject v4 opens as
+  recognized-but-not-yet-readable rather than creating an empty replacement.
 
 ## 11. Working-session protocol
 

@@ -1,0 +1,4 @@
+{"type":"session","version":3,"id":"fixture-v3","timestamp":"2026-09-03T00:00:00.000Z","cwd":"/fixture/project"}
+{"type":"message","id":"user-1","parentId":null,"timestamp":"2026-09-03T00:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"review this revision"}],"timestamp":1788393601000}}
+{"type":"custom_message","id":"gate-1","parentId":"user-1","timestamp":"2026-09-03T00:00:02.000Z","customType":"gsd-assessment","content":"Assessment remains GSD-owned.","display":false,"details":{"schemaVersion":"gsd.findings/v1","runId":"GAR-fixture","gateId":"second-opinion","status":"completed"}}
+{"type":"compaction","id":"compact-1","parentId":"gate-1","timestamp":"2026-09-03T00:00:03.000Z","summary":"opaque compacted context","firstKeptEntryId":"user-1","tokensBefore":42000,"details":{"strategy":"remote-v2","checkpoint":{"type":"compaction","encrypted_content":"ocx1:opaque-fixture"}}}
