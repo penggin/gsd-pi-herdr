@@ -188,6 +188,8 @@ test("GSD compaction cut point fingerprints only messages retained by the new co
   const event = {
     type: "session_before_compact",
     branchEntries: entries,
+    reason: "manual",
+    willRetry: false,
     signal: new AbortController().signal,
     preparation: {
       firstKeptEntryId: "old",
@@ -241,6 +243,8 @@ test("openai-codex-responses compaction submits trigger, persists opaque details
   const event = {
     type: "session_before_compact",
     branchEntries: entries,
+    reason: "manual",
+    willRetry: false,
     signal: new AbortController().signal,
     preparation: {
       firstKeptEntryId: "kept-user",
@@ -379,6 +383,8 @@ test("remote protocol failure falls back to native compaction while caller cance
   const failure = await compactWithCodexRemoteV2(pi, {
     type: "session_before_compact",
     branchEntries: entries,
+    reason: "manual",
+    willRetry: false,
     signal: new AbortController().signal,
     preparation,
   }, ctx, basePath, {
@@ -400,6 +406,8 @@ test("remote protocol failure falls back to native compaction while caller cance
   const cancelled = await compactWithCodexRemoteV2(pi, {
     type: "session_before_compact",
     branchEntries: entries,
+    reason: "manual",
+    willRetry: false,
     signal: controller.signal,
     preparation,
   }, ctx, basePath, {

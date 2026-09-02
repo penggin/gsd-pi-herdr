@@ -175,20 +175,13 @@ export class AgentSessionPromptModule {
 				model: this.host.model.id,
 			});
 
-			// Check if we need to compact before sending (catches aborted responses)
+			// Check if we need to compact before sending (catches aborted responses).
+			// The new user prompt below is the continuation boundary; retrying the
+			// prior turn here can duplicate work before that prompt is submitted.
 			const lastAssistant = this.host.findLastAssistantMessage();
 			this.host.markTurnLatency("session.compaction_check.start", { hasLastAssistant: !!lastAssistant });
-			if (lastAssistant && (await this.host.checkCompaction(lastAssistant, false))) {
-				try {
-					this.host.markTurnLatency("session.compaction_continue.start");
-					await this.host.agent.continue();
-					while (await this.handlePostAgentRun()) {
-						await this.host.agent.continue();
-					}
-					this.host.markTurnLatency("session.compaction_continue.end");
-				} finally {
-					this.host.flushPendingBashMessages();
-				}
+			if (lastAssistant) {
+				await this.host.checkCompaction(lastAssistant, false);
 			}
 			this.host.markTurnLatency("session.compaction_check.end");
 

@@ -7,6 +7,7 @@ import { AgentSessionExtensionsModule } from "./session/agent-session-extensions
 import { AgentSessionModelModule } from "./session/agent-session-model.ts";
 import { AgentSessionNavigationModule } from "./session/agent-session-navigation.ts";
 import { AgentSessionPromptModule } from "./session/agent-session-prompt.ts";
+import { AgentSessionCompactionModule } from "./session/agent-session-compaction.ts";
 
 describe("parseSkillBlock", () => {
   test("parses a valid skill block with trailing user message", () => {
@@ -27,6 +28,36 @@ Please review the patch.`;
   test("returns null for malformed skill blocks", () => {
     assert.equal(parseSkillBlock("not a skill"), null);
     assert.equal(parseSkillBlock('<skill name="x" location="y">missing close'), null);
+  });
+});
+
+describe("AgentSessionCompactionModule", () => {
+  test("publishes structured compaction failure events to extensions", async () => {
+    const events: unknown[] = [];
+    const host = {
+      _extensionRunner: {
+        hasHandlers: (event: string) => event === "session_compact_failed",
+        emit: async (event: unknown) => events.push(event),
+      },
+    };
+    const module = new AgentSessionCompactionModule(host as any);
+
+    await (module as any).emitSessionCompactFailed({
+      reason: "threshold",
+      errorMessage: "Auto-compaction failed: unavailable",
+      aborted: false,
+      willRetry: false,
+      fromExtension: false,
+    });
+
+    assert.deepEqual(events, [{
+      type: "session_compact_failed",
+      reason: "threshold",
+      errorMessage: "Auto-compaction failed: unavailable",
+      aborted: false,
+      willRetry: false,
+      fromExtension: false,
+    }]);
   });
 });
 

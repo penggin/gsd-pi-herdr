@@ -3,7 +3,10 @@ import { isContextOverflow, streamSimple } from "@gsd/pi-ai";
 import { formatNoModelSelectedMessage } from "@gsd/pi-coding-agent/core/auth-guidance.js";
 import type { CompactionEntry } from "@gsd/pi-coding-agent/core/session-manager.js";
 import { getLatestCompactionEntry } from "@gsd/pi-coding-agent/core/session-manager.js";
-import type { SessionBeforeCompactResult } from "@gsd/pi-coding-agent/core/extensions/index.js";
+import type {
+	SessionBeforeCompactResult,
+	SessionCompactFailedEvent,
+} from "@gsd/pi-coding-agent/core/extensions/index.js";
 import type { AgentMessage } from "@gsd/pi-agent-core";
 import {
 	type CompactionResult,
@@ -23,12 +26,19 @@ export function resolveThresholdContextTokens(assistantMessage: AssistantMessage
 export class AgentSessionCompactionModule {
 	constructor(readonly host: AgentSessionHost) {}
 
+	private async emitSessionCompactFailed(event: Omit<SessionCompactFailedEvent, "type">): Promise<void> {
+		if (this.host._extensionRunner.hasHandlers("session_compact_failed")) {
+			await this.host._extensionRunner.emit({ type: "session_compact_failed", ...event });
+		}
+	}
+
 	async compact(customInstructions?: string): Promise<CompactionResult> {
 		this.host.disconnectFromAgent();
 		await this.host.abort();
 		this.host._compactionAbortController = new AbortController();
 		this.host.emit({ type: "compaction_start", reason: "manual" });
 
+		let fromExtension = false;
 		try {
 			if (!this.host.model) {
 				throw new Error(formatNoModelSelectedMessage());
@@ -50,14 +60,14 @@ export class AgentSessionCompactionModule {
 			}
 
 			let extensionCompaction: CompactionResult | undefined;
-			let fromExtension = false;
-
 			if (this.host._extensionRunner.hasHandlers("session_before_compact")) {
 				const result = (await this.host._extensionRunner.emit({
 					type: "session_before_compact",
 					preparation,
 					branchEntries: pathEntries,
 					customInstructions,
+					reason: "manual",
+					willRetry: false,
 					signal: this.host._compactionAbortController.signal,
 				})) as SessionBeforeCompactResult | undefined;
 
@@ -119,6 +129,8 @@ export class AgentSessionCompactionModule {
 					type: "session_compact",
 					compactionEntry: savedCompactionEntry,
 					fromExtension,
+					reason: "manual",
+					willRetry: false,
 				});
 			}
 
@@ -139,13 +151,21 @@ export class AgentSessionCompactionModule {
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			const aborted = message === "Compaction cancelled" || (error instanceof Error && error.name === "AbortError");
+			const errorMessage = aborted ? undefined : `Compaction failed: ${message}`;
 			this.host.emit({
 				type: "compaction_end",
 				reason: "manual",
 				result: undefined,
 				aborted,
 				willRetry: false,
-				errorMessage: aborted ? undefined : `Compaction failed: ${message}`,
+				errorMessage,
+			});
+			await this.emitSessionCompactFailed({
+				reason: "manual",
+				errorMessage,
+				aborted,
+				willRetry: false,
+				fromExtension,
 			});
 			throw error;
 		} finally {
@@ -192,14 +212,22 @@ export class AgentSessionCompactionModule {
 		// Case 1: Overflow - LLM returned context overflow error
 		if (sameModel && isContextOverflow(assistantMessage, contextWindow)) {
 			if (this.host._overflowRecoveryAttempted) {
+				const errorMessage =
+					"Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model.";
 				this.host.emit({
 					type: "compaction_end",
 					reason: "overflow",
 					result: undefined,
 					aborted: false,
 					willRetry: false,
-					errorMessage:
-						"Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model.",
+					errorMessage,
+				});
+				await this.emitSessionCompactFailed({
+					reason: "overflow",
+					errorMessage,
+					aborted: false,
+					willRetry: false,
+					fromExtension: false,
 				});
 				return false;
 			}
@@ -247,6 +275,7 @@ export class AgentSessionCompactionModule {
 
 	async runAutoCompaction(reason: "overflow" | "threshold", willRetry: boolean): Promise<boolean> {
 		const settings = this.host.settingsManager.getCompactionSettings();
+		let fromExtension = false;
 
 		this.host.emit({ type: "compaction_start", reason });
 		this.host._autoCompactionAbortController = new AbortController();
@@ -298,7 +327,6 @@ export class AgentSessionCompactionModule {
 			}
 
 			let extensionCompaction: CompactionResult | undefined;
-			let fromExtension = false;
 
 			if (this.host._extensionRunner.hasHandlers("session_before_compact")) {
 				const extensionResult = (await this.host._extensionRunner.emit({
@@ -306,6 +334,8 @@ export class AgentSessionCompactionModule {
 					preparation,
 					branchEntries: pathEntries,
 					customInstructions: undefined,
+					reason,
+					willRetry,
 					signal: this.host._autoCompactionAbortController.signal,
 				})) as SessionBeforeCompactResult | undefined;
 
@@ -315,17 +345,15 @@ export class AgentSessionCompactionModule {
 						reason,
 						result: undefined,
 						aborted: true,
-						willRetry,
+						willRetry: false,
 					});
-					if (willRetry) {
-						const messages = this.host.agent.state.messages;
-						const lastMsg = messages[messages.length - 1];
-						if (lastMsg?.role === "assistant" && (lastMsg as AssistantMessage).stopReason === "error") {
-							this.host.agent.state.messages = messages.slice(0, -1);
-						}
-						return true;
-					}
-					return this.host.agent.hasQueuedMessages();
+					await this.emitSessionCompactFailed({
+						reason,
+						aborted: true,
+						willRetry: false,
+						fromExtension: false,
+					});
+					return false;
 				}
 
 				if (extensionResult?.compaction) {
@@ -371,6 +399,12 @@ export class AgentSessionCompactionModule {
 					aborted: true,
 					willRetry: false,
 				});
+				await this.emitSessionCompactFailed({
+					reason,
+					aborted: true,
+					willRetry: false,
+					fromExtension,
+				});
 				return false;
 			}
 
@@ -389,6 +423,8 @@ export class AgentSessionCompactionModule {
 					type: "session_compact",
 					compactionEntry: savedCompactionEntry,
 					fromExtension,
+					reason,
+					willRetry,
 				});
 			}
 
@@ -414,16 +450,24 @@ export class AgentSessionCompactionModule {
 			return this.host.agent.hasQueuedMessages();
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : "compaction failed";
+			const displayError =
+				reason === "overflow"
+					? `Context overflow recovery failed: ${errorMessage}`
+					: `Auto-compaction failed: ${errorMessage}`;
 			this.host.emit({
 				type: "compaction_end",
 				reason,
 				result: undefined,
 				aborted: false,
 				willRetry: false,
-				errorMessage:
-					reason === "overflow"
-						? `Context overflow recovery failed: ${errorMessage}`
-						: `Auto-compaction failed: ${errorMessage}`,
+				errorMessage: displayError,
+			});
+			await this.emitSessionCompactFailed({
+				reason,
+				errorMessage: displayError,
+				aborted: false,
+				willRetry: false,
+				fromExtension,
 			});
 			return false;
 		} finally {
