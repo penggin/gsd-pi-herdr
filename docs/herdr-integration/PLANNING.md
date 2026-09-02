@@ -1647,6 +1647,21 @@ this session does not merge, push, tag, or publish.
   Its read-only snapshot/open path must use the shared detector; create/fork
   remain v3-only, and v4/unsupported/corrupt inputs must return typed failures
   without file or GSD-state mutation.
+- Added the P3.1 `SessionRepositoryAdapter` in `pi-agent-core`. It exposes
+  format detection, an immutable cloned read-only snapshot, and the existing
+  list/open/create/fork/delete repository contract while delegating only
+  legacy-v3 operations. Harness-v4 create/fork/open attempts return the new
+  typed `unsupported_version` session error; malformed inputs return
+  `invalid_session`. The adapter has an explicit no-op `close()` lifecycle seam
+  for future resource-owning backends.
+- Adapter conformance covers default v3 creation, format detection, frozen
+  read-only snapshots, v4 writer exclusion, corrupt/v4 no-fallback behavior,
+  and opaque Remote V2/Assessment Gate details. Focused P3.0 + adapter tests
+  pass **11/11** and `@gsd/pi-agent-core` builds successfully.
+- Exact next task: route the current harness JSONL construction sites through
+  `SessionRepositoryAdapter`, preserving the public `SessionRepo` API and v3
+  default. Then add list diagnostics for recognized v4 files without making
+  them openable, before starting the isolated P3.2 v4 codec port.
 
 ## 11. Working-session protocol
 

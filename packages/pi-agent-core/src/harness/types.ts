@@ -189,6 +189,7 @@ export type SessionErrorCode =
 	| "invalid_session"
 	| "invalid_entry"
 	| "invalid_fork_target"
+	| "unsupported_version"
 	| "storage"
 	| "unknown";
 
