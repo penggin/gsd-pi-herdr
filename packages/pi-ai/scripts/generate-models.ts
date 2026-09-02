@@ -872,14 +872,16 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 			for (const [modelId, model] of Object.entries(data["fireworks-ai"].models)) {
 				const m = model as ModelsDevModel;
 				if (m.tool_call !== true) continue;
+				const isGlm = modelId.includes("glm-");
 
 				models.push({
 					id: modelId,
 					name: m.name || modelId,
-					api: "anthropic-messages",
+					api: isGlm ? "openai-completions" : "anthropic-messages",
 					provider: "fireworks",
-					// Fireworks Anthropic-compatible API - SDK appends /v1/messages
-					baseUrl: "https://api.fireworks.ai/inference",
+					// Fireworks GLM models use Chat Completions; other catalog
+					// entries use the Anthropic-compatible Messages endpoint.
+					baseUrl: isGlm ? "https://api.fireworks.ai/inference/v1" : "https://api.fireworks.ai/inference",
 					reasoning: m.reasoning === true,
 					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
 					cost: {
@@ -894,12 +896,19 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 					// x-session-affinity routes requests to the same replica for cache hits.
 					// cache_control on tools and eager_input_streaming are not supported.
 					// See: https://docs.fireworks.ai/tools-sdks/anthropic-compatibility
-					compat: {
-						sendSessionAffinityHeaders: true,
-						supportsEagerToolInputStreaming: false,
-						supportsCacheControlOnTools: false,
-						supportsLongCacheRetention: false,
-					},
+					compat: isGlm
+						? {
+								supportsStore: false,
+								supportsDeveloperRole: false,
+								sendSessionAffinityHeaders: true,
+								supportsLongCacheRetention: false,
+							}
+						: {
+								sendSessionAffinityHeaders: true,
+								supportsEagerToolInputStreaming: false,
+								supportsCacheControlOnTools: false,
+								supportsLongCacheRetention: false,
+							},
 				});
 			}
 		}
@@ -1028,12 +1037,12 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 				if (m.tool_call !== true) continue;
 				if (m.status === "deprecated") continue;
 
-				// Claude 4.x models route to Anthropic Messages API
-				const isCopilotClaude4 = /^claude-(haiku|sonnet|opus)-4([.\-]|$)/.test(modelId);
+				// Claude 4.x and 5.x models route to Anthropic Messages API.
+				const isCopilotClaude = /^claude-(haiku|sonnet|opus|fable)-[45]([.\-]|$)/.test(modelId);
 				// gpt-5 models require responses API, others use completions
 				const needsResponsesApi = modelId.startsWith("gpt-5") || modelId.startsWith("oswe");
 
-				const api: Api = isCopilotClaude4
+				const api: Api = isCopilotClaude
 					? "anthropic-messages"
 					: needsResponsesApi
 						? "openai-responses"

@@ -45,6 +45,12 @@ describe("models.generated.ts", () => {
 
 		expect(MODELS["amazon-bedrock"]["us.anthropic.claude-fable-5"]).toBeDefined();
 		expect(MODELS.openrouter["anthropic/claude-fable-5"]).toBeDefined();
+
+		const copilot = MODELS["github-copilot"]["claude-fable-5"];
+		expect(copilot).toBeDefined();
+		expect(copilot.api).toBe("anthropic-messages");
+		expect(copilot.compat).toMatchObject({ forceAdaptiveThinking: true });
+		expect(copilot.thinkingLevelMap).toMatchObject({ xhigh: "xhigh" });
 	});
 
 	test("includes Claude Opus 5 across Anthropic-backed providers with adaptive thinking", () => {

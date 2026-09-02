@@ -48,6 +48,22 @@ describe("Fireworks models", () => {
 		expect(model?.input).toEqual(["text", "image"]);
 	});
 
+	it("routes every generated Fireworks GLM model through Chat Completions", () => {
+		const glmModels = getModels("fireworks").filter((model) => model.id.includes("glm-"));
+
+		expect(glmModels.length).toBeGreaterThan(0);
+		for (const model of glmModels) {
+			expect(model.api).toBe("openai-completions");
+			expect(model.baseUrl).toBe("https://api.fireworks.ai/inference/v1");
+			expect(model.compat).toMatchObject({
+				supportsStore: false,
+				supportsDeveloperRole: false,
+				sendSessionAffinityHeaders: true,
+				supportsLongCacheRetention: false,
+			});
+		}
+	});
+
 	it("resolves FIREWORKS_API_KEY from the environment", () => {
 		process.env.FIREWORKS_API_KEY = "test-fireworks-key";
 

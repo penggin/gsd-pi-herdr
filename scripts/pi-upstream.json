@@ -38,6 +38,7 @@
     "packages/pi-ai/test/cache-retention.test.ts",
     "packages/pi-ai/test/anthropic-mid-conversation-effort.test.ts",
     "packages/pi-ai/test/generated-models.test.ts",
+    "packages/pi-ai/test/fireworks-models.test.ts",
     "packages/pi-ai/test/openai-responses-copilot-provider.test.ts",
     "packages/pi-ai/test/retry-classification.test.ts",
     "packages/pi-agent-core/src/agent.ts",

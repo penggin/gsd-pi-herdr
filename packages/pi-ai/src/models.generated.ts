@@ -4253,10 +4253,10 @@ export const MODELS = {
 		"accounts/fireworks/models/glm-5p1": {
 			id: "accounts/fireworks/models/glm-5p1",
 			name: "GLM 5.1",
-			api: "anthropic-messages",
+			api: "openai-completions",
 			provider: "fireworks",
-			baseUrl: "https://api.fireworks.ai/inference",
-			compat: {"sendSessionAffinityHeaders":true,"supportsEagerToolInputStreaming":false,"supportsCacheControlOnTools":false,"supportsLongCacheRetention":false},
+			baseUrl: "https://api.fireworks.ai/inference/v1",
+			compat: {"supportsStore":false,"supportsDeveloperRole":false,"sendSessionAffinityHeaders":true,"supportsLongCacheRetention":false},
 			reasoning: true,
 			input: ["text"],
 			cost: {
@@ -4267,7 +4267,7 @@ export const MODELS = {
 			},
 			contextWindow: 202800,
 			maxTokens: 131072,
-		} satisfies Model<"anthropic-messages">,
+		} satisfies Model<"openai-completions">,
 		"accounts/fireworks/models/gpt-oss-120b": {
 			id: "accounts/fireworks/models/gpt-oss-120b",
 			name: "GPT OSS 120B",
@@ -4397,10 +4397,10 @@ export const MODELS = {
 		"accounts/fireworks/routers/glm-5p1-fast": {
 			id: "accounts/fireworks/routers/glm-5p1-fast",
 			name: "GLM 5.1 Fast",
-			api: "anthropic-messages",
+			api: "openai-completions",
 			provider: "fireworks",
-			baseUrl: "https://api.fireworks.ai/inference",
-			compat: {"sendSessionAffinityHeaders":true,"supportsEagerToolInputStreaming":false,"supportsCacheControlOnTools":false,"supportsLongCacheRetention":false},
+			baseUrl: "https://api.fireworks.ai/inference/v1",
+			compat: {"supportsStore":false,"supportsDeveloperRole":false,"sendSessionAffinityHeaders":true,"supportsLongCacheRetention":false},
 			reasoning: true,
 			input: ["text"],
 			cost: {
@@ -4411,7 +4411,7 @@ export const MODELS = {
 			},
 			contextWindow: 202800,
 			maxTokens: 131072,
-		} satisfies Model<"anthropic-messages">,
+		} satisfies Model<"openai-completions">,
 		"accounts/fireworks/routers/kimi-k2p6-fast": {
 			id: "accounts/fireworks/routers/kimi-k2p6-fast",
 			name: "Kimi K2.6 Fast",
@@ -4450,6 +4450,26 @@ export const MODELS = {
 		} satisfies Model<"anthropic-messages">,
 	},
 	"github-copilot": {
+		"claude-fable-5": {
+			id: "claude-fable-5",
+			name: "Claude Fable 5",
+			api: "anthropic-messages",
+			provider: "github-copilot",
+			baseUrl: "https://api.individual.githubcopilot.com",
+			headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
+			compat: {"forceAdaptiveThinking":true},
+			reasoning: true,
+			thinkingLevelMap: {"xhigh":"xhigh"},
+			input: ["text", "image"],
+			cost: {
+				input: 10,
+				output: 50,
+				cacheRead: 1,
+				cacheWrite: 12.5,
+			},
+			contextWindow: 1000000,
+			maxTokens: 128000,
+		} satisfies Model<"anthropic-messages">,
 		"claude-haiku-4.5": {
 			id: "claude-haiku-4.5",
 			name: "Claude Haiku 4.5 (latest)",

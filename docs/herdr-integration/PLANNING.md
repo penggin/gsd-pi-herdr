@@ -2064,6 +2064,30 @@ this session does not merge, push, tag, or publish.
   **9/9**, MCP server **377/377**, and RPC client **30/30**.
 - Exact next task: review, commit, and push the proxy-transport slice; then
   refresh the upstream candidate audit from the current fetched tip.
+- Refreshed `earendil-works/pi` main at `4e69b0c28` and prioritized request
+  correctness over metadata-only changes. Ported upstream `1e4fbe384` and
+  `69afa1050`: every Fireworks model/router ID containing `glm-` now uses
+  `openai-completions` at `/inference/v1`, while GitHub Copilot Claude Fable 5
+  is exposed through `anthropic-messages` with adaptive-thinking metadata.
+  Other Fireworks models retain their Anthropic Messages transport.
+- The normal `pnpm ... generate-models` entry currently cannot resolve an
+  existing source `.js` import under raw Node. Running the same generator via
+  the already-installed `tsx` loader succeeded, but the live external catalogs
+  contained tens of thousands of unrelated data-line changes. Those generated
+  outputs were discarded, and only the two existing Fireworks GLM records plus
+  the current Copilot Fable 5 record were applied to the checked-in snapshot.
+  This avoids coupling the routing fix to an unaudited catalog refresh.
+- Focused catalog/provider evidence passes **28/28**, including exact JSON/TS
+  mirror equality, schema validity, all checked-in Fireworks GLM routes, and
+  Copilot Fable 5 Anthropic/adaptive-thinking selection. Final gates pass:
+  `verify:pi-patches`, extension typecheck, `test:changed:src` (no root-source
+  tests for this package-only slice), the pi-ai build, `build:core`,
+  `test:packages`, and `git diff --check`. Compiled package totals remain GSD
+  agent-core **139/139**, agent-modes **287/287**, native **223 pass / 1 skip**,
+  pi-agent-core **3/3**, pi-ai **49/49**, pi-coding-agent **72/72**, pi-tui
+  **8/8**, contracts **9/9**, MCP server **377/377**, and RPC client **30/30**.
+- Exact next task: review, commit, and push this provider-routing slice; then
+  evaluate optional vLLM scheduler priority (`256f63024`) independently.
 
 ## 11. Working-session protocol
 
