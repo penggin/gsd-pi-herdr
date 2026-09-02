@@ -163,6 +163,31 @@ describe("openai-completions empty tools handling", () => {
 		expect(clientOptions.defaultHeaders?.["cf-aig-authorization"]).toBe("Bearer test");
 	});
 
+	it("resolves Cloudflare gateway placeholders from scoped provider env", async () => {
+		delete process.env.CLOUDFLARE_ACCOUNT_ID;
+		delete process.env.CLOUDFLARE_GATEWAY_ID;
+		const model = getModel("cloudflare-ai-gateway", "workers-ai/@cf/moonshotai/kimi-k2.6")!;
+
+		await streamSimple(
+			model,
+			{ messages: [{ role: "user", content: "hi", timestamp: Date.now() }] },
+			{
+				apiKey: "test",
+				env: {
+					CLOUDFLARE_ACCOUNT_ID: "scoped-account",
+					CLOUDFLARE_GATEWAY_ID: "scoped-gateway",
+				},
+			},
+		).result();
+
+		const clientOptions = mockState.lastClientOptions as { baseURL?: string };
+		expect(clientOptions.baseURL).toBe(
+			"https://gateway.ai.cloudflare.com/v1/scoped-account/scoped-gateway/compat",
+		);
+		expect(process.env.CLOUDFLARE_ACCOUNT_ID).toBeUndefined();
+		expect(process.env.CLOUDFLARE_GATEWAY_ID).toBeUndefined();
+	});
+
 	it("preserves inline upstream Authorization for Cloudflare AI Gateway BYOK requests", async () => {
 		process.env.CLOUDFLARE_ACCOUNT_ID = "account-id";
 		process.env.CLOUDFLARE_GATEWAY_ID = "gateway-id";

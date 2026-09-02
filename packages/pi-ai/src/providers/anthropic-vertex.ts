@@ -6,10 +6,12 @@ import type {
 	AssistantMessage,
 	Context,
 	Model,
+	ProviderEnv,
 	SimpleStreamOptions,
 	StreamFunction,
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
+import { getProviderEnvValue } from "../utils/provider-env.js";
 import {
 	type AnthropicEffort,
 	type AnthropicOptions,
@@ -29,11 +31,11 @@ async function getAnthropicVertexClass(): Promise<typeof AnthropicVertex> {
 	return anthropicVertexClass;
 }
 
-function resolveProjectId(): string {
+function resolveProjectId(env?: ProviderEnv): string {
 	const projectId =
-		process.env.ANTHROPIC_VERTEX_PROJECT_ID ||
-		process.env.GOOGLE_CLOUD_PROJECT ||
-		process.env.GCLOUD_PROJECT;
+		getProviderEnvValue("ANTHROPIC_VERTEX_PROJECT_ID", env) ||
+		getProviderEnvValue("GOOGLE_CLOUD_PROJECT", env) ||
+		getProviderEnvValue("GCLOUD_PROJECT", env);
 	if (!projectId) {
 		throw new Error(
 			"Anthropic Vertex requires a project ID. Set ANTHROPIC_VERTEX_PROJECT_ID, GOOGLE_CLOUD_PROJECT, or GCLOUD_PROJECT.",
@@ -42,15 +44,19 @@ function resolveProjectId(): string {
 	return projectId;
 }
 
-function resolveRegion(): string {
-	return process.env.CLOUD_ML_REGION || process.env.GOOGLE_CLOUD_LOCATION || "us-central1";
+function resolveRegion(env?: ProviderEnv): string {
+	return (
+		getProviderEnvValue("CLOUD_ML_REGION", env) ||
+		getProviderEnvValue("GOOGLE_CLOUD_LOCATION", env) ||
+		"us-central1"
+	);
 }
 
-async function createVertexClient(): Promise<AnthropicVertex> {
+async function createVertexClient(env?: ProviderEnv): Promise<AnthropicVertex> {
 	const AnthropicVertexClass = await getAnthropicVertexClass();
 	return new AnthropicVertexClass({
-		projectId: resolveProjectId(),
-		region: resolveRegion(),
+		projectId: resolveProjectId(env),
+		region: resolveRegion(env),
 	});
 }
 
@@ -108,7 +114,7 @@ export const streamAnthropicVertex: StreamFunction<"anthropic-vertex", Anthropic
 
 	(async () => {
 		try {
-			const client = await createVertexClient();
+			const client = await createVertexClient(options?.env);
 			const inner = streamAnthropic(asAnthropicMessagesModel(model), context, {
 				...options,
 				client: client as unknown as Anthropic,

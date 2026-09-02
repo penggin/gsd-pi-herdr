@@ -1505,6 +1505,29 @@ this session does not merge, push, tag, or publish.
   Cloudflare URL placeholders, and Codex proxy selection) and cover only the
   request-scoped paths that can honor `StreamOptions.env` without changing
   OAuth/startup-global behavior.
+- Closed the request-scoped provider environment audit. Anthropic Vertex now
+  constructs its SDK client from scoped project/region values; Cloudflare URL
+  placeholders resolve from the same overlay in Anthropic, Responses, and
+  completions clients; and the Bun Codex WebSocket proxy path uses the shared
+  scoped `HTTP(S)_PROXY`/`NO_PROXY` resolver instead of reading ambient state
+  through a separate library. Scoped WebSocket constructors are not placed in
+  the ambient constructor cache.
+- Focused Anthropic Vertex, Cloudflare, proxy, and Codex transport verification
+  passes **46/46**; `build:pi-ai`, `typecheck:extensions`, `build:core`,
+  `git diff --check`, and all ten compiled package suites pass. Counts remain
+  agent-core **136/136**, agent-modes **287/287**, native **223 pass / 1
+  platform skip**, pi-agent-core **3/3**, pi-ai **49/49**, coding-agent
+  **66/66**, pi-tui **8/8**, contracts **9/9**, MCP **377/377**, and RPC client
+  **30/30**. No dependency or lockfile change was introduced.
+- Remaining direct environment reads are intentionally outside this request
+  overlay: OAuth callback hosts and the fake transcript switch are
+  process-start configuration, while raw OpenAI client fallback only runs when
+  no explicit/scoped key reached the client. No provider credential or endpoint
+  is logged or persisted by this change.
+- Exact next task: commit and push the completed provider-env tail, then begin a
+  separate v0.84 startup-performance slice by characterizing current extension
+  transpilation and syntax-grammar load timing before importing any lazy-load
+  behavior. Keep the provider-store branch history as the compatibility base.
 
 ## 11. Working-session protocol
 
