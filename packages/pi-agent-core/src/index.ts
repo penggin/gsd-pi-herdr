@@ -38,6 +38,7 @@ export * from "./harness/session/session.js";
 export * from "./harness/session/session-repository-adapter.js";
 export * from "./harness/session/session-v4-memory.js";
 export * from "./harness/session/session-v4-json.js";
+export * from "./harness/session/session-v4-harness-adapter.js";
 export * from "./harness/session/jsonl-v4-repo.js";
 export * from "./harness/session/jsonl-v4-storage.js";
 export * from "./harness/session/session-v4-state.js";

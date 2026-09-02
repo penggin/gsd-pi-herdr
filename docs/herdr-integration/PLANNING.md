@@ -1911,6 +1911,30 @@ this session does not merge, push, tag, or publish.
   **8/8**, contracts **9/9**, MCP server **377/377**, and RPC client **30/30**.
 - Exact next task: commit and push the usage-persistence slice, then close
   memory/v4 JSONL harness parity before enabling any v4 runtime adapter.
+- Completed P3.4 harness/storage parity without changing the application
+  default. `V4HarnessSessionStorageAdapter` maps the working downstream
+  `SessionStorage` contract onto either isolated v4 backend, uses the native
+  `main` lane and global name/label facts, and preserves strict v4 JSON
+  validation. Legacy optional `undefined` object properties are normalized at
+  this explicit compatibility boundary rather than weakening the v4 stores.
+- Compaction writes now include a real v4-native `retainedTail` rebuilt from
+  the selected branch while retaining the downstream `firstKeptEntryId` seam
+  needed before P3.5. Existing v3 files are never opened or rewritten by this
+  adapter, and neither the CLI nor coding-agent selects it yet.
+- The same AgentHarness matrix passes against memory and JSONL v4 **12/12**:
+  custom-message projection plus native name/label facts, prompt/tool execution
+  and hook-patched usage, steer/follow-up ordering, compaction and
+  branch-summary persistence, transient summary retry, cancellation and reuse,
+  idempotent shutdown, and post-close rejection.
+  Existing downstream harness regression passes **18/18** and the focused v4
+  state/codec/reader/storage/conformance suites pass **39/39**.
+- Final P3.4 gates pass: `verify:pi-patches`, `typecheck:extensions`,
+  `build:core`, `test:packages`, `test:changed:src` (no root-source tests for
+  this package-only slice), and `git diff --check`. Compiled package counts are
+  unchanged from the preceding usage-persistence slice.
+- Exact next task: commit and push P3.4. Begin P3.5 only afterward by adding an
+  explicit opt-in coding-agent construction setting; `legacy-v3` must remain
+  the default and format mismatch must fail without empty-session fallback.
 
 ## 11. Working-session protocol
 
