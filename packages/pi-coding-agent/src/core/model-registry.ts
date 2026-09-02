@@ -1019,8 +1019,8 @@ export class ModelRegistry {
 
 			try {
 				const ttlMs = this.getDiscoveryTtl(providerName, providerApis);
-				const stored = options.force ? undefined : await this.modelsStore.read(providerName, options);
-				if (stored?.checkedAt !== undefined && Date.now() - stored.checkedAt <= ttlMs) {
+				const stored = await this.modelsStore.read(providerName, options);
+				if (!options.force && stored?.checkedAt !== undefined && Date.now() - stored.checkedAt <= ttlMs) {
 					results.push({
 						provider: providerName,
 						models: stored.models.map((model) => this.toDiscoveredModel(model)),
@@ -1056,8 +1056,20 @@ export class ModelRegistry {
 				if (!apiKey && !this.isProviderRequestReady(providerName)) continue;
 
 				const baseUrl = this.getProviderBaseUrl(providerName);
-				const models = await adapter.fetchModels(apiKey ?? "", baseUrl);
+				const fetched = await adapter.fetchModels(apiKey ?? "", baseUrl, {
+					signal: options.signal,
+					etag: stored?.models.length ? stored.etag : undefined,
+					lastModified: stored?.models.length ? stored.lastModified : undefined,
+				});
 				options.signal?.throwIfAborted();
+				if (fetched.notModified) {
+					if (!stored?.models.length) throw new Error(`Provider ${providerName} returned 304 without a stored catalog`);
+					const checkedAt = Date.now();
+					await this.modelsStore.write(providerName, { ...stored, checkedAt }, options);
+					results.push({ provider: providerName, models: stored.models.map((model) => this.toDiscoveredModel(model)), fetchedAt: checkedAt });
+					continue;
+				}
+				const models = fetched.models;
 				const result = {
 					provider: providerName,
 					models,
@@ -1068,6 +1080,8 @@ export class ModelRegistry {
 					{
 						models: applyCapabilityPatches(this.convertDiscoveredModels([result])),
 						checkedAt: result.fetchedAt,
+						etag: fetched.etag,
+						lastModified: fetched.lastModified,
 					},
 					options,
 				);

@@ -23,7 +23,20 @@ export interface DiscoveryResult {
 export interface ProviderDiscoveryAdapter {
 	provider: string;
 	supportsDiscovery: boolean;
-	fetchModels(apiKey: string, baseUrl?: string): Promise<DiscoveredModel[]>;
+	fetchModels(apiKey: string, baseUrl?: string, options?: DiscoveryFetchOptions): Promise<DiscoveryFetchResult>;
+}
+
+export interface DiscoveryFetchOptions {
+	signal?: AbortSignal;
+	etag?: string;
+	lastModified?: number;
+}
+
+export interface DiscoveryFetchResult {
+	models: DiscoveredModel[];
+	notModified?: boolean;
+	etag?: string;
+	lastModified?: number;
 }
 
 export const OPENAI_COMPAT_DISCOVERY_APIS = new Set([
@@ -51,10 +64,29 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutM
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(), timeoutMs);
 	try {
-		return await fetch(url, { ...options, signal: controller.signal });
+		const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
+		return await fetch(url, { ...options, signal });
 	} finally {
 		clearTimeout(timeout);
 	}
+}
+
+function conditionalHeaders(apiKey: string | undefined, options: DiscoveryFetchOptions | undefined): Record<string, string> {
+	return {
+		...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+		...(options?.etag ? { "If-None-Match": options.etag } : {}),
+		...(options?.lastModified !== undefined
+			? { "If-Modified-Since": new Date(options.lastModified).toUTCString() }
+			: {}),
+	};
+}
+
+function resultMetadata(response: Response): Pick<DiscoveryFetchResult, "etag" | "lastModified"> {
+	const parsed = Date.parse(response.headers.get("last-modified") ?? "");
+	return {
+		etag: response.headers.get("etag") ?? undefined,
+		lastModified: Number.isNaN(parsed) ? undefined : parsed,
+	};
 }
 
 // ─── OpenAI Adapter ──────────────────────────────────────────────────────────
@@ -136,20 +168,23 @@ class OpenAIDiscoveryAdapter implements ProviderDiscoveryAdapter {
 		this.provider = provider;
 	}
 
-	async fetchModels(apiKey: string, baseUrl?: string): Promise<DiscoveredModel[]> {
-		const url = `${baseUrl ?? "https://api.openai.com"}/v1/models`;
+	async fetchModels(apiKey: string, baseUrl?: string, options?: DiscoveryFetchOptions): Promise<DiscoveryFetchResult> {
+		const origin = stripTrailingOpenAIPathPrefix(baseUrl ?? "https://api.openai.com");
+		const url = `${origin}/v1/models`;
 		const response = await fetchWithTimeout(url, {
-			headers: { Authorization: `Bearer ${apiKey}` },
+			headers: conditionalHeaders(apiKey, options),
+			signal: options?.signal,
 		});
+		if (response.status === 304) return { models: [], notModified: true, ...resultMetadata(response) };
 
 		if (!response.ok) {
 			throw new Error(`OpenAI models API returned ${response.status}: ${response.statusText}`);
 		}
 
 		const data = (await response.json()) as { data?: Array<Record<string, unknown>> };
-		return (data.data ?? [])
+		return { models: (data.data ?? [])
 			.map((m) => parseOpenAICompatibleModel(m))
-			.filter((m): m is DiscoveredModel => !!m);
+			.filter((m): m is DiscoveredModel => !!m), ...resultMetadata(response) };
 	}
 }
 
@@ -159,9 +194,10 @@ class OllamaDiscoveryAdapter implements ProviderDiscoveryAdapter {
 	provider = "ollama";
 	supportsDiscovery = true;
 
-	async fetchModels(_apiKey: string, baseUrl?: string): Promise<DiscoveredModel[]> {
+	async fetchModels(_apiKey: string, baseUrl?: string, options?: DiscoveryFetchOptions): Promise<DiscoveryFetchResult> {
 		const url = `${baseUrl ?? "http://localhost:11434"}/api/tags`;
-		const response = await fetchWithTimeout(url);
+		const response = await fetchWithTimeout(url, { headers: conditionalHeaders(undefined, options), signal: options?.signal });
+		if (response.status === 304) return { models: [], notModified: true, ...resultMetadata(response) };
 
 		if (!response.ok) {
 			throw new Error(`Ollama tags API returned ${response.status}: ${response.statusText}`);
@@ -171,11 +207,11 @@ class OllamaDiscoveryAdapter implements ProviderDiscoveryAdapter {
 			models: Array<{ name: string; size: number; details?: { parameter_size?: string } }>;
 		};
 
-		return (data.models ?? []).map((m) => ({
+		return { models: (data.models ?? []).map((m) => ({
 			id: m.name,
 			name: m.name,
 			input: ["text" as const],
-		}));
+		})), ...resultMetadata(response) };
 	}
 }
 
@@ -185,12 +221,14 @@ class OpenRouterDiscoveryAdapter implements ProviderDiscoveryAdapter {
 	provider = "openrouter";
 	supportsDiscovery = true;
 
-	async fetchModels(apiKey: string, baseUrl?: string): Promise<DiscoveredModel[]> {
+	async fetchModels(apiKey: string, baseUrl?: string, options?: DiscoveryFetchOptions): Promise<DiscoveryFetchResult> {
 		const origin = stripTrailingOpenAIPathPrefix(baseUrl ?? "https://openrouter.ai");
 		const url = `${origin}/api/v1/models`;
 		const response = await fetchWithTimeout(url, {
-			headers: { Authorization: `Bearer ${apiKey}` },
+			headers: conditionalHeaders(apiKey, options),
+			signal: options?.signal,
 		});
+		if (response.status === 304) return { models: [], notModified: true, ...resultMetadata(response) };
 
 		if (!response.ok) {
 			throw new Error(`OpenRouter models API returned ${response.status}: ${response.statusText}`);
@@ -206,7 +244,7 @@ class OpenRouterDiscoveryAdapter implements ProviderDiscoveryAdapter {
 			}>;
 		};
 
-		return (data.data ?? []).map((m) => {
+		return { models: (data.data ?? []).map((m) => {
 			const cost =
 				m.pricing?.prompt !== undefined && m.pricing?.completion !== undefined
 					? {
@@ -225,7 +263,7 @@ class OpenRouterDiscoveryAdapter implements ProviderDiscoveryAdapter {
 				cost,
 				input: ["text" as const, "image" as const],
 			};
-		});
+		}), ...resultMetadata(response) };
 	}
 }
 
@@ -235,9 +273,10 @@ class GoogleDiscoveryAdapter implements ProviderDiscoveryAdapter {
 	provider = "google";
 	supportsDiscovery = true;
 
-	async fetchModels(apiKey: string, baseUrl?: string): Promise<DiscoveredModel[]> {
+	async fetchModels(apiKey: string, baseUrl?: string, options?: DiscoveryFetchOptions): Promise<DiscoveryFetchResult> {
 		const url = `${baseUrl ?? "https://generativelanguage.googleapis.com"}/v1beta/models?key=${apiKey}`;
-		const response = await fetchWithTimeout(url);
+		const response = await fetchWithTimeout(url, { headers: conditionalHeaders(undefined, options), signal: options?.signal });
+		if (response.status === 304) return { models: [], notModified: true, ...resultMetadata(response) };
 
 		if (!response.ok) {
 			throw new Error(`Google models API returned ${response.status}: ${response.statusText}`);
@@ -253,7 +292,7 @@ class GoogleDiscoveryAdapter implements ProviderDiscoveryAdapter {
 			}>;
 		};
 
-		return (data.models ?? [])
+		return { models: (data.models ?? [])
 			.filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
 			.map((m) => ({
 				id: m.name.replace("models/", ""),
@@ -261,7 +300,7 @@ class GoogleDiscoveryAdapter implements ProviderDiscoveryAdapter {
 				contextWindow: m.inputTokenLimit,
 				maxTokens: m.outputTokenLimit,
 				input: ["text" as const, "image" as const],
-			}));
+			})), ...resultMetadata(response) };
 	}
 }
 
@@ -275,8 +314,8 @@ class StaticDiscoveryAdapter implements ProviderDiscoveryAdapter {
 		this.provider = provider;
 	}
 
-	async fetchModels(): Promise<DiscoveredModel[]> {
-		return [];
+	async fetchModels(): Promise<DiscoveryFetchResult> {
+		return { models: [] };
 	}
 }
 
