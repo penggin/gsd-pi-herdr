@@ -348,3 +348,25 @@ already settled an Attempt can leave an open DB lifecycle beside a completion
 artifact and trip `artifact-db-status-divergence`. Truly legacy Tasks with no
 adopted lifecycle retain their compatibility path. Canonical Tasks instead
 consume their recorded retry/recovery action through the GSD orchestrator.
+
+---
+
+## ADR-H024 — Make ModelsStore canonical for refreshed provider catalogs
+
+**Status:** Accepted
+**Date:** 2026-09-03
+
+Provider model discovery persists complete, provider-keyed model snapshots
+through the provider-neutral `ModelsStore` contract. The coding-agent file
+implementation serializes concurrent writers under the existing owner-only
+locked storage boundary, supports caller cancellation, and keeps validator
+metadata (`etag`, `lastModified`, and `checkedAt`) alongside the models.
+
+`models-store.json` is canonical for refreshed catalogs. The older
+`discovery-cache.json` may be read once as a compatibility input and promoted
+to the new store, but it is not a second source of truth. Bundled models,
+downstream catalog overlay, `models.json`, and extension provider composition
+remain under `ModelRegistry` until the next migration slice establishes and
+tests one explicit precedence pipeline. Network refresh stays opt-in through
+the existing discovery command paths; normal startup does not gain an upstream
+or provider network dependency.

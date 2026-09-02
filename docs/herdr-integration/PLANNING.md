@@ -1,7 +1,7 @@
 # GSD–Herdr Living Plan
 
 > **Status:** M0–M7 and final downstream-isolation revalidation complete
-> **Last updated:** 2026-09-02
+> **Last updated:** 2026-09-03
 > **Current milestone:** Complete — downstream-only install and release validation passed
 > **Canonical rule:** Every Herdr-integration development session starts by reading this file and ends by updating it.
 
@@ -1145,6 +1145,43 @@ this session does not merge, push, tag, or publish.
   this compatibility batch: prepare the v0.79→v0.80 provider-store migration
   as a separate focused branch rather than mixing it into the validated Herdr
   runtime line.
+
+### 2026-09-03 — Pi v0.80 provider-store migration, storage slice
+
+- Started the priority-2 migration on dedicated branch
+  `feature/pi-v080-provider-store`, based on the fully pushed and verified
+  priority-1 compatibility batch. Read-only comparison of upstream v0.79.10 and
+  v0.80.10 confirmed that provider/auth/runtime changes span 232 files, so a
+  wholesale replacement remains unsafe for downstream OpenCodex, Assessment
+  Gate, and Herdr seams.
+- Added the provider-neutral `ModelsStore`/`ModelsStoreEntry` contract to
+  `@gsd/pi-ai`, including cancellation and persisted catalog validator metadata.
+  Added memory and owner-only locked JSON implementations to coding-agent.
+  Concurrent provider writes preserve sibling entries; values are cloned at
+  the boundary; already-cancelled writes do not create storage.
+- Made `models-store.json` the canonical cache for runtime model discovery.
+  `ModelRegistry.create()` and `inMemory()` accept an injected store, fresh
+  snapshots restore discovered models without network access, and aborts remain
+  cancellations rather than provider-error results. A fresh legacy
+  `discovery-cache.json` entry is promoted once for backward compatibility;
+  future catalog reads/writes use the new store.
+- Preserved existing startup behavior: no automatic provider network access was
+  added, bundled catalog/overlay/`models.json` precedence is unchanged, and the
+  existing extension provider registration API remains intact. This slice does
+  not claim the v0.80 credential/runtime migration.
+- Verification: store-focused tests **3/3 pass**; store + registry + catalog
+  overlay regression **13/13 pass**; `typecheck:extensions` pass; `build:core`
+  pass; all ten compiled workspace package suites pass, including the expanded
+  coding-agent suite **59/59** and MCP workflow suite **377/377**;
+  `git diff --check` pass.
+- Decision: ADR-H024 makes `ModelsStore` canonical for refreshed provider
+  catalogs while treating the old discovery cache only as migration input.
+  No dependency or lockfile change was introduced.
+- Exact next task: characterize and extract one deterministic provider
+  composition pipeline with explicit precedence
+  `built-in < downstream catalog overlay < models.json < extension provider`,
+  then move auth/header resolution behind a credential adapter without changing
+  the public extension registration contract.
 
 ## 11. Working-session protocol
 
