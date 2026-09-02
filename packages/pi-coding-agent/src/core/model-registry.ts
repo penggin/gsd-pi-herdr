@@ -167,11 +167,15 @@ const OpenAICompletionsCompatSchema = Type.Object({
 const OpenAIResponsesCompatSchema = Type.Object({
 	sendSessionIdHeader: Type.Optional(Type.Boolean()),
 	supportsLongCacheRetention: Type.Optional(Type.Boolean()),
+	supportsAdditionalTools: Type.Optional(Type.Boolean()),
+	supportsToolSearch: Type.Optional(Type.Boolean()),
 });
 
 const OpenAICodexResponsesCompatSchema = Type.Object({
 	codexAuth: Type.Optional(Type.Union([Type.Literal("chatgpt-oauth"), Type.Literal("bearer")])),
 	codexEndpoint: Type.Optional(Type.Union([Type.Literal("chatgpt"), Type.Literal("responses")])),
+	supportsAdditionalTools: Type.Optional(Type.Boolean()),
+	supportsToolSearch: Type.Optional(Type.Boolean()),
 });
 
 const AnthropicMessagesCompatSchema = Type.Object({
@@ -180,6 +184,7 @@ const AnthropicMessagesCompatSchema = Type.Object({
 	sendSessionAffinityHeaders: Type.Optional(Type.Boolean()),
 	supportsCacheControlOnTools: Type.Optional(Type.Boolean()),
 	forceAdaptiveThinking: Type.Optional(Type.Boolean()),
+	supportsToolReferences: Type.Optional(Type.Boolean()),
 });
 
 const ProviderCompatSchema = Type.Union([

@@ -42,6 +42,7 @@ import {
 } from "../utils/diagnostics.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { applyProviderHeaders, headersToRecord } from "../utils/headers.js";
+import { splitDeferredTools } from "../utils/deferred-tools.js";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.js";
 import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.js";
 import { buildBaseOptions } from "./simple-options.js";
@@ -82,6 +83,8 @@ function resolveCodexCompat(model: Model<"openai-codex-responses">): ResolvedOpe
 	return {
 		codexAuth: model.compat?.codexAuth ?? (directChatGPT ? "chatgpt-oauth" : "bearer"),
 		codexEndpoint: model.compat?.codexEndpoint ?? (directChatGPT ? "chatgpt" : "responses"),
+		supportsAdditionalTools: model.compat?.supportsAdditionalTools ?? false,
+		supportsToolSearch: model.compat?.supportsToolSearch ?? false,
 	};
 }
 
@@ -406,8 +409,18 @@ function buildRequestBody(
 		input: modelCapabilities.input ?? [],
 		output: modelCapabilities.output ?? ["text"],
 	} as Model<"openai-codex-responses">;
+	const compat = resolveCodexCompat(model);
+	const deferredToolsMode = compat.supportsAdditionalTools
+		? "additional-tools"
+		: compat.supportsToolSearch
+			? "tool-search"
+			: undefined;
+	const toolPlacement = splitDeferredTools(context, deferredToolsMode !== undefined);
 	const messages = convertResponsesMessages(normalizedModel, context, CODEX_TOOL_CALL_PROVIDERS, {
 		includeSystemPrompt: false,
+		deferredTools: toolPlacement.deferred,
+		deferredToolsMode,
+		toolOptions: { strict: null },
 	});
 
 	const body: RequestBody = {
@@ -431,8 +444,8 @@ function buildRequestBody(
 		body.service_tier = options.serviceTier;
 	}
 
-	if (context.tools && context.tools.length > 0) {
-		body.tools = convertResponsesTools(context.tools, { strict: null });
+	if (toolPlacement.immediate.length > 0) {
+		body.tools = convertResponsesTools(toolPlacement.immediate, { strict: null });
 	}
 
 	if (options?.reasoningEffort !== undefined) {

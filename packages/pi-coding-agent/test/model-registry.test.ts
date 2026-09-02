@@ -456,6 +456,8 @@ describe("ModelRegistry", () => {
 					compat: {
 						codexAuth: "bearer",
 						codexEndpoint: "responses",
+						supportsAdditionalTools: true,
+						supportsToolSearch: false,
 					},
 					models: [{ id: "routed/model" }],
 				},
@@ -465,7 +467,12 @@ describe("ModelRegistry", () => {
 			const compat = registry.find("proxy", "routed/model")?.compat as OpenAICodexResponsesCompat | undefined;
 
 			expect(registry.getError()).toBeUndefined();
-			expect(compat).toEqual({ codexAuth: "bearer", codexEndpoint: "responses" });
+			expect(compat).toEqual({
+				codexAuth: "bearer",
+				codexEndpoint: "responses",
+				supportsAdditionalTools: true,
+				supportsToolSearch: false,
+			});
 		});
 
 		test("model-level compat overrides provider-level compat for custom models", () => {

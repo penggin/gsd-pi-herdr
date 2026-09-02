@@ -32,6 +32,7 @@ import type {
 	WebSearchResult,
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
+import { splitDeferredTools } from "../utils/deferred-tools.js";
 import { headersToRecord } from "../utils/headers.js";
 import { parseJsonWithRepair, parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeToolSchema } from "../utils/sanitize-tool-schema.js";
@@ -186,7 +187,18 @@ function getAnthropicCompat(
 		sendSessionAffinityHeaders:
 			model.compat?.sendSessionAffinityHeaders ?? !!(isFireworks || isCloudflareAiGatewayAnthropic),
 		supportsCacheControlOnTools: model.compat?.supportsCacheControlOnTools ?? !isFireworks,
+		supportsToolReferences: model.compat?.supportsToolReferences ?? defaultSupportsToolReferences(model),
 	};
+}
+
+/** First-party Claude 4.5+ models support client-side tool references; Haiku does not. */
+function defaultSupportsToolReferences(model: Model<"anthropic-messages">): boolean {
+	if (model.provider !== "anthropic" || model.id.includes("haiku")) return false;
+	const version = model.id.match(/^claude-(?:opus|sonnet|fable)-(\d+)(?:-(\d+))?(?:-|$)/);
+	if (!version) return false;
+	const major = Number(version[1]);
+	const minor = version[2] && version[2].length < 8 ? Number(version[2]) : 0;
+	return major > 4 || (major === 4 && minor >= 5);
 }
 
 export interface AnthropicOptions extends StreamOptions {
@@ -940,9 +952,26 @@ function buildParams(
 	options?: AnthropicOptions,
 ): MessageCreateParamsStreaming {
 	const { cacheControl } = getCacheControl(model, options?.cacheRetention);
+	const compat = getAnthropicCompat(model);
+	const normalizeToolName = isOAuthToken ? toClaudeCodeName : (name: string) => name;
+	const toolPlacement = splitDeferredTools(context, compat.supportsToolReferences, normalizeToolName);
+	let immediateTools = toolPlacement.immediate;
+	let deferredTools = [...toolPlacement.deferred.values()];
+	if (immediateTools.length === 0 && deferredTools.length > 0) {
+		immediateTools = deferredTools;
+		deferredTools = [];
+	}
+	const deferredToolNames = new Set(deferredTools.map((tool) => normalizeToolName(tool.name)));
 	const params: MessageCreateParamsStreaming = {
 		model: model.id,
-		messages: convertMessages(context.messages, model, isOAuthToken, cacheControl),
+		messages: convertMessages(
+			context.messages,
+			model,
+			isOAuthToken,
+			cacheControl,
+			deferredToolNames,
+			normalizeToolName,
+		),
 		max_tokens: options?.maxTokens ?? model.maxTokens,
 		stream: true,
 	};
@@ -984,15 +1013,24 @@ function buildParams(
 		params.temperature = options.temperature;
 	}
 
-	if (context.tools && context.tools.length > 0) {
-		const compat = getAnthropicCompat(model);
-		params.tools = convertTools(
-			context.tools,
-			isOAuthToken,
-			compat.supportsEagerToolInputStreaming,
-			compat.supportsCacheControlOnTools ? cacheControl : undefined,
-			model,
-		);
+	if (immediateTools.length > 0 || deferredTools.length > 0) {
+		params.tools = [
+			...convertTools(
+				immediateTools,
+				isOAuthToken,
+				compat.supportsEagerToolInputStreaming,
+				compat.supportsCacheControlOnTools ? cacheControl : undefined,
+				model,
+			),
+			...convertTools(
+				deferredTools,
+				isOAuthToken,
+				compat.supportsEagerToolInputStreaming,
+				undefined,
+				model,
+				true,
+			),
+		];
 	}
 
 	// Configure thinking mode: adaptive, budget-based, or explicitly disabled.
@@ -1054,8 +1092,11 @@ function convertMessages(
 	model: Model<"anthropic-messages">,
 	isOAuthToken: boolean,
 	cacheControl?: CacheControlEphemeral,
+	deferredToolNames: ReadonlySet<string> = new Set(),
+	normalizeToolName: (name: string) => string = (name) => name,
 ): MessageParam[] {
 	const params: MessageParam[] = [];
+	const loadedToolNames = new Set<string>();
 
 	// Transform messages for cross-provider compatibility
 	const transformedMessages = transformMessages(messages, model, normalizeToolCallId);
@@ -1185,25 +1226,35 @@ function convertMessages(
 		} else if (msg.role === "toolResult") {
 			// Collect all consecutive toolResult messages, needed for z.ai Anthropic endpoint
 			const toolResults: ContentBlockParam[] = [];
+			const siblingContent: ContentBlockParam[] = [];
 
-			// Add the current tool result
-			toolResults.push({
-				type: "tool_result",
-				tool_use_id: msg.toolCallId,
-				content: convertContentBlocks(msg.content),
-				is_error: msg.isError,
-			});
-
-			// Look ahead for consecutive toolResult messages
-			let j = i + 1;
+			let j = i;
 			while (j < transformedMessages.length && transformedMessages[j].role === "toolResult") {
 				const nextMsg = transformedMessages[j] as ToolResultMessage; // We know it's a toolResult
+				const references: Array<{ type: "tool_reference"; tool_name: string }> = [];
+				for (const name of nextMsg.addedToolNames ?? []) {
+					const normalizedName = normalizeToolName(name);
+					if (!deferredToolNames.has(normalizedName) || loadedToolNames.has(normalizedName)) continue;
+					loadedToolNames.add(normalizedName);
+					references.push({
+						type: "tool_reference",
+						tool_name: isOAuthToken ? toClaudeCodeName(name) : name,
+					});
+				}
+				const convertedContent = convertContentBlocks(nextMsg.content);
 				toolResults.push({
 					type: "tool_result",
 					tool_use_id: nextMsg.toolCallId,
-					content: convertContentBlocks(nextMsg.content),
+					content: references.length > 0 ? references : convertedContent,
 					is_error: nextMsg.isError,
 				});
+				if (references.length > 0) {
+					if (typeof convertedContent === "string") {
+						siblingContent.push({ type: "text", text: convertedContent });
+					} else {
+						siblingContent.push(...convertedContent);
+					}
+				}
 				j++;
 			}
 
@@ -1213,7 +1264,7 @@ function convertMessages(
 			// Add a single user message with all tool results
 			params.push({
 				role: "user",
-				content: toolResults,
+				content: [...toolResults, ...siblingContent],
 			});
 		}
 	}
@@ -1255,6 +1306,7 @@ function convertTools(
 	supportsEagerToolInputStreaming: boolean,
 	cacheControl: CacheControlEphemeral | undefined,
 	model: Model<"anthropic-messages">,
+	deferLoading = false,
 ): Anthropic.Messages.Tool[] {
 	if (!tools) return [];
 
@@ -1280,6 +1332,7 @@ function convertTools(
 			description: tool.description,
 			...(supportsEagerToolInputStreaming ? { eager_input_streaming: true } : {}),
 			input_schema: inputSchema as Anthropic.Messages.Tool.InputSchema,
+			...(deferLoading ? { defer_loading: true } : {}),
 			...(cacheControl && index === tools.length - 1 ? { cache_control: cacheControl } : {}),
 		};
 	});

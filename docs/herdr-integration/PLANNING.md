@@ -1272,6 +1272,38 @@ this session does not merge, push, tag, or publish.
   integrate it only into provider payloads that can represent deferred tools
   natively. Preserve complete-tool fallback for contractions, old transcripts,
   and models without an explicit deferred-tool capability.
+- Implemented the pure deferred-tool planner and connected it to native provider
+  payloads. OpenAI Responses and Codex-compatible routes use message-anchored
+  `additional_tools` or client `tool_search` only when the model explicitly
+  advertises that capability. Anthropic first-party Claude 4.5+ (excluding
+  Haiku) uses `defer_loading` plus `tool_reference`; compatible proxies remain
+  eager unless explicitly opted in. Reference-bearing Anthropic results retain
+  ordinary text/image output as sibling content instead of dropping it.
+- Safe fallback remains the complete active tool prefix for old transcripts,
+  unsupported models, proxy endpoints without capability metadata, mixed
+  removal/addition transitions, and Anthropic requests where every current tool
+  would otherwise be deferred. Models JSON validation accepts all three new
+  compatibility flags. ADR-H026 records this cache-optimization boundary.
+- Focused verification currently passes: planner/provider payload **11/11**,
+  OpenAI/Codex/Anthropic provider regressions **96 passed / 8 environment skips**,
+  the updated models.json compatibility case **1/1**, and `build:pi-ai`. A full
+  source `model-registry.test.ts` invocation still exposes eleven pre-existing
+  expectation mismatches around command-backed credential hardening and dynamic
+  provider validation; the changed compatibility case passes independently and
+  the final compiled workspace matrix remains the release gate.
+- Exact next task: run `typecheck:extensions`, `build:core`, and all compiled
+  package suites; repair only regressions attributable to deferred loading, then
+  commit and push the priority-2 provider/runtime batch.
+- Final gate passes: `typecheck:extensions`, `build:core`, `git diff --check`,
+  and all ten compiled workspace package suites. Counts remain agent-core
+  **135/135**, agent-modes **287/287**, native **223 pass / 1 platform skip**,
+  pi-agent-core **3/3**, pi-ai **49/49**, coding-agent **66/66**, pi-tui **8/8**,
+  contracts **9/9**, MCP **377/377**, and RPC client **30/30**. The focused
+  deferred/provider suite remains **11/11** and the broader affected-provider
+  suite remains **96 passed / 8 environment skips**.
+- Exact next task: commit and push the deferred-tool slice, then begin the next
+  upstream audit unit from the remaining v0.80 provider/runtime delta rather
+  than expanding this cache optimization into unsupported provider protocols.
 
 ## 11. Working-session protocol
 

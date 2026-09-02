@@ -391,3 +391,25 @@ metadata listing cannot expose secret values, and `modify` performs the OAuth-
 safe read/modify/write inside the storage lock. Existing login, runtime override,
 command-backed key, and provider request resolution remain authoritative until
 their consumers migrate to the adapter.
+
+---
+
+## ADR-H026 — Defer dynamic tools only through explicit provider capabilities
+
+**Status:** Accepted
+**Date:** 2026-09-03
+
+Dynamic tool activation is recorded as optional `addedToolNames` provenance on
+the canonical tool-result transcript. A provider may move those definitions out
+of the stable request prefix only when its model compatibility metadata names a
+native deferred-tool wire contract. OpenAI Responses and Codex-compatible
+endpoints therefore require `supportsAdditionalTools` or `supportsToolSearch`;
+an arbitrary Responses-compatible proxy is never assumed to implement either.
+
+First-party Anthropic Claude 4.5+ models, except Haiku, use the documented
+`defer_loading`/`tool_reference` contract by default. Anthropic-compatible
+proxies require `supportsToolReferences: true`. Providers and old transcripts
+without the marker keep the complete active tool list. Mixed tool-set
+contractions are never represented as append-only provenance, and an Anthropic
+request with no immediate definition falls back to an eager tool list. These
+fallbacks preserve replay correctness ahead of prompt-cache optimization.

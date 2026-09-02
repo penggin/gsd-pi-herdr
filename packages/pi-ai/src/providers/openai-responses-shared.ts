@@ -8,10 +8,12 @@ import type {
 	ResponseInput,
 	ResponseInputContent,
 	ResponseInputImage,
+	ResponseInputItem,
 	ResponseInputText,
 	ResponseOutputMessage,
 	ResponseReasoningItem,
 	ResponseStreamEvent,
+	ResponseToolSearchOutputItemParam,
 } from "openai/resources/responses/responses.js";
 import { calculateCost } from "../models.js";
 import type {
@@ -79,10 +81,14 @@ export interface OpenAIResponsesStreamOptions {
 
 export interface ConvertResponsesMessagesOptions {
 	includeSystemPrompt?: boolean;
+	deferredTools?: ReadonlyMap<string, Tool>;
+	deferredToolsMode?: "additional-tools" | "tool-search";
+	toolOptions?: ConvertResponsesToolsOptions;
 }
 
 export interface ConvertResponsesToolsOptions {
 	strict?: boolean | null;
+	deferLoading?: boolean;
 }
 
 // =============================================================================
@@ -96,6 +102,7 @@ export function convertResponsesMessages<TApi extends Api>(
 	options?: ConvertResponsesMessagesOptions,
 ): ResponseInput {
 	const messages: ResponseInput = [];
+	const loadedToolNames = new Set<string>();
 
 	const normalizeIdPart = (part: string): string => {
 		const sanitized = part.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -297,6 +304,41 @@ export function convertResponsesMessages<TApi extends Api>(
 				call_id: callId,
 				output,
 			});
+
+			const deferredTools: Tool[] = [];
+			for (const name of msg.addedToolNames ?? []) {
+				const tool = options?.deferredTools?.get(name);
+				if (!tool || loadedToolNames.has(name)) continue;
+				loadedToolNames.add(name);
+				deferredTools.push(tool);
+			}
+			if (deferredTools.length > 0 && options?.deferredToolsMode === "additional-tools") {
+				messages.push({
+					type: "additional_tools",
+					role: "developer",
+					tools: convertResponsesTools(deferredTools, options.toolOptions),
+				} as unknown as ResponseInputItem);
+			} else if (deferredTools.length > 0 && options?.deferredToolsMode === "tool-search") {
+				const names = deferredTools.map((tool) => tool.name);
+				const searchCallId = `pi_tool_load_${shortHash(`${msg.toolCallId}:${names.join(",")}`)}`;
+				messages.push({
+					type: "tool_search_call",
+					call_id: searchCallId,
+					execution: "client",
+					status: "completed",
+					arguments: { query: names.join(" "), limit: names.length },
+				} as unknown as ResponseInputItem);
+				messages.push({
+					type: "tool_search_output",
+					call_id: searchCallId,
+					execution: "client",
+					status: "completed",
+					tools: convertResponsesTools(deferredTools, {
+						...options.toolOptions,
+						deferLoading: true,
+					}),
+				} satisfies ResponseToolSearchOutputItemParam);
+			}
 		}
 		msgIndex++;
 	}
@@ -308,15 +350,19 @@ export function convertResponsesMessages<TApi extends Api>(
 // Tool conversion
 // =============================================================================
 
-export function convertResponsesTools(tools: Tool[], options?: ConvertResponsesToolsOptions): OpenAITool[] {
+export function convertResponsesTools(tools: readonly Tool[], options?: ConvertResponsesToolsOptions): OpenAITool[] {
 	const strict = options?.strict === undefined ? false : options.strict;
-	return tools.map((tool) => ({
-		type: "function",
-		name: tool.name,
-		description: tool.description,
-		parameters: tool.parameters as any, // TypeBox already generates JSON Schema
-		strict,
-	}));
+	return tools.map(
+		(tool) =>
+			({
+				type: "function",
+				name: tool.name,
+				description: tool.description,
+				parameters: tool.parameters as any, // TypeBox already generates JSON Schema
+				strict,
+				...(options?.deferLoading ? { defer_loading: true } : {}),
+			}) as OpenAITool,
+	);
 }
 
 // =============================================================================
