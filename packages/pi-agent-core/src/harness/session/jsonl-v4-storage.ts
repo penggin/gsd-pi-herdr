@@ -17,13 +17,15 @@ import {
 	type ReadJsonlV4Options,
 } from "./jsonl-v4-reader.js";
 import { getFileSystemResultOrThrow } from "./repo-utils.js";
-import { assertV4JsonSerializable } from "./session-v4-json.js";
+import { assertV4JsonSerializable, assertV4MutationJsonSerializable } from "./session-v4-json.js";
 import type { V4ProvisionedEntry, V4ProvisionedRecord } from "./session-v4-memory.js";
 import {
+	type V4BranchBounds,
 	type V4EntryQuery,
 	type V4ForkOptions,
 	type V4RecordQuery,
 	type V4SessionLogItem,
+	type V4SessionStats,
 	V4SessionState,
 	V4SessionStateError,
 	type V4SessionStateSnapshot,
@@ -52,7 +54,7 @@ function byteLength(value: string): number {
 }
 
 function normalizedMutation(mutation: JsonlV4Mutation): { mutation: JsonlV4Mutation; line: string } {
-	assertV4JsonSerializable(mutation);
+	assertV4MutationJsonSerializable(mutation);
 	const line = serializeJsonlV4Mutation(mutation);
 	if (byteLength(line) > DEFAULT_JSONL_V4_MAX_LINE_BYTES) {
 		throw new SessionError("invalid_payload", "Durable v4 mutation exceeds the line length limit");
@@ -192,6 +194,10 @@ export class JsonlV4SessionStorage {
 		return this.state.getLabel(targetId);
 	}
 
+	getStats(): V4SessionStats {
+		return this.state.getStats();
+	}
+
 	getLog(options?: { afterSeq?: number; limit?: number }): V4SessionLogItem[] {
 		try {
 			return this.state.getLog(options);
@@ -200,9 +206,9 @@ export class JsonlV4SessionStorage {
 		}
 	}
 
-	findOpenOperations(lane: string): JsonlV4Record[] {
+	findOpenOperations(lane: string, options?: { limit?: number }): JsonlV4Record[] {
 		try {
-			return this.state.findOpenOperations(lane);
+			return this.state.findOpenOperations(lane, options);
 		} catch (error) {
 			stateError(error);
 		}
@@ -263,10 +269,9 @@ export class JsonlV4SessionStorage {
 				throw new SessionError("invalid_payload", "Provisioned v4 record contains storage-owned fields");
 			}
 			try {
-				this.state.requireLane(record.lane);
-				this.state.validateUnusedId(record.id);
+				this.state.validateRecord(record as JsonlV4Record);
 				if (record.type === "operation_started" && this.state.findOpenOperations(record.lane).length > 0) {
-					throw new SessionError("invalid_entry", `Lane ${record.lane} already has an open operation`);
+					throw new SessionError("storage", `Lane ${record.lane} already has an open operation`);
 				}
 			} catch (error) {
 				stateError(error);
@@ -308,6 +313,14 @@ export class JsonlV4SessionStorage {
 	findEntries(query?: V4EntryQuery): JsonlV4Entry[] {
 		try {
 			return this.state.findEntries(query);
+		} catch (error) {
+			stateError(error);
+		}
+	}
+
+	findEntriesOnBranch(query: V4EntryQuery & V4BranchBounds & { start: string }): JsonlV4Entry[] {
+		try {
+			return this.state.findEntriesOnBranch(query);
 		} catch (error) {
 			stateError(error);
 		}

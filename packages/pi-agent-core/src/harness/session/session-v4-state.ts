@@ -1,5 +1,5 @@
-import type { JsonlV4Entry, JsonlV4Mutation, JsonlV4Record } from "./jsonl-v4-codec.js";
 import type { SessionErrorCode } from "../types.js";
+import type { JsonlV4Entry, JsonlV4Mutation, JsonlV4Record } from "./jsonl-v4-codec.js";
 
 export interface V4SessionStateSnapshot {
 	sequence: number;
@@ -8,6 +8,14 @@ export interface V4SessionStateSnapshot {
 	lanes: Array<{ lane: string; leafId: string | null }>;
 	name?: string;
 	labels: Record<string, string>;
+}
+
+export interface V4SessionStats {
+	messageCount: number;
+	cachedTokens: number;
+	uncachedTokens: number;
+	totalTokens: number;
+	costTotal: number;
 }
 
 export type V4SessionLogItem =
@@ -25,10 +33,16 @@ export interface V4EntryQuery {
 	limit?: number;
 }
 
+export interface V4BranchBounds {
+	stopAtType?: JsonlV4Entry["type"];
+	stopAtId?: string;
+}
+
 export interface V4RecordQuery {
 	type?: JsonlV4Record["type"];
 	lane?: string;
 	runId?: string;
+	operationKind?: "run" | "compaction" | "navigation";
 	order?: "newestFirst" | "oldestFirst";
 	afterSeq?: number;
 	limit?: number;
@@ -51,6 +65,39 @@ function ordered<T>(values: readonly T[], order: "newestFirst" | "oldestFirst" |
 	return order === "oldestFirst" ? [...values] : [...values].reverse();
 }
 
+function finiteNumber(value: unknown, field: string): number {
+	if (typeof value !== "number" || !Number.isFinite(value)) {
+		throw new V4SessionStateError("invalid_entry", `has invalid ${field}`);
+	}
+	return value;
+}
+
+function usageDelta(record: JsonlV4Record): Omit<V4SessionStats, "messageCount"> | undefined {
+	if (record.type !== "usage") return undefined;
+	const usage = record.usage;
+	if (typeof usage !== "object" || usage === null || Array.isArray(usage)) {
+		throw new V4SessionStateError("invalid_entry", "has invalid usage");
+	}
+	const cost = (usage as Record<string, unknown>).cost;
+	if (typeof cost !== "object" || cost === null || Array.isArray(cost)) {
+		throw new V4SessionStateError("invalid_entry", "has invalid usage cost");
+	}
+	const input = finiteNumber((usage as Record<string, unknown>).input, "usage.input");
+	finiteNumber((usage as Record<string, unknown>).output, "usage.output");
+	const cacheRead = finiteNumber((usage as Record<string, unknown>).cacheRead, "usage.cacheRead");
+	const cacheWrite = finiteNumber((usage as Record<string, unknown>).cacheWrite, "usage.cacheWrite");
+	finiteNumber((cost as Record<string, unknown>).input, "usage.cost.input");
+	finiteNumber((cost as Record<string, unknown>).output, "usage.cost.output");
+	finiteNumber((cost as Record<string, unknown>).cacheRead, "usage.cost.cacheRead");
+	finiteNumber((cost as Record<string, unknown>).cacheWrite, "usage.cost.cacheWrite");
+	return {
+		cachedTokens: cacheRead,
+		uncachedTokens: input + cacheWrite,
+		totalTokens: finiteNumber((usage as Record<string, unknown>).totalTokens, "usage.totalTokens"),
+		costTotal: finiteNumber((cost as Record<string, unknown>).total, "usage.cost.total"),
+	};
+}
+
 export class V4SessionStateError extends Error {
 	readonly code: SessionErrorCode;
 
@@ -68,10 +115,18 @@ export class V4SessionState {
 	private readonly entries: JsonlV4Entry[] = [];
 	private readonly entriesById = new Map<string, JsonlV4Entry>();
 	private readonly records: JsonlV4Record[] = [];
+	private readonly openOperationsByLane = new Map<string, Map<string, JsonlV4Record>>();
 	private readonly log: V4SessionLogItem[] = [];
 	private readonly lanes = new Map<string, string | null>([["main", null]]);
 	private readonly labels = new Map<string, string>();
 	private name: string | undefined;
+	private readonly stats: V4SessionStats = {
+		messageCount: 0,
+		cachedTokens: 0,
+		uncachedTokens: 0,
+		totalTokens: 0,
+		costTotal: 0,
+	};
 
 	get nextSequence(): number {
 		return this.sequence + 1;
@@ -94,6 +149,12 @@ export class V4SessionState {
 
 	validateUnusedId(id: string): void {
 		if (this.usedIds.has(id)) throw new V4SessionStateError("already_exists", `contains duplicate id ${id}`);
+	}
+
+	validateRecord(record: JsonlV4Record): void {
+		this.requireLane(record.lane);
+		this.validateUnusedId(record.id);
+		usageDelta(record);
 	}
 
 	apply(mutation: JsonlV4Mutation): void {
@@ -124,15 +185,33 @@ export class V4SessionState {
 				this.entriesById.set(mutation.entry.id, mutation.entry);
 				if (mutation.lane !== undefined) this.lanes.set(mutation.lane, mutation.entry.id);
 				this.log.push({ kind: "entry", seq, entry: mutation.entry });
+				if (mutation.entry.type === "message") this.stats.messageCount += 1;
 				break;
 			}
-			case "record":
-				this.requireLane(mutation.record.lane);
-				this.validateUnusedId(mutation.record.id);
+			case "record": {
+				this.validateRecord(mutation.record);
+				const usage = usageDelta(mutation.record);
 				this.usedIds.add(mutation.record.id);
 				this.records.push(mutation.record);
+				if (mutation.record.type === "operation_started") {
+					let open = this.openOperationsByLane.get(mutation.record.lane);
+					if (!open) {
+						open = new Map();
+						this.openOperationsByLane.set(mutation.record.lane, open);
+					}
+					open.set(mutation.record.id, mutation.record);
+				} else if (mutation.record.type === "operation_finished" && typeof mutation.record.runId === "string") {
+					this.openOperationsByLane.get(mutation.record.lane)?.delete(mutation.record.runId);
+				}
 				this.log.push({ kind: "record", seq, record: mutation.record });
+				if (usage) {
+					this.stats.cachedTokens += usage.cachedTokens;
+					this.stats.uncachedTokens += usage.uncachedTokens;
+					this.stats.totalTokens += usage.totalTokens;
+					this.stats.costTotal += usage.costTotal;
+				}
 				break;
+			}
 			case "lane":
 				this.validateTarget(mutation.leafId);
 				this.lanes.set(mutation.lane, mutation.leafId);
@@ -188,26 +267,55 @@ export class V4SessionState {
 
 	findRecords(query: V4RecordQuery = {}): JsonlV4Record[] {
 		assertQueryBounds(query.limit, query.afterSeq);
+		if (query.operationKind !== undefined && query.type !== "operation_started") {
+			throw new V4SessionStateError(
+				"invalid_query",
+				"operationKind requires type operation_started",
+			);
+		}
 		const matches = ordered(this.records, query.order).filter(
 			(record) =>
 				(query.type === undefined || record.type === query.type) &&
 				(query.lane === undefined || record.lane === query.lane) &&
 				(query.afterSeq === undefined || record.seq > query.afterSeq) &&
+				(query.operationKind === undefined ||
+					(record.type === "operation_started" &&
+						typeof record.intent === "object" &&
+						record.intent !== null &&
+						(record.intent as Record<string, unknown>).kind === query.operationKind)) &&
 				(query.runId === undefined ||
 					(record.type === "operation_started" ? record.id === query.runId : record.runId === query.runId)),
 		);
 		return structuredClone(query.limit === undefined ? matches : matches.slice(0, query.limit));
 	}
 
-	findOpenOperations(lane: string): JsonlV4Record[] {
+	findOpenOperations(lane: string, options: { limit?: number } = {}): JsonlV4Record[] {
 		this.requireLane(lane);
-		const open = new Map<string, JsonlV4Record>();
-		for (const record of this.records) {
-			if (record.lane !== lane) continue;
-			if (record.type === "operation_started") open.set(record.id, record);
-			if (record.type === "operation_finished" && typeof record.runId === "string") open.delete(record.runId);
+		assertQueryBounds(options.limit, undefined);
+		const open = [...(this.openOperationsByLane.get(lane)?.values() ?? [])].reverse();
+		return structuredClone(options.limit === undefined ? open : open.slice(0, options.limit));
+	}
+
+	findEntriesOnBranch(query: V4EntryQuery & V4BranchBounds & { start: string }): JsonlV4Entry[] {
+		assertQueryBounds(query.limit, query.afterSeq);
+		const path = this.readBranch(query.start);
+		const scan = query.order === "oldestFirst" ? path.reverse() : path;
+		const results: JsonlV4Entry[] = [];
+		for (const entry of scan) {
+			const reachedBound = entry.id === query.stopAtId || entry.type === query.stopAtType;
+			const cursorMatches =
+				query.afterSeq === undefined ||
+				(query.order === "oldestFirst" ? entry.seq > query.afterSeq : entry.seq < query.afterSeq);
+			if (
+				cursorMatches &&
+				(query.type === undefined || entry.type === query.type) &&
+				(query.customType === undefined || (entry.type === "custom" && entry.customType === query.customType))
+			) {
+				results.push(entry);
+			}
+			if (reachedBound || results.length === query.limit) break;
 		}
-		return structuredClone([...open.values()].reverse());
+		return structuredClone(results);
 	}
 
 	getLog(options: { afterSeq?: number; limit?: number } = {}): V4SessionLogItem[] {
@@ -226,6 +334,10 @@ export class V4SessionState {
 
 	getLabel(id: string): string | undefined {
 		return this.labels.get(id);
+	}
+
+	getStats(): V4SessionStats {
+		return structuredClone(this.stats);
 	}
 
 	readBranch(start: string): JsonlV4Entry[] {

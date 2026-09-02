@@ -1,4 +1,5 @@
 import { SessionError } from "../types.js";
+import type { JsonlV4Mutation } from "./jsonl-v4-codec.js";
 
 type JsonValidationFrame = { value: unknown } | { exit: object };
 
@@ -57,4 +58,22 @@ export function assertV4JsonSerializable(value: unknown): void {
 			stack.push({ value: descriptor.value });
 		}
 	}
+}
+
+/**
+ * Validate a mutation while preserving the v4 fact convention where an
+ * omitted name or label means "clear the current value".
+ */
+export function assertV4MutationJsonSerializable(mutation: JsonlV4Mutation): void {
+	if (mutation.kind === "fact" && mutation.fact === "name" && mutation.name === undefined) {
+		const { name: _name, ...serializable } = mutation;
+		assertV4JsonSerializable(serializable);
+		return;
+	}
+	if (mutation.kind === "fact" && mutation.fact === "label" && mutation.label === undefined) {
+		const { label: _label, ...serializable } = mutation;
+		assertV4JsonSerializable(serializable);
+		return;
+	}
+	assertV4JsonSerializable(mutation);
 }

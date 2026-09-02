@@ -6,12 +6,14 @@ import {
 	parseJsonlV4Mutation,
 	serializeJsonlV4Mutation,
 } from "./jsonl-v4-codec.js";
-import { assertV4JsonSerializable } from "./session-v4-json.js";
+import { assertV4JsonSerializable, assertV4MutationJsonSerializable } from "./session-v4-json.js";
 import {
+	type V4BranchBounds,
 	type V4EntryQuery,
 	type V4ForkOptions,
-	type V4SessionLogItem,
 	type V4RecordQuery,
+	type V4SessionLogItem,
+	type V4SessionStats,
 	V4SessionState,
 	V4SessionStateError,
 	type V4SessionStateSnapshot,
@@ -82,6 +84,10 @@ export class V4MemorySessionStorage {
 		return this.state.getLabel(targetId);
 	}
 
+	getStats(): V4SessionStats {
+		return this.state.getStats();
+	}
+
 	getLog(options?: { afterSeq?: number; limit?: number }): V4SessionLogItem[] {
 		try {
 			return this.state.getLog(options);
@@ -90,9 +96,9 @@ export class V4MemorySessionStorage {
 		}
 	}
 
-	findOpenOperations(lane: string): JsonlV4Record[] {
+	findOpenOperations(lane: string, options?: { limit?: number }): JsonlV4Record[] {
 		try {
-			return this.state.findOpenOperations(lane);
+			return this.state.findOpenOperations(lane, options);
 		} catch (error) {
 			stateError(error);
 		}
@@ -143,10 +149,9 @@ export class V4MemorySessionStorage {
 			throw new SessionError("invalid_payload", "Provisioned v4 record contains storage-owned fields");
 		}
 		try {
-			this.state.requireLane(record.lane);
-			this.state.validateUnusedId(record.id);
+			this.state.validateRecord(record as JsonlV4Record);
 			if (record.type === "operation_started" && this.state.findOpenOperations(record.lane).length > 0) {
-				throw new SessionError("invalid_entry", `Lane ${record.lane} already has an open operation`);
+				throw new SessionError("storage", `Lane ${record.lane} already has an open operation`);
 			}
 			const committed = {
 				...structuredClone(record),
@@ -184,6 +189,14 @@ export class V4MemorySessionStorage {
 		}
 	}
 
+	findEntriesOnBranch(query: V4EntryQuery & V4BranchBounds & { start: string }): JsonlV4Entry[] {
+		try {
+			return this.state.findEntriesOnBranch(query);
+		} catch (error) {
+			stateError(error);
+		}
+	}
+
 	findRecords(query?: V4RecordQuery): JsonlV4Record[] {
 		try {
 			return this.state.findRecords(query);
@@ -201,7 +214,7 @@ export class V4MemorySessionStorage {
 	}
 
 	private apply(mutation: JsonlV4Mutation): void {
-		assertV4JsonSerializable(mutation);
+		assertV4MutationJsonSerializable(mutation);
 		const decoded = parseJsonlV4Mutation(serializeJsonlV4Mutation(mutation));
 		if (!decoded.ok) throw new SessionError("invalid_entry", decoded.error.message, decoded.error);
 		this.state.apply(decoded.value);

@@ -1776,6 +1776,42 @@ this session does not merge, push, tag, or publish.
   semantic parity by porting
   filtered branch queries, operation-kind/open-operation bounds, usage stats,
   and the remaining upstream conformance cases before any adapter selection.
+- Completed P3.3 memory/JSONL semantic parity for the isolated v4 backends.
+  The shared reducer now supports bounded branch queries with stop/cursor/type
+  filters, operation-kind record queries, incremental open-operation tracking,
+  per-lane limits, and ledger statistics for messages, cached/uncached tokens,
+  total tokens, cost, and negative provider corrections. Reads remain detached
+  clones and one open operation per lane is enforced with the upstream storage
+  error semantics.
+- Common conformance exposed and fixed two durability gaps: clearing a session
+  name or entry label now uses the v4 omitted-field convention without
+  weakening general JSON payload validation, and usage records are fully
+  validated before the JSONL append so a malformed usage payload cannot become
+  a durable line after reducer rejection. JSONL deletion is now idempotent as
+  required by the repository contract.
+- Expanded the shared memory/JSONL suite to cover branch bounds and compaction
+  traversal, record filters and cursors, operation overlap/recovery/lane
+  isolation, immutable open-operation reads, usage aggregation, durable fact
+  clearing and reopen, idempotent deletion, invalid JSON/usage preflight, and
+  concurrent cross-lane write linearization. Focused P3.3 verification passes
+  **72/72** across nine suites.
+- Full gates pass: `typecheck:extensions`, `test:changed:src` (no root-source
+  tests for this package-only slice), all compiled package tests via
+  `test:packages`, `build:core`, and `git diff --check`. Package counts remain
+  agent-core **136/136**, agent-modes **287/287**, native **223 pass / 1
+  platform skip**, pi-agent-core **3/3**, pi-ai **49/49**, coding-agent
+  **72/72**, pi-tui **8/8**, contracts **9/9**, MCP **377/377**, and RPC client
+  **30/30**.
+- Remaining risk: the v4 writer is still internal and unselected. Same-process
+  create/fork identity collisions are guarded, but cross-process writer
+  ownership remains a P3.5/cutover concern. No CLI, GSD database/projection,
+  AssessmentRun, or Herdr runtime state was changed.
+- Exact next task: review, commit, and push the completed P3.3 parity slice,
+  then begin P3.4 by characterizing the current downstream AgentHarness prompt,
+  tool loop, steer/follow-up, retry, compaction, branch summary, abort, and
+  shutdown contracts against upstream v0.84.4. Import only missing behavior by
+  capability; keep the v4 application adapter disabled until both memory and
+  JSONL harness parity pass.
 
 ## 11. Working-session protocol
 

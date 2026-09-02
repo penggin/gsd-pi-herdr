@@ -120,6 +120,7 @@ export class JsonlV4SessionRepository {
 	}
 
 	async delete(metadata: JsonlV4SessionMetadata): Promise<void> {
+		if (!getFileSystemResultOrThrow(await this.fs.exists(metadata.path), `Failed to check session`)) return;
 		const storage = await this.open(metadata);
 		await storage.drain();
 		getFileSystemResultOrThrow(

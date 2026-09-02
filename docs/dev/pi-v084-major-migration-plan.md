@@ -1,7 +1,9 @@
 # Pi v0.84 harness/session migration plan
 
-Date: 2026-09-03  
-Status: proposed; characterization must land before runtime cutover  
+Date: 2026-09-03
+
+Status: P3.0–P3.3 complete; P3.4 harness reconciliation next; no runtime cutover
+
 Upstream reference: `refs/pi-upstream/v0.84.4`
 
 ## Purpose
