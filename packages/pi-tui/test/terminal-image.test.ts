@@ -274,6 +274,12 @@ describe("detectCapabilities", () => {
 		});
 	});
 
+	it("enables truecolor and hyperlinks for Zed", () => {
+		withEnv({ TERM_PROGRAM: "zed" }, () => {
+			assert.deepStrictEqual(detectCapabilities(), { images: null, trueColor: true, hyperlinks: true });
+		});
+	});
+
 	it("detects truecolor for Windows Terminal outside multiplexers", () => {
 		withEnv({ WT_SESSION: "session", TERM: "xterm-256color" }, () => {
 			const caps = detectCapabilities();

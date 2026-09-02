@@ -2162,6 +2162,18 @@ this session does not merge, push, tag, or publish.
 - Exact next task: review, commit, and push the context-cwd slice; then record
   explicit dispositions for the remaining current upstream candidates before
   selecting any further isolated compatibility work.
+- Upstream candidate audit selected `649214477` as the next small compatibility
+  slice. Zed's integrated terminal is now classified as truecolor and hyperlink
+  capable, and its modified-key forwarding configuration is documented.
+  The focused terminal-image suite passes **58/58**; Pi patch inventory,
+  extension typecheck, pi-tui and core builds, and all package suites pass —
+  agent-core **139/139**, agent-modes **284/284**, native **223 passed / 1
+  skipped**, pi-agent-core **3/3**, pi-ai **49/49**, pi-coding-agent **72/72**,
+  pi-tui **8/8**, contracts **9/9**, MCP server **377/377**, and RPC client
+  **30/30**.
+- Exact next task: review, commit, and push the Zed compatibility slice; then
+  adapt the selector-state corrections from `f2a622789` and `3fc3ef532` to the
+  fork-owned `gsd-agent-modes` UI rather than copying obsolete upstream paths.
 
 ## 11. Working-session protocol
 
