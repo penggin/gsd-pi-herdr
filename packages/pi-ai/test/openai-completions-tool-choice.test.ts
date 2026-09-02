@@ -257,6 +257,22 @@ describe("openai-completions tool_choice", () => {
 		expect(getModel("zai", "glm-4.5-air")?.compat?.zaiToolStream).toBeUndefined();
 	});
 
+	it("derives verified z.ai GLM-5.3 reasoning effort metadata", () => {
+		for (const modelId of ["glm-5.3", "glm-5.3-flash"] as const) {
+			const model = getModel("zai", modelId)!;
+			expect(model.compat?.supportsReasoningEffort).toBe(true);
+			expect(model.thinkingLevelMap).toEqual({
+				off: null,
+				minimal: null,
+				low: "low",
+				medium: null,
+				high: "high",
+				xhigh: null,
+				max: "max",
+			});
+		}
+	});
+
 	it("omits tool_stream for unsupported z.ai models", async () => {
 		const model = getModel("zai", "glm-4.5-air")!;
 		const tools: Tool[] = [

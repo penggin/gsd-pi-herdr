@@ -11,6 +11,7 @@ import {
 } from "../src/providers/cloudflare.ts";
 import type { AnthropicMessagesCompat, Api, KnownProvider, Model, OpenAICompletionsCompat } from "../src/types.ts";
 import { formatCost, roundCost } from "./lib/model-cost.ts";
+import { getEffortThinkingLevelMap, type ModelsDevReasoningOption } from "./models-dev-reasoning-options.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -21,6 +22,7 @@ interface ModelsDevModel {
 	name: string;
 	tool_call?: boolean;
 	reasoning?: boolean;
+	reasoning_options?: ModelsDevReasoningOption[];
 	limit?: {
 		context?: number;
 		output?: number;
@@ -762,6 +764,8 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 				const m = model as ModelsDevModel;
 				if (m.tool_call !== true) continue;
 				const supportsImage = m.modalities?.input?.includes("image");
+				const thinkingLevelMap = getEffortThinkingLevelMap(m.reasoning_options ?? []);
+				const referenceCost = data.zai?.models?.[modelId]?.cost ?? m.cost;
 
 				models.push({
 					id: modelId,
@@ -770,16 +774,18 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 					provider: "zai",
 					baseUrl: "https://api.z.ai/api/coding/paas/v4",
 					reasoning: m.reasoning === true,
+					...(thinkingLevelMap ? { thinkingLevelMap } : {}),
 					input: supportsImage ? ["text", "image"] : ["text"],
 					cost: {
-						input: m.cost?.input || 0,
-						output: m.cost?.output || 0,
-						cacheRead: m.cost?.cache_read || 0,
-						cacheWrite: m.cost?.cache_write || 0,
+						input: referenceCost?.input || 0,
+						output: referenceCost?.output || 0,
+						cacheRead: referenceCost?.cache_read || 0,
+						cacheWrite: referenceCost?.cache_write || 0,
 					},
 					compat: {
 						supportsDeveloperRole: false,
 						thinkingFormat: "zai",
+						...(thinkingLevelMap ? { supportsReasoningEffort: true } : {}),
 						...(!ZAI_TOOL_STREAM_UNSUPPORTED_MODELS.has(modelId) ? { zaiToolStream: true } : {}),
 					},
 					contextWindow: m.limit?.context || 4096,
