@@ -29,6 +29,7 @@ import type {
 	Context,
 	Model,
 	OpenAICodexResponsesCompat,
+	ProviderHeaders,
 	SimpleStreamOptions,
 	StreamFunction,
 	StreamOptions,
@@ -40,7 +41,7 @@ import {
 	formatThrownValue,
 } from "../utils/diagnostics.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
-import { headersToRecord } from "../utils/headers.js";
+import { applyProviderHeaders, headersToRecord } from "../utils/headers.js";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.js";
 import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.js";
 import { buildBaseOptions } from "./simple-options.js";
@@ -1374,14 +1375,10 @@ function createCodexRequestId(): string {
 
 function buildBaseCodexHeaders(
 	initHeaders: Record<string, string> | undefined,
-	additionalHeaders: Record<string, string> | undefined,
 	accountId: string | undefined,
 	token: string,
 ): Headers {
 	const headers = new Headers(initHeaders);
-	for (const [key, value] of Object.entries(additionalHeaders || {})) {
-		headers.set(key, value);
-	}
 	headers.set("Authorization", `Bearer ${token}`);
 	if (accountId) headers.set("chatgpt-account-id", accountId);
 	headers.set("originator", "pi");
@@ -1392,12 +1389,12 @@ function buildBaseCodexHeaders(
 
 function buildSSEHeaders(
 	initHeaders: Record<string, string> | undefined,
-	additionalHeaders: Record<string, string> | undefined,
+	additionalHeaders: ProviderHeaders | undefined,
 	accountId: string | undefined,
 	token: string,
 	sessionId?: string,
 ): Headers {
-	const headers = buildBaseCodexHeaders(initHeaders, additionalHeaders, accountId, token);
+	const headers = buildBaseCodexHeaders(initHeaders, accountId, token);
 	headers.set("OpenAI-Beta", "responses=experimental");
 	headers.set("accept", "text/event-stream");
 	headers.set("content-type", "application/json");
@@ -1407,17 +1404,17 @@ function buildSSEHeaders(
 		headers.set("x-client-request-id", sessionId);
 	}
 
-	return headers;
+	return applyProviderHeaders(headers, additionalHeaders);
 }
 
 function buildWebSocketHeaders(
 	initHeaders: Record<string, string> | undefined,
-	additionalHeaders: Record<string, string> | undefined,
+	additionalHeaders: ProviderHeaders | undefined,
 	accountId: string | undefined,
 	token: string,
 	requestId: string,
 ): Headers {
-	const headers = buildBaseCodexHeaders(initHeaders, additionalHeaders, accountId, token);
+	const headers = buildBaseCodexHeaders(initHeaders, accountId, token);
 	headers.delete("accept");
 	headers.delete("content-type");
 	headers.delete("OpenAI-Beta");
@@ -1425,5 +1422,5 @@ function buildWebSocketHeaders(
 	headers.set("OpenAI-Beta", OPENAI_BETA_RESPONSES_WEBSOCKETS);
 	headers.set("x-client-request-id", requestId);
 	headers.set("session_id", requestId);
-	return headers;
+	return applyProviderHeaders(headers, additionalHeaders);
 }

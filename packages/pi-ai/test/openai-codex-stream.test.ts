@@ -117,6 +117,45 @@ describe("openai-codex streaming", () => {
 		expect(fetchMock).toHaveBeenCalledOnce();
 	});
 
+	it("applies nullable request headers after Codex defaults", async () => {
+		const model: Model<"openai-codex-responses"> = {
+			id: "routed/model",
+			name: "Routed model",
+			api: "openai-codex-responses",
+			provider: "codex-proxy",
+			baseUrl: "http://127.0.0.1:10100/v1",
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 400000,
+			maxTokens: 128000,
+		};
+		const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) => {
+			const headers = init?.headers instanceof Headers ? init.headers : new Headers(init?.headers);
+			expect(headers.has("Authorization")).toBe(false);
+			expect(headers.has("User-Agent")).toBe(false);
+			expect(headers.get("x-extension-trace")).toBe("trace-1");
+			return new Response(buildSSEPayload({ status: "completed" }), {
+				status: 200,
+				headers: { "content-type": "text/event-stream" },
+			});
+		});
+
+		const result = await streamOpenAICodexResponses(
+			model,
+			{ systemPrompt: "system", messages: [{ role: "user", content: "hello", timestamp: Date.now() }] },
+			{
+				apiKey: "local-admission-secret",
+				transport: "sse",
+				fetch: fetchMock,
+				headers: { Authorization: null, "User-Agent": null, "x-extension-trace": "trace-1" },
+			},
+		).result();
+
+		expect(result.stopReason).toBe("stop");
+		expect(fetchMock).toHaveBeenCalledOnce();
+	});
+
 	it("keeps ChatGPT direct transport fail-closed on non-OAuth credentials", async () => {
 		const model: Model<"openai-codex-responses"> = {
 			id: "gpt-5.6-codex",

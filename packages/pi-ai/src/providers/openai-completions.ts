@@ -20,6 +20,7 @@ import type {
 	Message,
 	Model,
 	OpenAICompletionsCompat,
+	ProviderHeaders,
 	SimpleStreamOptions,
 	StopReason,
 	StreamFunction,
@@ -552,7 +553,7 @@ function createClient(
 	model: Model<"openai-completions">,
 	context: Context,
 	apiKey?: string,
-	optionsHeaders?: Record<string, string>,
+	optionsHeaders?: ProviderHeaders,
 	sessionId?: string,
 	compat: ResolvedOpenAICompletionsCompat = getCompat(model),
 ) {

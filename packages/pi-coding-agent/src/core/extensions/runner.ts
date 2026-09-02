@@ -3,7 +3,7 @@
  */
 
 import type { AgentMessage } from "@gsd/pi-agent-core";
-import type { ImageContent, Model } from "@gsd/pi-ai";
+import type { ImageContent, Model, ProviderHeaders } from "@gsd/pi-ai";
 import type { KeyId } from "@gsd/pi-tui";
 import { type Theme, theme } from "../../theme/theme.js";
 import type { ResourceDiagnostic } from "../diagnostics.js";
@@ -1029,6 +1029,32 @@ export class ExtensionRunner {
 		}
 
 		return currentPayload;
+	}
+
+	async emitBeforeProviderHeaders(headers: ProviderHeaders): Promise<ProviderHeaders> {
+		const ctx = this.createContext();
+
+		for (const ext of this.extensions) {
+			const handlers = ext.handlers.get("before_provider_headers");
+			if (!handlers || handlers.length === 0) continue;
+
+			for (const handler of handlers) {
+				try {
+					await handler({ type: "before_provider_headers", headers }, ctx);
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					const stack = err instanceof Error ? err.stack : undefined;
+					this.emitError({
+						extensionPath: ext.path,
+						event: "before_provider_headers",
+						error: message,
+						stack,
+					});
+				}
+			}
+		}
+
+		return headers;
 	}
 
 	async emitBeforeAgentStart(

@@ -18,6 +18,7 @@ import type {
 	ImageContent,
 	Message,
 	Model,
+	ProviderHeaders,
 	ServerToolUse,
 	SimpleStreamOptions,
 	StopReason,
@@ -822,7 +823,7 @@ function createClient(
 	apiKeyProvenance: ApiKeyProvenance | undefined,
 	interleavedThinking: boolean,
 	useFineGrainedToolStreamingBeta: boolean,
-	optionsHeaders?: Record<string, string>,
+	optionsHeaders?: ProviderHeaders,
 	dynamicHeaders?: Record<string, string>,
 	sessionId?: string,
 ): { client: Anthropic; isOAuthToken: boolean } {

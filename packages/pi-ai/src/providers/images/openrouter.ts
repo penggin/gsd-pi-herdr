@@ -14,6 +14,7 @@ import type {
 	ImagesFunction,
 	ImagesModel,
 	ImagesOptions,
+	ProviderHeaders,
 	TextContent,
 } from "../../types.js";
 import { headersToRecord } from "../../utils/headers.js";
@@ -107,7 +108,7 @@ export const generateImagesOpenRouter: ImagesFunction<"openrouter-images", Image
 function createClient(
 	model: ImagesModel<"openrouter-images">,
 	apiKey: string,
-	optionsHeaders?: Record<string, string>,
+	optionsHeaders?: ProviderHeaders,
 ): OpenAI {
 	return new OpenAI({
 		apiKey,

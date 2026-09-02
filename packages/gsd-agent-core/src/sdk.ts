@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { Agent, type AgentMessage, type ThinkingLevel } from "@gsd/pi-agent-core";
-import { clampThinkingLevel, type Message, type Model, streamSimple } from "@gsd/pi-ai";
+import { clampThinkingLevel, type Message, type Model, type ProviderHeaders, streamSimple } from "@gsd/pi-ai";
 import { getAgentDir } from "@gsd/pi-coding-agent/config.js";
 import { resolvePath } from "@gsd/pi-coding-agent/utils/paths.js";
 import { AgentSession } from "./agent-session.js";
@@ -358,10 +358,14 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			}
 			const providerRetrySettings = settingsManager.getProviderRetrySettings();
 			const attributionHeaders = getAttributionHeaders(model, settingsManager, options?.sessionId);
-			const headers =
+			let headers: ProviderHeaders | undefined =
 				attributionHeaders || auth.headers || options?.headers
 					? { ...attributionHeaders, ...auth.headers, ...options?.headers }
 					: undefined;
+			const headerRunner = extensionRunnerRef.current;
+			if (headerRunner?.hasHandlers("before_provider_headers")) {
+				headers = await headerRunner.emitBeforeProviderHeaders(headers ?? {});
+			}
 			const requestModel = auth.headers ? { ...model, headers: { ...model.headers, ...auth.headers } } : model;
 			return streamSimple(requestModel, context, {
 				...options,

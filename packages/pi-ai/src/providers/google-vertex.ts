@@ -13,6 +13,7 @@ import type {
 	AssistantMessage,
 	Context,
 	Model,
+	ProviderHeaders,
 	ThinkingLevel as PiThinkingLevel,
 	SimpleStreamOptions,
 	StreamFunction,
@@ -23,6 +24,7 @@ import type {
 	ToolCall,
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
+import { materializeProviderHeaders } from "../utils/headers.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import type { GoogleThinkingLevel } from "./google-shared.js";
 import {
@@ -314,7 +316,7 @@ function createClient(
 	model: Model<"google-vertex">,
 	project: string,
 	location: string,
-	optionsHeaders?: Record<string, string>,
+	optionsHeaders?: ProviderHeaders,
 ): GoogleGenAI {
 	return new GoogleGenAI({
 		vertexai: true,
@@ -328,7 +330,7 @@ function createClient(
 function createClientWithApiKey(
 	model: Model<"google-vertex">,
 	apiKey: string,
-	optionsHeaders?: Record<string, string>,
+	optionsHeaders?: ProviderHeaders,
 ): GoogleGenAI {
 	return new GoogleGenAI({
 		vertexai: true,
@@ -340,7 +342,7 @@ function createClientWithApiKey(
 
 function buildHttpOptions(
 	model: Model<"google-vertex">,
-	optionsHeaders?: Record<string, string>,
+	optionsHeaders?: ProviderHeaders,
 ): HttpOptions | undefined {
 	const httpOptions: HttpOptions = {};
 	const baseUrl = resolveCustomBaseUrl(model.baseUrl);
@@ -353,7 +355,7 @@ function buildHttpOptions(
 	}
 
 	if (model.headers || optionsHeaders) {
-		httpOptions.headers = { ...model.headers, ...optionsHeaders };
+		httpOptions.headers = materializeProviderHeaders(model.headers, optionsHeaders);
 	}
 
 	return Object.keys(httpOptions).length > 0 ? httpOptions : undefined;

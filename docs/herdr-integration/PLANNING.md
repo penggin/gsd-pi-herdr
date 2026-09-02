@@ -1222,6 +1222,23 @@ this session does not merge, push, tag, or publish.
   RPC protocol/client **92/92**, and `typecheck:extensions`. Exact next task:
   import the v0.80 `before_provider_headers` hook with final-header mutation and
   deletion semantics, then run the full package/build regression matrix.
+- Added `before_provider_headers` as a real provider-boundary extension hook.
+  It runs after attribution, configured model/provider auth headers, and
+  request headers are assembled; handlers mutate one shared header map and may
+  use `null` to suppress defaults. Handler failures remain isolated extension
+  diagnostics. OpenAI/Codex/Anthropic paths preserve nullable SDK semantics,
+  while Google string-only clients materialize the same case-insensitive
+  deletion contract before dispatch.
+- Focused header verification passes: Pi AI header/Codex stream **31/31**,
+  extension runner **32/32**, SDK bridge **1/1**, `build:pi-ai`,
+  `build:pi-coding-agent`, and `typecheck:extensions`. No dependency or lockfile
+  change was introduced. Final `build:core` and all ten workspace package suites
+  pass: agent-core **135/135**, agent-modes **287/287**, native **223 pass / 1
+  platform skip**, pi-agent-core **3/3**, pi-ai **49/49**, coding-agent **66/66**,
+  pi-tui **8/8**, contracts **9/9**, MCP **377/377**, and RPC client **30/30**.
+  Exact next task: commit this header boundary, then evaluate v0.80 lazy provider
+  startup against downstream opt-in discovery and extension registration
+  semantics.
 
 ## 11. Working-session protocol
 

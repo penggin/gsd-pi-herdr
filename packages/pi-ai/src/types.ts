@@ -80,6 +80,9 @@ export type CacheRetention = "none" | "short" | "long";
 
 export type Transport = "sse" | "websocket" | "websocket-cached" | "auto";
 
+/** Request headers; null suppresses a provider/API default with the same name. */
+export type ProviderHeaders = Record<string, string | null>;
+
 export interface ProviderResponse {
 	status: number;
 	headers: Record<string, string>;
@@ -126,9 +129,9 @@ export interface StreamOptions {
 	/**
 	 * Optional custom HTTP headers to include in API requests.
 	 * Merged with provider defaults; can override default headers.
-	 * Not supported by all providers (e.g., AWS Bedrock uses SDK auth).
+	 * A null value suppresses a provider/API default header with the same name.
 	 */
-	headers?: Record<string, string>;
+	headers?: ProviderHeaders;
 	/**
 	 * HTTP request timeout in milliseconds for providers/SDKs that support it.
 	 * For example, OpenAI and Anthropic SDK clients default to 10 minutes.
@@ -172,8 +175,9 @@ export interface ImagesOptions {
 	/**
 	 * Optional custom HTTP headers to include in API requests.
 	 * Merged with provider defaults; can override default headers.
+	 * A null value suppresses a provider/API default header with the same name.
 	 */
-	headers?: Record<string, string>;
+	headers?: ProviderHeaders;
 	/**
 	 * HTTP request timeout in milliseconds for providers/SDKs that support it.
 	 */

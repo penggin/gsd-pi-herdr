@@ -877,6 +877,49 @@ describe("ExtensionRunner", () => {
 		delete (globalThis as unknown as { __bprEventModel?: unknown }).__bprEventModel;
 	});
 
+	describe("before_provider_headers", () => {
+		it("lets handlers mutate and suppress assembled headers", async () => {
+			const extCode = `
+				export default function(pi) {
+					pi.on("before_provider_headers", (event) => {
+						event.headers["X-Turn-Index"] = "3";
+						event.headers["User-Agent"] = null;
+					});
+				}
+			`;
+			fs.writeFileSync(path.join(extensionsDir, "headers.ts"), extCode);
+
+			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
+
+			expect(runner.hasHandlers("before_provider_headers")).toBe(true);
+			const headers = await runner.emitBeforeProviderHeaders({ "User-Agent": "gsd/1.0" });
+			expect(headers).toEqual({ "User-Agent": null, "X-Turn-Index": "3" });
+		});
+
+		it("isolates a throwing handler and continues with later handlers", async () => {
+			fs.writeFileSync(
+				path.join(extensionsDir, "a-throwing.ts"),
+				`export default function(pi) { pi.on("before_provider_headers", () => { throw new Error("boom"); }); }`,
+			);
+			fs.writeFileSync(
+				path.join(extensionsDir, "b-good.ts"),
+				`export default function(pi) { pi.on("before_provider_headers", (event) => { event.headers["X-Good"] = "yes"; }); }`,
+			);
+
+			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
+			const errors: Array<{ event: string; error: string }> = [];
+			runner.onError((error) => errors.push(error));
+
+			const headers = await runner.emitBeforeProviderHeaders({});
+			expect(headers["X-Good"]).toBe("yes");
+			expect(errors).toHaveLength(1);
+			expect(errors[0].event).toBe("before_provider_headers");
+			expect(errors[0].error).toContain("boom");
+		});
+	});
+
 	it("emits one outer UI prompt lifecycle span for overlapping prompts", async () => {
 		const extCode = `
 			export default function(pi) {

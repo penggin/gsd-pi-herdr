@@ -9,6 +9,7 @@ import type {
 	Context,
 	Model,
 	OpenAIResponsesCompat,
+	ProviderHeaders,
 	SimpleStreamOptions,
 	StreamFunction,
 	StreamOptions,
@@ -180,7 +181,7 @@ function createClient(
 	model: Model<"openai-responses">,
 	context: Context,
 	apiKey?: string,
-	optionsHeaders?: Record<string, string>,
+	optionsHeaders?: ProviderHeaders,
 	sessionId?: string,
 ) {
 	if (!apiKey) {
