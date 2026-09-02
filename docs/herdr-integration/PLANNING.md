@@ -1369,6 +1369,31 @@ this session does not merge, push, tag, or publish.
   / 1 platform skip**, pi-agent-core **3/3**, pi-ai **49/49**, coding-agent
   **66/66**, pi-tui **8/8**, contracts **9/9**, MCP **377/377**, and RPC client
   **30/30**.
+- Hardened OpenAI/Azure Responses terminal handling. A stream that closes
+  without `response.completed`, `response.incomplete`, or `response.failed` is
+  now an explicit provider error instead of a false successful turn.
+  `response.incomplete` with `max_output_tokens` maps to canonical `length`;
+  content-filter and unknown incomplete reasons remain explicit errors rather
+  than silently completing.
+- Added Azure stateless reasoning replay repair: when
+  `response.output_item.done` omits `encrypted_content`, the parser backfills it
+  from the matching reasoning item in the terminal response without replacing
+  an already complete signature. This preserves `store:false` multi-turn
+  reasoning continuity while leaving GSD orchestration and transcript ownership
+  unchanged.
+- Focused Responses verification passes **53/53** with **7** expected
+  credential/environment skips across all OpenAI Responses and Azure test files;
+  wrapper/parser terminal tests pass **38/38**, and `build:pi-ai` passes. The
+  existing partial-tool JSON test now includes the protocol-required terminal
+  event. No dependency or lockfile change was introduced.
+- Exact next task: run full downstream gates, commit and push this terminal and
+  replay slice, then audit usage reasoning-token reporting before deciding
+  whether the larger concurrent output-slot parser refactor is justified.
+- Final terminal/replay gate passes: `typecheck:extensions`, `build:core`,
+  `git diff --check`, and all ten compiled workspace suites. Counts remain
+  agent-core **136/136**, agent-modes **287/287**, native **223 pass / 1 platform
+  skip**, pi-agent-core **3/3**, pi-ai **49/49**, coding-agent **66/66**, pi-tui
+  **8/8**, contracts **9/9**, MCP **377/377**, and RPC client **30/30**.
 
 ## 11. Working-session protocol
 

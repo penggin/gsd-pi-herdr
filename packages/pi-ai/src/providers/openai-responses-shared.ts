@@ -378,8 +378,58 @@ export async function processResponsesStream<TApi extends Api>(
 ): Promise<void> {
 	let currentItem: ResponseReasoningItem | ResponseOutputMessage | ResponseFunctionToolCall | ResponseFunctionWebSearch | null = null;
 	let currentBlock: ThinkingContent | TextContent | (ToolCall & { partialJson: string }) | ServerToolUse | null = null;
+	let sawTerminalResponseEvent = false;
+	const reasoningBlocksById = new Map<string, ThinkingContent>();
 	const blocks = output.content;
 	const blockIndex = () => blocks.length - 1;
+	const backfillReasoningSignatures = (responseOutput: ResponseInput): void => {
+		for (const item of responseOutput) {
+			if (item.type !== "reasoning" || !item.encrypted_content) continue;
+			const block = reasoningBlocksById.get(item.id);
+			if (!block?.thinkingSignature) continue;
+
+			const storedItem = JSON.parse(block.thinkingSignature) as ResponseReasoningItem;
+			if (storedItem.encrypted_content) continue;
+			block.thinkingSignature = JSON.stringify({
+				...storedItem,
+				encrypted_content: item.encrypted_content,
+			});
+		}
+	};
+	const finalizeResponse = (
+		response: Extract<ResponseStreamEvent, { type: "response.completed" | "response.incomplete" }>["response"],
+	): void => {
+		sawTerminalResponseEvent = true;
+		backfillReasoningSignatures(response.output ?? []);
+		if (response.id) output.responseId = response.id;
+		if (response.usage) {
+			const cachedTokens = response.usage.input_tokens_details?.cached_tokens || 0;
+			output.usage = {
+				input: (response.usage.input_tokens || 0) - cachedTokens,
+				output: response.usage.output_tokens || 0,
+				cacheRead: cachedTokens,
+				cacheWrite: 0,
+				totalTokens: response.usage.total_tokens || 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			};
+		}
+		calculateCost(model, output.usage);
+		if (options?.applyServiceTierPricing) {
+			const serviceTier = options.resolveServiceTier
+				? options.resolveServiceTier(response.service_tier, options.serviceTier)
+				: (response.service_tier ?? options.serviceTier);
+			options.applyServiceTierPricing(output.usage, serviceTier);
+		}
+		const incompleteDetails = response.incomplete_details as { reason?: unknown } | null | undefined;
+		const incompleteReason =
+			typeof incompleteDetails?.reason === "string" ? incompleteDetails.reason : undefined;
+		const mappedStop = mapStopReason(response.status, incompleteReason);
+		output.stopReason = mappedStop.stopReason;
+		output.errorMessage = mappedStop.errorMessage;
+		if (output.content.some((block) => block.type === "toolCall") && output.stopReason === "stop") {
+			output.stopReason = "toolUse";
+		}
+	};
 
 	for await (const event of openaiStream) {
 		if (event.type === "response.created") {
@@ -528,6 +578,7 @@ export async function processResponsesStream<TApi extends Api>(
 				const contentText = item.content?.map((c) => c.text).join("\n\n") || "";
 				currentBlock.thinking = summaryText || contentText || currentBlock.thinking;
 				currentBlock.thinkingSignature = JSON.stringify(item);
+				reasoningBlocksById.set(item.id, currentBlock);
 				stream.push({
 					type: "thinking_end",
 					contentIndex: blockIndex(),
@@ -591,38 +642,12 @@ export async function processResponsesStream<TApi extends Api>(
 				});
 				currentBlock = null;
 			}
-		} else if (event.type === "response.completed") {
-			const response = event.response;
-			if (response?.id) {
-				output.responseId = response.id;
-			}
-			if (response?.usage) {
-				const cachedTokens = response.usage.input_tokens_details?.cached_tokens || 0;
-				output.usage = {
-					// OpenAI includes cached tokens in input_tokens, so subtract to get non-cached input
-					input: (response.usage.input_tokens || 0) - cachedTokens,
-					output: response.usage.output_tokens || 0,
-					cacheRead: cachedTokens,
-					cacheWrite: 0,
-					totalTokens: response.usage.total_tokens || 0,
-					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-				};
-			}
-			calculateCost(model, output.usage);
-			if (options?.applyServiceTierPricing) {
-				const serviceTier = options.resolveServiceTier
-					? options.resolveServiceTier(response?.service_tier, options.serviceTier)
-					: (response?.service_tier ?? options.serviceTier);
-				options.applyServiceTierPricing(output.usage, serviceTier);
-			}
-			// Map status to stop reason
-			output.stopReason = mapStopReason(response?.status);
-			if (output.content.some((b) => b.type === "toolCall") && output.stopReason === "stop") {
-				output.stopReason = "toolUse";
-			}
+		} else if (event.type === "response.completed" || event.type === "response.incomplete") {
+			finalizeResponse(event.response);
 		} else if (event.type === "error") {
 			throw new Error(`Error Code ${event.code}: ${event.message}` || "Unknown error");
 		} else if (event.type === "response.failed") {
+			sawTerminalResponseEvent = true;
 			const error = event.response?.error;
 			const details = event.response?.incomplete_details;
 			const msg = error
@@ -633,22 +658,34 @@ export async function processResponsesStream<TApi extends Api>(
 			throw new Error(msg);
 		}
 	}
+	if (!sawTerminalResponseEvent) {
+		throw new Error("OpenAI Responses stream ended before a terminal response event");
+	}
 }
 
-function mapStopReason(status: OpenAI.Responses.ResponseStatus | undefined): StopReason {
-	if (!status) return "stop";
+function mapStopReason(
+	status: OpenAI.Responses.ResponseStatus | undefined,
+	incompleteReason?: string,
+): { stopReason: StopReason; errorMessage?: string } {
+	if (!status) return { stopReason: "stop" };
 	switch (status) {
 		case "completed":
-			return "stop";
+			return { stopReason: "stop" };
 		case "incomplete":
-			return "length";
+			if (incompleteReason === "max_output_tokens") return { stopReason: "length" };
+			return {
+				stopReason: "error",
+				errorMessage: incompleteReason
+					? `Response incomplete: ${incompleteReason}`
+					: "Response incomplete without a provider reason",
+			};
 		case "failed":
 		case "cancelled":
-			return "error";
+			return { stopReason: "error" };
 		// These two are wonky ...
 		case "in_progress":
 		case "queued":
-			return "stop";
+			return { stopReason: "stop" };
 		default: {
 			const _exhaustive: never = status;
 			throw new Error(`Unhandled stop reason: ${_exhaustive}`);

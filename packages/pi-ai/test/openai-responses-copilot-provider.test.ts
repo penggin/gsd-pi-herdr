@@ -57,6 +57,26 @@ describe("openai-responses provider defaults", () => {
 		vi.restoreAllMocks();
 	});
 
+	it("returns an error when the SSE body closes without a terminal response event", async () => {
+		vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			new Response("data: [DONE]\n\n", {
+				status: 200,
+				headers: { "content-type": "text/event-stream" },
+			}),
+		);
+
+		const result = await streamOpenAIResponses(
+			getModel("openai", "gpt-5.4"),
+			{ messages: [{ role: "user", content: "hi", timestamp: Date.now() }] },
+			{ apiKey: "test-key" },
+		).result();
+
+		expect(result).toMatchObject({
+			stopReason: "error",
+			errorMessage: "OpenAI Responses stream ended before a terminal response event",
+		});
+	});
+
 	it("omits reasoning when no reasoning is requested", async () => {
 		const model = getModel("github-copilot", "gpt-5-mini");
 		let capturedPayload: unknown;
