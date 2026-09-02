@@ -44,6 +44,11 @@ export function configureHttpDispatcher(timeoutMs: number = DEFAULT_HTTP_IDLE_TI
 	undici.setGlobalDispatcher(
 		new undici.EnvHttpProxyAgent({
 			allowH2: false,
+			// Undici 8.7 changed plain-HTTP proxying to forward requests by
+			// default. Keep every proxied origin on a CONNECT tunnel so a
+			// provider's follow-up request after tool execution uses the same
+			// reliable transport semantics as the initial request.
+			proxyTunnel: true,
 			bodyTimeout: normalizedTimeoutMs,
 			headersTimeout: normalizedTimeoutMs,
 		}),

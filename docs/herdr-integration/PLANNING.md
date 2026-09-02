@@ -2043,6 +2043,27 @@ this session does not merge, push, tag, or publish.
   **9/9**, MCP server **377/377**, and RPC client **30/30**.
 - Exact next task: review, commit, and push this compatibility slice; then audit
   upstream `e266507b6` for duplicate automatic retry lifecycle events.
+- Audited upstream `e266507b6`; no code port is required. Upstream removed a
+  duplicate `auto_retry_end` union member from its monolithic AgentSession
+  source, while this fork's split `gsd-agent-core` event type already contains
+  exactly one such member. Retry emission and UI cleanup semantics remain
+  covered by the existing downstream retry suites.
+- Ported upstream `23842b1e6` to the fork's HTTP dispatcher. Proxied plain-HTTP
+  model endpoints now explicitly use CONNECT tunneling instead of depending on
+  Undici's changing default forwarding mode. This protects the repeated
+  provider request after a tool result without changing proxy selection,
+  `NO_PROXY`, provider routing, GSD lifecycle, or Herdr execution authority.
+- Focused live-loopback evidence passes **1/1**: two consecutive requests to a
+  local plain-HTTP provider traverse the test proxy as CONNECT traffic and both
+  settle successfully. Final gates pass: `verify:pi-patches`, extension
+  typecheck, `test:changed:src` (no root-source tests for this package-only
+  slice), `build:core`, `test:packages`, JSON allowlist parsing, and
+  `git diff --check`. Compiled package totals remain GSD agent-core **139/139**,
+  agent-modes **287/287**, native **223 pass / 1 skip**, pi-agent-core **3/3**,
+  pi-ai **49/49**, pi-coding-agent **72/72**, pi-tui **8/8**, contracts
+  **9/9**, MCP server **377/377**, and RPC client **30/30**.
+- Exact next task: review, commit, and push the proxy-transport slice; then
+  refresh the upstream candidate audit from the current fetched tip.
 
 ## 11. Working-session protocol
 
