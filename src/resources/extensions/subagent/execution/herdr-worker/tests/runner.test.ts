@@ -108,6 +108,38 @@ describe("internal Herdr worker runner", () => {
     assert.deepEqual(activity, []);
   });
 
+  it("renders coalesced assistant thinking and text while preserving raw JSONL relay", async () => {
+    const events = [
+      { type: "message_start", message: { role: "assistant" } },
+      { type: "message_update", assistantMessageEvent: { type: "thinking_start", contentIndex: 0 } },
+      { type: "message_update", assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta: "Check the dispatch" } },
+      { type: "message_update", assistantMessageEvent: { type: "thinking_end", contentIndex: 0, content: "Check the dispatch" } },
+      { type: "message_update", assistantMessageEvent: { type: "text_start", contentIndex: 1 } },
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 1, delta: "Dispatch fixed" } },
+      { type: "message_update", assistantMessageEvent: { type: "text_end", contentIndex: 1, content: "Dispatch fixed" } },
+      { type: "message_end", message: { role: "assistant", stopReason: "stop" } },
+    ];
+    const { paths, spec } = fixture(`for (const event of ${JSON.stringify(events)}) console.log(JSON.stringify(event));`);
+    const lines: string[] = [];
+    const activity: string[] = [];
+    const code = await runHerdrWorker(spec, paths, {
+      onJsonlLine: (line) => lines.push(line),
+      activityWrite: (text) => activity.push(text),
+      reporter: noOpReporter(),
+      now: () => new Date("2026-09-02T07:08:09.000Z"),
+    });
+
+    assert.equal(code, 0);
+    assert.equal(lines.length, events.length);
+    assert.deepEqual(lines.map((line) => JSON.parse(line)), events);
+    assert.deepEqual(activity, [
+      "[07:08:09] ◇ thinking: Check the dispatch\n",
+      "[07:08:09] › assistant: Dispatch fixed\n",
+    ]);
+    const state = JSON.parse(readFileSync(paths.statePath, "utf8"));
+    assert.deepEqual(state.lastActivity, { kind: "status", label: "assistant: Dispatch fixed" });
+  });
+
   it("replaces copied root Herdr identity with the worker pane identity and forces child authority mode", () => {
     const env = buildHerdrWorkerChildEnv({
       HERDR_ENV: "1",

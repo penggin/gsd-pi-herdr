@@ -281,3 +281,70 @@ re-reserved once when already absent. Once `pane run` may have been submitted,
 the no-duplicate-launch rule remains absolute: the current execution fails or
 reconciles explicitly, and only a later distinct GSD dispatch may use repaired
 capacity.
+
+---
+
+## ADR-H021 — Keep lifecycle notifications best-effort and Herdr-owned
+
+**Status:** Accepted
+**Date:** 2026-09-01
+
+Root GSD turns and Herdr workers request native `notification.show` delivery at
+human-attention boundaries. Normal root-turn and worker completion use sound
+`done`; the first transition into a user/action-required or durable-failure
+`blocked` interval uses sound `request`. Repeated updates while an agent remains
+blocked are deduplicated, and a blocked request that settles before its report
+returns cannot publish a stale notification.
+
+Notifications are presentation only. Fixed titles and bounded, redacted bodies
+exclude question text, choices, answers, secure-input details, and credentials.
+Herdr owns enablement, rate limiting, foreground-client availability, position,
+sound playback, and final delivery. A disabled, busy, rate-limited, unavailable,
+or failed notification must never alter GSD lifecycle state, retry policy,
+semantic results, or immutable worker exit evidence.
+
+Each notification uses one bounded socket attempt. It is not retried after an
+ambiguous timeout because the first request may already have displayed a toast;
+at-most-once presentation is preferred over duplicate completion/attention
+alerts.
+
+---
+
+## ADR-H022 — Project model output as coalesced, bounded pane activity
+
+**Status:** Accepted
+**Date:** 2026-09-02
+
+Herdr worker panes display provider-emitted thinking and assistant text in
+addition to lifecycle/tool activity. The renderer never prints raw
+`message_update` records or individual token fragments: it accumulates deltas
+until a complete line or content-block boundary, then emits labelled,
+line-wrapped output. Each thinking/text stream has a per-message character cap,
+credential redaction, and terminal-control stripping.
+
+This is presentation only. The exact JSONL stream remains privately persisted
+and relayed unchanged to the common GSD semantic parser. Model-output activity
+does not change worker status, usage aggregation, retry policy, final result, or
+pane release authority. Only reasoning content explicitly emitted by the
+provider can be shown; the integration does not infer or recover hidden model
+state.
+
+---
+
+## ADR-H023 — Never downgrade an adopted Task lifecycle to legacy completion
+
+**Status:** Accepted
+**Date:** 2026-09-02
+
+Once a Task has a canonical workflow lifecycle, every completion or blocker
+submission remains bound to a held running Task Attempt. A late
+`blockerDiscovered` call from a provider-timed-out or otherwise surviving agent
+turn must fail closed with the recorded recovery instruction; it cannot route
+through the legacy completion writer.
+
+The legacy writer marks Tasks complete and renders SUMMARY projections without
+canonical Attempt authority. Allowing that downgrade after the supervisor has
+already settled an Attempt can leave an open DB lifecycle beside a completion
+artifact and trip `artifact-db-status-divergence`. Truly legacy Tasks with no
+adopted lifecycle retain their compatibility path. Canonical Tasks instead
+consume their recorded retry/recovery action through the GSD orchestrator.

@@ -7,6 +7,13 @@
   "requires": { "platform": ">=2.29.0" },
   "provides": {
     "commands": ["herdr-status", "herdr-doctor"],
-    "hooks": ["session_start", "agent_start", "agent_end", "session_shutdown"]
+    "hooks": [
+      "session_start",
+      "agent_start",
+      "agent_end",
+      "tool_execution_start",
+      "tool_execution_end",
+      "session_shutdown"
+    ]
   }
 }

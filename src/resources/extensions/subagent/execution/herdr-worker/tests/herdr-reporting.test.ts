@@ -99,4 +99,79 @@ describe("Herdr worker semantic reporting", () => {
     await Promise.all([first, second]);
     assert.deepEqual(calls, ["agent:working", "agent:working", "agent:idle", "metadata:outcome"]);
   });
+
+  it("notifies once per blocked interval and once on successful completion", async () => {
+    const notifications: Array<{ title: string; body?: string; sound?: string }> = [];
+    const reporter = new HerdrWorkerReporter(spec(), {
+      client: {
+        isAvailable: () => true,
+        reportAgent: async () => true,
+        reportMetadata: async () => true,
+        showNotification: async (notification) => {
+          notifications.push(notification);
+          return true;
+        },
+      },
+    });
+
+    await reporter.reportStatus("blocked", "awaiting user input");
+    await reporter.reportStatus("blocked", "awaiting user input · 2 questions");
+    assert.equal(notifications.length, 1);
+    assert.deepEqual(notifications[0], {
+      title: "GSD worker needs attention",
+      body: "falcon / scout · awaiting user input",
+      sound: "request",
+    });
+
+    await reporter.reportStatus("working", "resumed");
+    await reporter.reportStatus("blocked", "secure input required");
+    assert.equal(notifications.length, 2);
+    await reporter.reportStatus("working", "resumed");
+    await reporter.reportFinal("completed");
+    assert.deepEqual(notifications.at(-1), {
+      title: "GSD worker finished",
+      body: "falcon / scout · completed",
+      sound: "done",
+    });
+  });
+
+  it("does not duplicate an attention notification when a blocked worker fails", async () => {
+    const notifications: string[] = [];
+    const reporter = new HerdrWorkerReporter(spec(), {
+      client: {
+        isAvailable: () => true,
+        reportAgent: async () => true,
+        reportMetadata: async () => true,
+        showNotification: async ({ title }) => {
+          notifications.push(title);
+          return true;
+        },
+      },
+    });
+    await reporter.reportStatus("blocked", "waiting");
+    await reporter.reportFinal("failed");
+    assert.deepEqual(notifications, ["GSD worker needs attention"]);
+  });
+
+  it("treats notification delivery failure as presentation-only", async () => {
+    const calls: string[] = [];
+    const reporter = new HerdrWorkerReporter(spec(), {
+      client: {
+        isAvailable: () => true,
+        reportAgent: async () => {
+          calls.push("agent");
+          return true;
+        },
+        reportMetadata: async () => {
+          calls.push("metadata");
+          return true;
+        },
+        showNotification: async () => {
+          throw new Error("no foreground client");
+        },
+      },
+    });
+    await assert.doesNotReject(() => reporter.reportFinal("completed"));
+    assert.deepEqual(calls, ["agent", "metadata"]);
+  });
 });

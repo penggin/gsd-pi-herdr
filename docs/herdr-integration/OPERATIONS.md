@@ -70,6 +70,43 @@ Expected normal usage after implementation:
 6. Failed/blocked workers remain visible until reviewed or cleaned.
 ```
 
+## Human-input attention
+
+When the visible root GSD calls `ask_user_questions`, its Herdr agent state is
+`blocked` with a bounded `awaiting user input` message until that exact tool call
+settles. Answer, cancellation, interruption, agent end, reload, and shutdown all
+clear the attention state and restore the surrounding working/idle lifecycle.
+Multiple concurrent input calls remain blocked until all matching call IDs have
+settled.
+
+Headless workers use the same projection for remote-question waits. Their stdin
+is intentionally unavailable, so the worker pane itself is not an answer
+surface. Without a configured remote-question transport, the normal headless
+tool error settles immediately instead of leaving a false persistent wait.
+
+Herdr presentation never includes question text, choices, answers, secure field
+names, or collected secret values. It receives only the input category and a
+bounded question count.
+
+## Completion and attention notifications
+
+The root reporter and each visible worker use Herdr's native
+`notification.show` API:
+
+```text
+normal root turn / worker completion  -> sound: done
+first transition into blocked         -> sound: request
+```
+
+Only the first update in one blocked interval notifies. Resuming work resets
+that interval, so a later independent block can notify again. Notification
+titles are fixed and bodies are single-line, length-bounded, and secret-redacted.
+Question text, choices, answers, and secure-input details are excluded.
+
+GSD does not override Herdr notification preferences. Herdr may return
+`disabled`, `rate_limited`, `no_foreground_client`, or `busy`; these are expected
+best-effort presentation outcomes and never change task status or exit evidence.
+
 ## Diagnostics
 
 The runtime exposes GSD-native diagnostics:
@@ -138,6 +175,14 @@ slot, and creates or reuses healthy capacity. A pre-submission `pane.get` check
 may safely re-reserve once because no worker command has been submitted yet.
 After `pane run` has been attempted, ambiguous outcomes remain fail-closed and
 are never automatically replaced.
+
+An accepted `pane run` is not worker-start evidence. The private worker must
+publish its owner-bound `state.json`/`heartbeat.json` within the bounded startup
+window. If the pane remains alive and idle without those artifacts, the backend
+interrupts that exact pane, marks its ownership orphaned, retains the pane and
+artifacts as a failure, and returns an explicit runtime error to the common GSD
+runner. It does not wait for the normal execution timeout, retry the submission,
+or fall back to Local execution.
 
 Normal successful operation keeps physical worker panes warm. Completed and
 aborted workers release Herdr agent authority after final evidence, so they do

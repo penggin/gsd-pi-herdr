@@ -142,6 +142,14 @@ GSD auto milestone/slice/task  -> working + bounded context label
 session shutdown               -> release lifecycle authority
 ```
 
+Root and worker reporters also use Herdr `notification.show` as a best-effort
+attention surface. A transition into `blocked` requests the `request` sound;
+normal root-turn or worker completion requests the `done` sound. Repeated state
+updates inside one blocked interval do not emit duplicate notifications, and a
+question that settles before its blocked report returns cannot emit a stale
+request. Herdr remains authoritative for notification enablement, foreground
+availability, rate limiting, placement, and final delivery.
+
 Native session identity, when available, should use `pane.report_agent_session` or the equivalent fields supported by Herdr.
 
 ## 5. Worker lifecycle
@@ -199,6 +207,8 @@ model: gpt-5.6-sol
 working · 01:42
 
 [00:04] read  .gsd/STATE.md
+[00:07] ◇ thinking: checking the current task attempt and dispatch scope
+[00:09] › assistant: The retry is bound to the canonical task identity.
 [00:12] bash  git diff -- src/auth
 [00:31] edit  src/auth/session.ts
 [00:54] retry 2/3 · provider 503
@@ -213,6 +223,13 @@ Never display by default:
 - complete prompts/system prompts;
 - full environment maps;
 - secrets or auth headers.
+
+Provider-emitted thinking and assistant text are a human-readable projection,
+not a raw event stream. The worker coalesces streaming deltas until a complete
+line or block boundary, strips terminal control sequences, redacts credential
+patterns, wraps every displayed line, and applies a per-message output cap.
+These projections update only presentation/last-activity evidence and never
+change worker lifecycle or parent semantic parsing.
 
 ## 7. Herdr API split
 

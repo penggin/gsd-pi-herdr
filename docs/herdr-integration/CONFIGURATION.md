@@ -59,7 +59,9 @@ preference schema:
 - manually removed idle/retained panes are reconciled and replaced before the
   next launch; in-flight pane loss still fails the current execution explicitly;
 - root-pane focus is preserved;
-- pane output is bounded activity only, never raw JSON or token deltas.
+- pane output includes bounded lifecycle/tool activity plus coalesced
+  provider-emitted thinking and assistant text, never raw JSON or individual
+  token deltas.
 
 ## Runtime state
 

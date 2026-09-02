@@ -64,7 +64,14 @@ The pane receives only bounded status information such as:
 [16:42:46] ✓ bash
 ```
 
-The renderer suppresses raw JSON, text/token deltas, tool update bodies, and tool result contents. Credential-shaped assignments, Authorization values, and common URL query credentials are redacted before presentation. Task previews are also redacted before becoming Herdr status messages.
+The renderer suppresses raw JSON, individual token deltas, tool update bodies,
+and tool result contents. Provider-emitted thinking/text deltas are coalesced
+into complete bounded lines or blocks before being rendered as `◇ thinking:`
+and `› assistant:` activity. Each kind has a per-message character cap;
+terminal control sequences are removed, and credential-shaped assignments,
+Authorization values, and common URL query credentials are redacted before
+presentation. Task previews are also redacted before becoming Herdr status
+messages.
 
 ## Herdr authority
 

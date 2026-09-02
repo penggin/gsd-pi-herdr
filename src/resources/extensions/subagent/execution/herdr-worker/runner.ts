@@ -87,7 +87,7 @@ export async function runHerdrWorker(
     throw error;
   }
   const reporter = options.reporter ?? new HerdrWorkerReporter(spec, { env: hostEnv });
-  const renderer = new HerdrWorkerActivityRenderer({ write: options.activityWrite });
+  const renderer = new HerdrWorkerActivityRenderer({ write: options.activityWrite, now });
 
   let currentStatus: HerdrWorkerStatus = "starting";
   let lastActivity: HerdrWorkerActivityV1 | undefined;

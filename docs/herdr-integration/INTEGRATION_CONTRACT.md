@@ -172,9 +172,23 @@ Displayable events are a lossy projection and may include:
 - tool execution start and bounded completion status;
 - retry notices;
 - blocked/failure summaries;
-- bounded assistant/final summary if explicitly enabled.
+- bounded, coalesced provider-emitted thinking and assistant text when Herdr
+  worker presentation is enabled.
 
-Do not render raw token deltas or unbounded tool payloads.
+`ask_user_questions` and `secure_env_collect` are attention boundaries. Their
+universal `tool_execution_start` event maps the hosting root or worker agent to
+Herdr `blocked`; the matching `tool_execution_end` restores the surrounding
+working/idle lifecycle state. Matching is by tool-call ID, so settling one of
+multiple outstanding requests cannot hide another pending request.
+
+Herdr receives only a bounded category/count label such as `awaiting user input
+· 2 questions` or `secure input required`. Question text, choices, answers,
+secret field names, and collected values are never included in Herdr state or
+terminal activity projection.
+
+Do not render raw token deltas or unbounded tool payloads. Model-output deltas
+must be accumulated into complete human-readable lines/blocks before display;
+the raw JSONL relay remains unchanged and authoritative for the parent parser.
 
 Activity formatting must redact known secret patterns and cap line lengths.
 
@@ -232,6 +246,7 @@ Initial required capabilities:
 - `pane.report_agent_session` when native session identity is available;
 - `pane.report_metadata`;
 - `pane.release_agent`;
+- `notification.show` for best-effort completion/attention notifications;
 - `pane.close`;
 - `session.snapshot` for reconciliation.
 
@@ -241,6 +256,18 @@ Initial required capabilities:
 - `pane.layout`;
 - `events.subscribe` for event-driven pane loss/state updates;
 - Herdr plugin APIs for operations/dashboard features.
+
+### Notification delivery
+
+Notification requests use fixed, bounded titles and redacted bodies. Normal
+root-turn and worker completion use sound `done`; entry into a user/action
+required or durable-failure `blocked` interval uses sound `request`. Repeated
+updates while still blocked must not notify again. Delivery results including
+`disabled`, `rate_limited`, `no_foreground_client`, and `busy` are presentation
+outcomes only and must never alter GSD success/failure, worker exit evidence, or
+retry policy.
+Notification calls use one bounded socket attempt and are not retried after an
+ambiguous timeout, preventing duplicate side effects when a response is lost.
 
 ### Important v0.8.2 detail
 

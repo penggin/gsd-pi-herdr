@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import type { HerdrAgentSessionRef, HerdrAgentState, HerdrClient } from "./client.js";
+import type { HerdrInteractiveInputDescriptor } from "./interactive-input.js";
 
 const DEFAULT_IDLE_DEBOUNCE_MS = 250;
 const DEFAULT_ERROR_GRACE_MS = 2500;
@@ -22,7 +23,7 @@ interface RootReporterEvent {
 type HerdrReporterClient = Pick<
   HerdrClient,
   "reportAgent" | "reportAgentSession" | "releaseAgent"
->;
+> & Partial<Pick<HerdrClient, "showNotification">>;
 
 export interface HerdrRootReporterOptions {
   idleDebounceMs?: number;
@@ -37,9 +38,11 @@ export class HerdrRootReporter {
   private readonly externalNextSequence: (() => number) | undefined;
   private rootSession = false;
   private agentActive = false;
+  private completionPending = false;
   private failureBlocked = false;
   private failureMessage: string | undefined;
   private workflowMessage: string | undefined;
+  private readonly pendingInteractiveInputs = new Map<string, HerdrInteractiveInputDescriptor>();
   private lastState: HerdrAgentState | undefined;
   private lastMessage: string | undefined;
   private sessionRef: HerdrAgentSessionRef = {};
@@ -72,6 +75,7 @@ export class HerdrRootReporter {
     this.rootSession = true;
     this.clearTimers();
     this.clearFailure();
+    this.pendingInteractiveInputs.clear();
     this.lastState = undefined;
     this.lastMessage = undefined;
     this.workflowMessage = workflowMessage;
@@ -83,6 +87,7 @@ export class HerdrRootReporter {
     // a fresh lifecycle state after release_agent has relinquished authority.
     if (!this.rootSession) return;
     this.agentActive = ctx.isIdle?.() === false;
+    this.completionPending = this.agentActive;
     await this.publishState(true);
   }
 
@@ -90,9 +95,11 @@ export class HerdrRootReporter {
     if (!this.rootSession) return;
     this.clearTimers();
     this.clearFailure();
+    this.pendingInteractiveInputs.clear();
     if (workflowMessage !== undefined) this.workflowMessage = workflowMessage;
     this.updateSessionRef(ctx);
     this.agentActive = true;
+    this.completionPending = true;
     void this.reportSession();
     void this.publishState();
   }
@@ -102,9 +109,11 @@ export class HerdrRootReporter {
     if (workflowMessage !== undefined) this.workflowMessage = workflowMessage;
     this.agentActive = false;
     this.clearTimers();
+    this.pendingInteractiveInputs.clear();
 
     const errorMessage = findAssistantError(event.messages);
     if (errorMessage) {
+      this.completionPending = false;
       this.failureMessage = truncate(errorMessage, MAX_ERROR_MESSAGE_CHARS);
 
       if (event.willRetry === true) {
@@ -134,21 +143,38 @@ export class HerdrRootReporter {
 
     this.idleTimer = setTimeout(() => {
       this.idleTimer = undefined;
-      void this.publishState();
+      void this.publishState().then(() => this.notifyCompletedIfCurrent()).catch(() => {});
     }, this.idleDebounceMs);
     this.idleTimer.unref?.();
+  }
+
+  interactiveInputStart(toolCallId: string, descriptor: HerdrInteractiveInputDescriptor): void {
+    if (!this.rootSession || !toolCallId) return;
+    this.pendingInteractiveInputs.set(toolCallId, descriptor);
+    void this.publishState();
+  }
+
+  interactiveInputEnd(toolCallId: string): void {
+    if (!this.rootSession || !toolCallId || !this.pendingInteractiveInputs.delete(toolCallId)) return;
+    void this.publishState();
   }
 
   async shutdown(): Promise<void> {
     if (!this.rootSession) return;
     this.rootSession = false;
+    this.completionPending = false;
     this.clearTimers();
+    this.pendingInteractiveInputs.clear();
     await this.client.releaseAgent("gsd", this.nextSeq());
   }
 
   private desiredState(): { state: HerdrAgentState; message?: string } {
     if (this.failureBlocked) {
       return { state: "blocked", message: joinMessage(this.workflowMessage, this.failureMessage) };
+    }
+    const pendingInput = lastMapValue(this.pendingInteractiveInputs);
+    if (pendingInput) {
+      return { state: "blocked", message: joinMessage(this.workflowMessage, pendingInput.waitingMessage) };
     }
     if (this.agentActive) {
       return { state: "working", message: this.workflowMessage };
@@ -166,6 +192,7 @@ export class HerdrRootReporter {
       : this.desiredState();
 
     if (!force && desired.state === this.lastState && desired.message === this.lastMessage) return;
+    const previousState = this.lastState;
     this.lastState = desired.state;
     this.lastMessage = desired.message;
     await this.client.reportAgent(
@@ -175,6 +202,36 @@ export class HerdrRootReporter {
       desired.message,
       this.sessionRef,
     );
+    if (desired.state === "blocked" && previousState !== "blocked") {
+      await this.notifyBlockedIfCurrent(desired.message);
+    }
+  }
+
+  private async notifyBlockedIfCurrent(message: string | undefined): Promise<void> {
+    if (!this.rootSession || this.lastState !== "blocked" || this.lastMessage !== message) return;
+    await this.safeNotify({
+      title: "GSD needs attention",
+      body: notificationBody(message ?? "GSD is blocked"),
+      sound: "request",
+    });
+  }
+
+  private async notifyCompletedIfCurrent(): Promise<void> {
+    if (!this.rootSession || this.agentActive || this.lastState !== "idle" || !this.completionPending) return;
+    this.completionPending = false;
+    await this.safeNotify({
+      title: "GSD finished",
+      body: notificationBody(this.workflowMessage ?? "GSD turn completed"),
+      sound: "done",
+    });
+  }
+
+  private async safeNotify(notification: { title: string; body: string; sound: "done" | "request" }): Promise<void> {
+    try {
+      await this.client.showNotification?.(notification);
+    } catch {
+      // Notification delivery is presentation-only and must not alter GSD state.
+    }
   }
 
   private async reportSession(sessionStartSource?: string): Promise<void> {
@@ -256,4 +313,18 @@ function joinMessage(left: string | undefined, right: string | undefined): strin
   if (!left) return right;
   if (!right) return left;
   return truncate(`${left} · ${right}`, MAX_ERROR_MESSAGE_CHARS);
+}
+
+function notificationBody(value: string): string {
+  let output = value;
+  output = output.replace(/(authorization\s*[:=]\s*(?:bearer\s+)?)[^\s,;]+/gi, "$1[REDACTED]");
+  output = output.replace(/\b([A-Z0-9_]*(?:API[_-]?KEY|TOKEN|PASSWORD|PASSWD|SECRET|AUTH)[A-Z0-9_]*)\s*=\s*([^\s,;]+)/gi, "$1=[REDACTED]");
+  output = output.replace(/([?&](?:api[_-]?key|token|password|secret|auth)=)[^&#\s]+/gi, "$1[REDACTED]");
+  return truncate(output.replace(/[\r\n\t]+/g, " ").replace(/\s{2,}/g, " ").trim(), MAX_ERROR_MESSAGE_CHARS);
+}
+
+function lastMapValue<K, V>(values: ReadonlyMap<K, V>): V | undefined {
+  let result: V | undefined;
+  for (const value of values.values()) result = value;
+  return result;
 }

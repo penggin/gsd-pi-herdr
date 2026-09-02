@@ -99,3 +99,73 @@ test("retry reuses one request id so sequenced reports remain idempotent", async
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("notification client sends the v0.8.2 show contract and returns delivery state", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "gsd-herdr-notification-"));
+  const socketPath = path.join(dir, "herdr.sock");
+  let captured: { method?: string; params?: Record<string, unknown> } = {};
+  const server = net.createServer((socket) => {
+    socket.once("data", (chunk) => {
+      const request = JSON.parse(chunk.toString("utf8").trim()) as {
+        id: string;
+        method: string;
+        params: Record<string, unknown>;
+      };
+      captured = request;
+      socket.end(`${JSON.stringify({
+        id: request.id,
+        result: { type: "notification_show", shown: true, reason: "shown" },
+      })}\n`);
+    });
+  });
+
+  await new Promise<void>((resolve, reject) => server.listen(socketPath, resolve).once("error", reject));
+  try {
+    const client = new HerdrClient("notification-test", {
+      env: herdrEnv(socketPath),
+      requestTimeoutMs: 100,
+      retryTimeoutMs: 100,
+    });
+    assert.equal(await client.showNotification({
+      title: "GSD needs attention",
+      body: "awaiting user input",
+      sound: "request",
+    }), true);
+    assert.equal(captured.method, "notification.show");
+    assert.deepEqual(captured.params, {
+      title: "GSD needs attention",
+      body: "awaiting user input",
+      sound: "request",
+    });
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("notification delivery is at-most-once when the socket response is lost", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "gsd-herdr-notification-once-"));
+  const socketPath = path.join(dir, "herdr.sock");
+  let connections = 0;
+  const server = net.createServer((socket) => {
+    connections += 1;
+    socket.once("data", () => {
+      // Simulate a request that may have been processed while its response was
+      // lost. The client must not reconnect and show a duplicate toast.
+    });
+  });
+
+  await new Promise<void>((resolve, reject) => server.listen(socketPath, resolve).once("error", reject));
+  try {
+    const client = new HerdrClient("notification-once", {
+      env: herdrEnv(socketPath),
+      requestTimeoutMs: 20,
+      retryTimeoutMs: 100,
+    });
+    assert.equal(await client.showNotification({ title: "GSD finished", sound: "done" }), false);
+    assert.equal(connections, 1);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -5,7 +5,8 @@ import { redactSensitiveText } from "./activity.js";
 
 const WORKER_AGENT_LABEL = "gsd-worker";
 
-type WorkerReporterClient = Pick<HerdrClient, "isAvailable" | "reportAgent" | "reportMetadata">;
+type WorkerReporterClient = Pick<HerdrClient, "isAvailable" | "reportAgent" | "reportMetadata">
+  & Partial<Pick<HerdrClient, "showNotification">>;
 
 export interface HerdrWorkerReporterOptions {
   env?: NodeJS.ProcessEnv;
@@ -17,6 +18,7 @@ export class HerdrWorkerReporter {
   private readonly spec: HerdrWorkerLaunchSpecV1;
   private seq = Date.now() * 1000;
   private reportQueue: Promise<void> = Promise.resolve();
+  private lastReportedState: HerdrAgentState | undefined;
 
   constructor(spec: HerdrWorkerLaunchSpecV1, options: HerdrWorkerReporterOptions = {}) {
     this.spec = spec;
@@ -48,21 +50,34 @@ export class HerdrWorkerReporter {
   async reportStatus(status: HerdrWorkerStatus, message?: string): Promise<void> {
     return this.enqueue(async () => {
       if (!this.client.isAvailable()) return;
+      const nextState = mapWorkerStatusToHerdr(status);
+      const previousState = this.lastReportedState;
+      this.lastReportedState = nextState;
       await this.client.reportAgent(
         WORKER_AGENT_LABEL,
-        mapWorkerStatusToHerdr(status),
+        nextState,
         this.nextSeq(),
         bounded(redactSensitiveText(message ?? status), 160),
       );
+      if (nextState === "blocked" && previousState !== "blocked") {
+        await this.safeNotify(
+          "GSD worker needs attention",
+          workerNotificationBody(this.spec, message ?? status),
+          "request",
+        );
+      }
     });
   }
 
   async reportFinal(status: Extract<HerdrWorkerStatus, "completed" | "failed" | "aborted" | "orphaned">): Promise<void> {
     return this.enqueue(async () => {
       if (!this.client.isAvailable()) return;
+      const nextState = mapWorkerStatusToHerdr(status);
+      const previousState = this.lastReportedState;
+      this.lastReportedState = nextState;
       await this.client.reportAgent(
         WORKER_AGENT_LABEL,
-        mapWorkerStatusToHerdr(status),
+        nextState,
         this.nextSeq(),
         status,
       );
@@ -70,7 +85,28 @@ export class HerdrWorkerReporter {
         agent: WORKER_AGENT_LABEL,
         tokens: { outcome: status },
       });
+      if (status === "completed") {
+        await this.safeNotify(
+          "GSD worker finished",
+          workerNotificationBody(this.spec, "completed"),
+          "done",
+        );
+      } else if ((status === "failed" || status === "orphaned") && previousState !== "blocked") {
+        await this.safeNotify(
+          "GSD worker needs attention",
+          workerNotificationBody(this.spec, status),
+          "request",
+        );
+      }
     });
+  }
+
+  private async safeNotify(title: string, body: string, sound: "done" | "request"): Promise<void> {
+    try {
+      await this.client.showNotification?.({ title, body, sound });
+    } catch {
+      // Notification delivery is presentation-only and must not alter worker evidence.
+    }
   }
 
   private nextSeq(): number {
@@ -106,4 +142,9 @@ export function mapWorkerStatusToHerdr(status: HerdrWorkerStatus): HerdrAgentSta
 function bounded(value: string, max: number): string {
   const singleLine = value.replace(/[\r\n\t]+/g, " ").replace(/\s{2,}/g, " ").trim();
   return singleLine.length <= max ? singleLine : `${singleLine.slice(0, Math.max(0, max - 1))}…`;
+}
+
+function workerNotificationBody(spec: HerdrWorkerLaunchSpecV1, status: string): string {
+  const identity = `${spec.trackingName ?? spec.childId} / ${spec.agent}`;
+  return bounded(redactSensitiveText(`${identity} · ${status}`), 160);
 }

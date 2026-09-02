@@ -44,6 +44,7 @@ const DEFAULT_POLL_INTERVAL_MS = 50;
 const DEFAULT_CANCEL_EVIDENCE_TIMEOUT_MS = 15_000;
 const DEFAULT_PANE_PROBE_INTERVAL_MS = 1000;
 const DEFAULT_HEARTBEAT_TIMEOUT_MS = 20_000;
+const DEFAULT_STARTUP_EVIDENCE_TIMEOUT_MS = 10_000;
 
 export interface HerdrBackendPoolLike {
 	reserve(request?: HerdrPaneReservationRequest): Promise<HerdrPaneReservation>;
@@ -68,6 +69,7 @@ export interface HerdrBackendOptions {
 	cancelEvidenceTimeoutMs?: number;
 	paneProbeIntervalMs?: number;
 	heartbeatTimeoutMs?: number;
+	startupEvidenceTimeoutMs?: number;
 	terminateProcessTree?: typeof terminateHerdrWorkerProcessGroup;
 }
 
@@ -238,6 +240,7 @@ async function waitForWorkerEvidence(
 	const cancelEvidenceTimeoutMs = options.cancelEvidenceTimeoutMs ?? DEFAULT_CANCEL_EVIDENCE_TIMEOUT_MS;
 	const paneProbeIntervalMs = options.paneProbeIntervalMs ?? DEFAULT_PANE_PROBE_INTERVAL_MS;
 	const heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? DEFAULT_HEARTBEAT_TIMEOUT_MS;
+	const startupEvidenceTimeoutMs = options.startupEvidenceTimeoutMs ?? DEFAULT_STARTUP_EVIDENCE_TIMEOUT_MS;
 	const stdout = new JsonlLineFramer({ onLine: callbacks.onStdoutLine });
 	const stderrDecoder = new StringDecoder("utf8");
 	const stdoutTail = { offset: 0 };
@@ -304,6 +307,23 @@ async function waitForWorkerEvidence(
 		if (request.signal?.aborted && interruptSentAt === undefined) {
 			interruptSentAt = now;
 			await sendPaneInterrupt(client, reservation.paneId);
+		}
+		if (
+			interruptSentAt === undefined
+			&& !existsSync(paths.statePath)
+			&& now - started >= startupEvidenceTimeoutMs
+		) {
+			// pane.run acceptance proves only that Herdr accepted the terminal
+			// submission. The private worker must independently publish durable
+			// startup evidence; otherwise a live idle pane can leave the parent
+			// Promise.all waiting until the much longer execution timeout.
+			await sendPaneInterrupt(client, reservation.paneId);
+			finalizeRelays();
+			return {
+				exitCode: 1,
+				aborted: false,
+				runtimeError: "Herdr pane accepted the worker command but the internal worker did not start within the bounded startup window",
+			};
 		}
 		if (!request.signal?.aborted && now - started >= waitTimeoutMs && interruptSentAt === undefined) {
 			timeoutTriggered = true;

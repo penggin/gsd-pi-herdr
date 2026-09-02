@@ -30,6 +30,15 @@ export interface HerdrAgentSessionRef {
 }
 
 export type HerdrAgentState = "idle" | "working" | "blocked" | "unknown";
+export type HerdrNotificationSound = "none" | "done" | "request";
+export type HerdrNotificationPosition = "top-left" | "top-right" | "bottom-left" | "bottom-right";
+
+export interface HerdrNotification {
+  title: string;
+  body?: string;
+  sound?: HerdrNotificationSound;
+  position?: HerdrNotificationPosition;
+}
 
 export interface HerdrClientOptions {
   env?: NodeJS.ProcessEnv;
@@ -188,6 +197,27 @@ export class HerdrClient {
       ...metadata,
     });
     return response !== null && !response.error;
+  }
+
+  async showNotification(notification: HerdrNotification): Promise<boolean> {
+    const title = notification.title.trim();
+    if (!title || !this.env.available || !this.env.socketPath) return false;
+    // Notifications are best-effort side effects. Unlike idempotent lifecycle
+    // reports, do not retry after an ambiguous timeout: the first request may
+    // already have displayed a toast even if its response was lost.
+    const response = await this.requestOnce({
+      id: nextRequestId(this.source),
+      method: "notification.show",
+      params: {
+        title,
+        ...(notification.body ? { body: notification.body } : {}),
+        ...(notification.sound ? { sound: notification.sound } : {}),
+        ...(notification.position ? { position: notification.position } : {}),
+      },
+    }, this.requestTimeoutMs);
+    if (!response || response.error || !response.result || typeof response.result !== "object") return false;
+    const result = response.result as Record<string, unknown>;
+    return result.type === "notification_show" && result.shown === true;
   }
 
   async releaseAgent(agent: string, seq: number): Promise<boolean> {

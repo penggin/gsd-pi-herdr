@@ -16,6 +16,7 @@ export const REQUIRED_METHODS = [
   "pane.report_agent_session",
   "pane.report_metadata",
   "pane.release_agent",
+  "notification.show",
   "pane.close",
   "session.snapshot",
 ];
