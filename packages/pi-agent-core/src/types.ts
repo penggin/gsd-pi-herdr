@@ -9,6 +9,7 @@ import type {
 	TextContent,
 	Tool,
 	ToolResultMessage,
+	Usage,
 } from "@gsd/pi-ai";
 import type { Static, TSchema } from "typebox";
 
@@ -66,15 +67,18 @@ export interface BeforeToolCallResult {
  * - `content`: if provided, replaces the tool result content array in full
  * - `details`: if provided, replaces the tool result details value in full
  * - `isError`: if provided, replaces the tool result error flag
+ * - `usage`: if provided, replaces the tool result usage
  * - `terminate`: if provided, replaces the early-termination hint
  *
  * Omitted fields keep the original executed tool result values.
- * There is no deep merge for `content` or `details`.
+ * There is no deep merge for `content`, `details`, or `usage`.
  */
 export interface AfterToolCallResult {
 	content?: (TextContent | ImageContent)[];
 	details?: unknown;
 	isError?: boolean;
+	/** Usage from the final tool execution itself, if available. Not used for main LLM context accounting. */
+	usage?: Usage;
 	/**
 	 * Names of tools that became available while this tool call executed.
 	 * Providers with native deferred-tool support may use this as a cache-friendly
@@ -362,6 +366,8 @@ export interface AgentToolResult<T> {
 	content: (TextContent | ImageContent)[];
 	/** Arbitrary structured details for logs or UI rendering. */
 	details: T;
+	/** Usage from the final tool execution itself, if available. Not used for main LLM context accounting. */
+	usage?: Usage;
 	/**
 	 * Names of tools that became available while this tool call executed.
 	 * This metadata is optional and has no effect for providers that do not support

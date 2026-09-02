@@ -95,6 +95,7 @@ describe("AgentSession compaction characterization", () => {
 	});
 
 	it("manually compacts using an extension-provided summary", async () => {
+		const extensionUsage = createUsage(20);
 		const harness = await createHarness({
 			extensionFactories: [
 				(pi) => {
@@ -103,6 +104,7 @@ describe("AgentSession compaction characterization", () => {
 							summary: "summary from extension",
 							firstKeptEntryId: event.preparation.firstKeptEntryId,
 							tokensBefore: event.preparation.tokensBefore,
+							usage: extensionUsage,
 							details: { source: "extension" },
 						},
 					}));
@@ -118,7 +120,11 @@ describe("AgentSession compaction characterization", () => {
 		const compactionEntries = harness.sessionManager.getEntries().filter((entry) => entry.type === "compaction");
 
 		expect(result.summary).toBe("summary from extension");
+		expect(result.usage).toEqual(extensionUsage);
 		expect(compactionEntries).toHaveLength(1);
+		expect(compactionEntries[0]?.type === "compaction" ? compactionEntries[0].usage : undefined).toEqual(
+			extensionUsage,
+		);
 		expect(harness.session.messages[0]?.role).toBe("compactionSummary");
 	});
 

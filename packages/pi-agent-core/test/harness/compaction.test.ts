@@ -607,6 +607,7 @@ describe("harness compaction", () => {
 	it("isolates branch summaries from root provider affinity and prompt cache", async () => {
 		const seenOptions: Array<Record<string, unknown> | undefined> = [];
 		const retryEvents: string[] = [];
+		const branchUsage = createMockUsage(9, 8, 7, 6);
 		const { faux, model } = createFauxModel(false);
 		faux.setResponses([
 			(_context, options) => {
@@ -615,7 +616,7 @@ describe("harness compaction", () => {
 			},
 			(_context, options) => {
 				seenOptions.push(options as Record<string, unknown> | undefined);
-				return fauxAssistantMessage("## Goal\nBranch summary");
+				return { ...fauxAssistantMessage("## Goal\nBranch summary"), usage: branchUsage };
 			},
 		]);
 		const entry = createMessageEntry(createUserMessage("branch work"));
@@ -639,6 +640,7 @@ describe("harness compaction", () => {
 		});
 
 		expect(result.ok).toBe(true);
+		expect(result.ok ? result.value.usage?.totalTokens : undefined).toBeGreaterThan(0);
 		expect(seenOptions).toHaveLength(2);
 		expect(seenOptions[0]).toMatchObject({
 			cacheRetention: "none",
@@ -677,6 +679,36 @@ describe("harness compaction", () => {
 			"test-key",
 		);
 		expect(invalidResult).toMatchObject({ ok: false, error: { code: "invalid_session" } });
+	});
+
+	it("combines usage for split-turn compaction summaries", async () => {
+		const messages: AgentMessage[] = [createUserMessage("Summarize this.")];
+		const historyUsage = createMockUsage(1, 2, 3, 4);
+		const turnPrefixUsage = createMockUsage(5, 6, 7, 8);
+		const { faux, model } = createFauxModel(false);
+		faux.setResponses([
+			{ ...fauxAssistantMessage("history summary"), usage: historyUsage },
+			{ ...fauxAssistantMessage("turn prefix summary"), usage: turnPrefixUsage },
+		]);
+		const preparation: CompactionPreparation = {
+			firstKeptEntryId: "entry-keep",
+			messagesToSummarize: messages,
+			turnPrefixMessages: messages,
+			isSplitTurn: true,
+			tokensBefore: 100,
+			fileOps: { read: new Set(), written: new Set(), edited: new Set() },
+			settings: { enabled: true, reserveTokens: 2000, keepRecentTokens: 20 },
+		};
+
+		const result = getOrThrow(await compact(preparation, model, "test-key"));
+
+		expect(result.usage).toMatchObject({ output: 9, cacheRead: 0, cacheWrite: 0 });
+		expect(result.usage?.totalTokens).toBe(
+			(result.usage?.input ?? 0) +
+				(result.usage?.output ?? 0) +
+				(result.usage?.cacheRead ?? 0) +
+				(result.usage?.cacheWrite ?? 0),
+		);
 	});
 
 	it("passes reasoning through turn-prefix summaries when enabled", async () => {

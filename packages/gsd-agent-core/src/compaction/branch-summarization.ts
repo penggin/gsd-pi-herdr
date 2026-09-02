@@ -6,7 +6,7 @@
  */
 
 import type { AgentMessage } from "@gsd/pi-agent-core";
-import type { AssistantMessage, Context, Model, SimpleStreamOptions } from "@gsd/pi-ai";
+import type { AssistantMessage, Context, Model, SimpleStreamOptions, Usage } from "@gsd/pi-ai";
 import { completeSimple } from "@gsd/pi-ai";
 import {
 	convertToLlm,
@@ -32,6 +32,7 @@ import {
 
 export interface BranchSummaryResult {
 	summary?: string;
+	usage?: Usage;
 	readFiles?: string[];
 	modifiedFiles?: string[];
 	aborted?: boolean;
@@ -351,6 +352,7 @@ export async function generateBranchSummary(
 
 	return {
 		summary: summary || "No summary generated",
+		usage: response.usage,
 		readFiles,
 		modifiedFiles,
 	};

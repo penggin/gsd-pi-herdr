@@ -66,6 +66,24 @@ describe("SessionManager append and tree traversal", () => {
 			expect(entries[2].parentId).toBe(modelId);
 		});
 
+		it("persists compaction usage", () => {
+			const session = SessionManager.inMemory();
+			const firstKeptEntryId = session.appendMessage(userMsg("one"));
+			const usage = {
+				input: 1,
+				output: 2,
+				cacheRead: 3,
+				cacheWrite: 4,
+				totalTokens: 10,
+				cost: { input: 0.1, output: 0.2, cacheRead: 0.3, cacheWrite: 0.4, total: 1 },
+			};
+
+			const id = session.appendCompaction("summary", firstKeptEntryId, 10, undefined, false, usage);
+
+			const entry = session.getEntry(id);
+			expect(entry?.type === "compaction" ? entry.usage : undefined).toEqual(usage);
+		});
+
 		it("appendCompaction integrates into tree", () => {
 			const session = SessionManager.inMemory();
 
@@ -337,6 +355,24 @@ describe("SessionManager append and tree traversal", () => {
 			session.appendMessage(userMsg("hello"));
 
 			expect(() => session.branchWithSummary("nonexistent", "summary")).toThrow("Entry nonexistent not found");
+		});
+
+		it("persists branch summary usage", () => {
+			const session = SessionManager.inMemory();
+			const branchFromId = session.appendMessage(userMsg("one"));
+			const usage = {
+				input: 5,
+				output: 6,
+				cacheRead: 7,
+				cacheWrite: 8,
+				totalTokens: 26,
+				cost: { input: 0.5, output: 0.6, cacheRead: 0.7, cacheWrite: 0.8, total: 2.6 },
+			};
+
+			const id = session.branchWithSummary(branchFromId, "summary", undefined, false, usage);
+
+			const entry = session.getEntry(id);
+			expect(entry?.type === "branch_summary" ? entry.usage : undefined).toEqual(usage);
 		});
 	});
 

@@ -1,4 +1,4 @@
-import type { AssistantMessage } from "@gsd/pi-ai";
+import type { AssistantMessage, Usage } from "@gsd/pi-ai";
 import { isContextOverflow, streamSimple } from "@gsd/pi-ai";
 import { formatNoModelSelectedMessage } from "@gsd/pi-coding-agent/core/auth-guidance.js";
 import type { CompactionEntry } from "@gsd/pi-coding-agent/core/session-manager.js";
@@ -85,6 +85,7 @@ export class AgentSessionCompactionModule {
 			let summary: string;
 			let firstKeptEntryId: string;
 			let tokensBefore: number;
+			let usage: Usage | undefined;
 			let details: unknown;
 
 			if (extensionCompaction) {
@@ -92,6 +93,7 @@ export class AgentSessionCompactionModule {
 				summary = extensionCompaction.summary;
 				firstKeptEntryId = extensionCompaction.firstKeptEntryId;
 				tokensBefore = extensionCompaction.tokensBefore;
+				usage = extensionCompaction.usage;
 				details = extensionCompaction.details;
 			} else {
 				// Generate compaction result
@@ -109,6 +111,7 @@ export class AgentSessionCompactionModule {
 				summary = result.summary;
 				firstKeptEntryId = result.firstKeptEntryId;
 				tokensBefore = result.tokensBefore;
+				usage = result.usage;
 				details = result.details;
 			}
 
@@ -116,7 +119,7 @@ export class AgentSessionCompactionModule {
 				throw new Error("Compaction cancelled");
 			}
 
-			this.host.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension);
+			this.host.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension, usage);
 			const newEntries = this.host.sessionManager.getEntries();
 			const sessionContext = this.host.sessionManager.buildSessionContext();
 			this.host.agent.state.messages = sessionContext.messages;
@@ -140,6 +143,7 @@ export class AgentSessionCompactionModule {
 				summary,
 				firstKeptEntryId,
 				tokensBefore,
+				usage,
 				details,
 			};
 			this.host.emit({
@@ -367,6 +371,7 @@ export class AgentSessionCompactionModule {
 			let summary: string;
 			let firstKeptEntryId: string;
 			let tokensBefore: number;
+			let usage: Usage | undefined;
 			let details: unknown;
 
 			if (extensionCompaction) {
@@ -374,6 +379,7 @@ export class AgentSessionCompactionModule {
 				summary = extensionCompaction.summary;
 				firstKeptEntryId = extensionCompaction.firstKeptEntryId;
 				tokensBefore = extensionCompaction.tokensBefore;
+				usage = extensionCompaction.usage;
 				details = extensionCompaction.details;
 			} else {
 				// Generate compaction result
@@ -391,6 +397,7 @@ export class AgentSessionCompactionModule {
 				summary = compactResult.summary;
 				firstKeptEntryId = compactResult.firstKeptEntryId;
 				tokensBefore = compactResult.tokensBefore;
+				usage = compactResult.usage;
 				details = compactResult.details;
 			}
 
@@ -411,7 +418,7 @@ export class AgentSessionCompactionModule {
 				return false;
 			}
 
-			this.host.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension);
+			this.host.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension, usage);
 			const newEntries = this.host.sessionManager.getEntries();
 			const sessionContext = this.host.sessionManager.buildSessionContext();
 			this.host.agent.state.messages = sessionContext.messages;
@@ -435,6 +442,7 @@ export class AgentSessionCompactionModule {
 				summary,
 				firstKeptEntryId,
 				tokensBefore,
+				usage,
 				details,
 			};
 			this.host.emit({ type: "compaction_end", reason, result, aborted: false, willRetry });

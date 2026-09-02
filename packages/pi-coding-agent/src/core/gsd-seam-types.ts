@@ -3,6 +3,7 @@
  * Kept in pi-coding-agent so extension types compile without importing GSD packages.
  */
 import type { AgentMessage } from "@gsd/pi-agent-core";
+import type { Usage } from "@gsd/pi-ai";
 
 export type AgentAbortOrigin = "user" | "timeout" | "error" | "extension" | "programmatic";
 
@@ -30,6 +31,7 @@ export interface CompactionResult<T = unknown> {
 	summary: string;
 	firstKeptEntryId: string;
 	tokensBefore: number;
+	usage?: Usage;
 	details?: T;
 }
 

@@ -1,4 +1,4 @@
-import { fauxAssistantMessage, fauxToolCall, getModel, registerFauxProvider } from "@gsd/pi-ai";
+import { fauxAssistantMessage, fauxToolCall, getModel, registerFauxProvider, type Usage } from "@gsd/pi-ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentHarness } from "../../src/harness/agent-harness.ts";
 import { NodeExecutionEnv } from "../../src/harness/env/nodejs.ts";
@@ -57,6 +57,17 @@ class BlockingSessionStorage extends InMemorySessionStorage {
 function getReasoning(options: unknown): unknown {
 	if (!options || typeof options !== "object" || !("reasoning" in options)) return undefined;
 	return options.reasoning;
+}
+
+function createUsage(input: number, output: number, cacheRead = 0, cacheWrite = 0): Usage {
+	return {
+		input,
+		output,
+		cacheRead,
+		cacheWrite,
+		totalTokens: input + output + cacheRead + cacheWrite,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+	};
 }
 
 afterEach(() => {
@@ -200,6 +211,70 @@ describe("AgentHarness", () => {
 		await expect(firstCompaction).rejects.toMatchObject({ code: "compaction" });
 		await expect(abort).resolves.toEqual({ clearedSteer: [], clearedFollowUp: [] });
 		await expect(harness.compact()).resolves.toMatchObject({ summary: expect.stringContaining("successful summary") });
+	});
+
+	it("persists generated and hook-provided compaction usage", async () => {
+		const registration = registerFauxProvider();
+		registrations.push(registration);
+		const generatedUsage = createUsage(2, 3, 4, 5);
+		registration.setResponses([{ ...fauxAssistantMessage("generated summary"), usage: generatedUsage }]);
+		const session = new Session(new InMemorySessionStorage());
+		await session.appendMessage({ role: "user", content: "one", timestamp: Date.now() });
+		await session.appendMessage(fauxAssistantMessage("two"));
+		const harness = new AgentHarness({
+			env: new NodeExecutionEnv({ cwd: process.cwd() }),
+			session,
+			model: registration.getModel(),
+			getApiKeyAndHeaders: async () => ({ apiKey: "secret" }),
+		});
+
+		const generated = await harness.compact();
+		const generatedEntry = (await session.getEntries()).find((entry) => entry.type === "compaction");
+		expect(generated.usage?.totalTokens).toBeGreaterThan(0);
+		expect(generatedEntry?.type === "compaction" ? generatedEntry.usage : undefined).toEqual(generated.usage);
+
+		const hookUsage = createUsage(6, 7, 8, 9);
+		await session.appendMessage({ role: "user", content: "after compaction", timestamp: Date.now() });
+		harness.on("session_before_compact", (event) => ({
+			compaction: {
+				summary: "hook summary",
+				firstKeptEntryId: event.preparation.firstKeptEntryId,
+				tokensBefore: event.preparation.tokensBefore,
+				usage: hookUsage,
+			},
+		}));
+		const hooked = await harness.compact();
+		const hookedEntry = (await session.getEntries()).findLast((entry) => entry.type === "compaction");
+		expect(hooked.usage).toEqual(hookUsage);
+		expect(hookedEntry?.type === "compaction" ? hookedEntry.usage : undefined).toEqual(hookUsage);
+	});
+
+	it("persists generated and hook-provided branch summary usage", async () => {
+		const registration = registerFauxProvider();
+		registrations.push(registration);
+		const generatedUsage = createUsage(10, 11, 12, 13);
+		registration.setResponses([{ ...fauxAssistantMessage("generated branch summary"), usage: generatedUsage }]);
+		const session = new Session(new InMemorySessionStorage());
+		const firstTarget = await session.appendMessage({ role: "user", content: "first", timestamp: Date.now() });
+		await session.appendMessage(fauxAssistantMessage("first reply"));
+		const secondTarget = await session.appendMessage({ role: "user", content: "second", timestamp: Date.now() });
+		await session.appendMessage(fauxAssistantMessage("second reply"));
+		const harness = new AgentHarness({
+			env: new NodeExecutionEnv({ cwd: process.cwd() }),
+			session,
+			model: registration.getModel(),
+			getApiKeyAndHeaders: async () => ({ apiKey: "secret" }),
+		});
+
+		const generated = await harness.navigateTree(firstTarget, { summarize: true });
+		expect(generated.summaryEntry?.usage?.totalTokens).toBeGreaterThan(0);
+
+		await session.moveTo(secondTarget);
+		await session.appendMessage(fauxAssistantMessage("new second reply"));
+		const hookUsage = createUsage(14, 15, 16, 17);
+		harness.on("session_before_tree", () => ({ summary: { summary: "hook branch summary", usage: hookUsage } }));
+		const hooked = await harness.navigateTree(firstTarget, { summarize: true });
+		expect(hooked.summaryEntry?.usage).toEqual(hookUsage);
 	});
 
 	it("shutdown prevents active branch summarization from moving the leaf", async () => {
@@ -604,13 +679,23 @@ describe("AgentHarness", () => {
 				}),
 		]);
 		const session = new Session(new InMemorySessionStorage());
+		const toolUsage = createUsage(1, 2, 3, 4);
+		const patchedToolUsage = createUsage(5, 6, 7, 8);
+		const calculateToolWithUsage: typeof calculateTool = {
+			...calculateTool,
+			execute: async (toolCallId, params, signal, onUpdate) => ({
+				...(await calculateTool.execute(toolCallId, params, signal, onUpdate)),
+				usage: toolUsage,
+			}),
+		};
 		const harness = new AgentHarness({
 			env: new NodeExecutionEnv({ cwd: process.cwd() }),
 			session,
 			model: registration.getModel(),
-			tools: [calculateTool],
+			tools: [calculateToolWithUsage],
 		});
 		const seenToolCalls: Array<{ id: string; name: string; expression: unknown }> = [];
+		let seenToolUsage: Usage | undefined;
 		harness.on("tool_call", (event) => {
 			seenToolCalls.push({ id: event.toolCallId, name: event.toolName, expression: event.input.expression });
 			return undefined;
@@ -618,9 +703,11 @@ describe("AgentHarness", () => {
 		harness.on("tool_result", (event) => {
 			expect(event.toolCallId).toBe("call-1");
 			expect(event.toolName).toBe("calculate");
+			seenToolUsage = event.usage;
 			return {
 				content: [{ type: "text", text: "patched result" }],
 				details: { patched: true },
+				usage: patchedToolUsage,
 				terminate: true,
 			};
 		});
@@ -631,12 +718,14 @@ describe("AgentHarness", () => {
 			(entry) => entry.type === "message" && entry.message.role === "toolResult",
 		);
 		expect(seenToolCalls).toEqual([{ id: "call-1", name: "calculate", expression: "2 + 2" }]);
+		expect(seenToolUsage).toEqual(toolUsage);
 		expect(toolResult).toMatchObject({
 			type: "message",
 			message: {
 				role: "toolResult",
 				content: [{ type: "text", text: "patched result" }],
 				details: { patched: true },
+				usage: patchedToolUsage,
 			},
 		});
 	});

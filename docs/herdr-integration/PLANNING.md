@@ -1884,6 +1884,33 @@ this session does not merge, push, tag, or publish.
   usage aggregation/persistence for generated compaction, branch summaries,
   and tool results while keeping GSD workflow accounting and session-v4 usage
   ledgers separate.
+- Ported upstream auxiliary-LLM usage metadata through both the standalone
+  `AgentHarness` and the deployed GSD `AgentSession` path. Generated and
+  extension-provided compaction/branch summaries now persist provider usage;
+  LLM-backed tool results expose usage to hooks, accept a patched value, and
+  retain it in transcript messages.
+- Split-turn compaction sums both provider calls. GSD's defensive chunked
+  summarizer additionally includes every chunk and bounded degenerate retry in
+  the recorded usage, so recovered or discarded attempts are not invisible.
+  The public string-returning `generateSummary()` API remains backward
+  compatible.
+- Session statistics now add durable compaction, branch-summary, and tool-result
+  usage alongside assistant usage. This is session cost observability only: it
+  does not write GSD workflow accounting and does not synthesize session-v4
+  ledger records.
+- Focused verification passes: pi-agent-core agent loop **29/29** and harness
+  **69/69**; GSD agent-core **139/139**; pi-coding-agent session manager
+  **32/32**, extension runner **32/32**, stats **4/4**, extension compaction
+  **1/1**, and branch hook persistence **2/2**. The full multi-file source suite
+  is intentionally not used as one process because its faux provider registry
+  is process-global; independent runs avoid cross-file unregister races.
+- Final gates pass: `verify:pi-patches`, `typecheck:extensions`, `build:core`,
+  `test:packages`, and `git diff --check`. Compiled package totals are GSD
+  agent-core **139/139**, agent-modes **287/287**, native **223 pass / 1 skip**,
+  pi-agent-core **3/3**, pi-ai **49/49**, pi-coding-agent **72/72**, pi-tui
+  **8/8**, contracts **9/9**, MCP server **377/377**, and RPC client **30/30**.
+- Exact next task: commit and push the usage-persistence slice, then close
+  memory/v4 JSONL harness parity before enabling any v4 runtime adapter.
 
 ## 11. Working-session protocol
 

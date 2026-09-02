@@ -1,5 +1,5 @@
 import { type AgentMessage, uuidv7 } from "@gsd/pi-agent-core";
-import type { ImageContent, Message, TextContent } from "@gsd/pi-ai";
+import type { ImageContent, Message, TextContent, Usage } from "@gsd/pi-ai";
 import { randomUUID } from "crypto";
 import {
 	appendFileSync,
@@ -371,6 +371,7 @@ export class SessionManager {
 		tokensBefore: number,
 		details?: T,
 		fromHook?: boolean,
+		usage?: Usage,
 	): string {
 		const entry: CompactionEntry<T> = {
 			type: "compaction",
@@ -381,6 +382,7 @@ export class SessionManager {
 			firstKeptEntryId,
 			tokensBefore,
 			details,
+			usage,
 			fromHook,
 		};
 		this._appendEntry(entry);
@@ -637,7 +639,13 @@ export class SessionManager {
 	 * Same as branch(), but also appends a branch_summary entry that captures
 	 * context from the abandoned conversation path.
 	 */
-	branchWithSummary(branchFromId: string | null, summary: string, details?: unknown, fromHook?: boolean): string {
+	branchWithSummary(
+		branchFromId: string | null,
+		summary: string,
+		details?: unknown,
+		fromHook?: boolean,
+		usage?: Usage,
+	): string {
 		if (branchFromId !== null && !this.byId.has(branchFromId)) {
 			throw new Error(`Entry ${branchFromId} not found`);
 		}
@@ -650,6 +658,7 @@ export class SessionManager {
 			fromId: branchFromId ?? "root",
 			summary,
 			details,
+			usage,
 			fromHook,
 		};
 		this._appendEntry(entry);

@@ -116,6 +116,48 @@ describe("summarization retry", () => {
 });
 
 describe("AgentSessionExtensionsModule", () => {
+  test("forwards and patches tool-result usage through extension hooks", async () => {
+    const toolUsage = {
+      input: 1,
+      output: 2,
+      cacheRead: 3,
+      cacheWrite: 4,
+      totalTokens: 10,
+      cost: { input: 0.1, output: 0.2, cacheRead: 0.3, cacheWrite: 0.4, total: 1 },
+    };
+    const patchedUsage = {
+      input: 5,
+      output: 6,
+      cacheRead: 7,
+      cacheWrite: 8,
+      totalTokens: 26,
+      cost: { input: 0.5, output: 0.6, cacheRead: 0.7, cacheWrite: 0.8, total: 2.6 },
+    };
+    let observedUsage: unknown;
+    const host = {
+      agent: {},
+      _extensionRunner: {
+        hasHandlers: () => true,
+        emitToolResult: async (event: { usage?: unknown }) => {
+          observedUsage = event.usage;
+          return { usage: patchedUsage };
+        },
+      },
+    };
+    const mod = new AgentSessionExtensionsModule(host as any);
+    mod.installAgentToolHooks();
+
+    const result = await (host.agent as any).afterToolCall({
+      toolCall: { id: "call-1", name: "llm-tool" },
+      args: {},
+      result: { content: [], details: {}, usage: toolUsage },
+      isError: false,
+    });
+
+    assert.deepEqual(observedUsage, toolUsage);
+    assert.deepEqual(result.usage, patchedUsage);
+  });
+
   test("bindExtensions forwards extension UI context into provider stream options", async () => {
     const uiContext = { notify: () => {} };
     let received: Record<string, unknown> | undefined;

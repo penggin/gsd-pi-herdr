@@ -700,12 +700,21 @@ describe("ExtensionRunner", () => {
 		});
 
 		it("preserves previous modifications when later handlers return partial patches", async () => {
+			const usage = {
+				input: 1,
+				output: 2,
+				cacheRead: 3,
+				cacheWrite: 4,
+				totalTokens: 10,
+				cost: { input: 0.1, output: 0.2, cacheRead: 0.3, cacheWrite: 0.4, total: 1 },
+			};
 			const extCode1 = `
 				export default function(pi) {
 					pi.on("tool_result", async () => {
 						return {
 							content: [{ type: "text", text: "first" }],
 							details: { source: "ext1" },
+							usage: ${JSON.stringify(usage)},
 						};
 					});
 				}
@@ -739,6 +748,7 @@ describe("ExtensionRunner", () => {
 				content: [{ type: "text", text: "first" }],
 				details: { source: "ext1" },
 				isError: true,
+				usage,
 			});
 		});
 	});

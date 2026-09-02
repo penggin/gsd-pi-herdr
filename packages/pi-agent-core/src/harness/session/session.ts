@@ -1,4 +1,4 @@
-import type { ImageContent, TextContent } from "@gsd/pi-ai";
+import type { ImageContent, TextContent, Usage } from "@gsd/pi-ai";
 import type { AgentMessage } from "../../types.js";
 import { createBranchSummaryMessage, createCompactionSummaryMessage, createCustomMessage } from "../messages.js";
 import type {
@@ -162,6 +162,7 @@ export class Session<TMetadata extends SessionMetadata = SessionMetadata> {
 		tokensBefore: number,
 		details?: T,
 		fromHook?: boolean,
+		usage?: Usage,
 	): Promise<string> {
 		return this.appendTypedEntry({
 			type: "compaction",
@@ -172,6 +173,7 @@ export class Session<TMetadata extends SessionMetadata = SessionMetadata> {
 			firstKeptEntryId,
 			tokensBefore,
 			details,
+			usage,
 			fromHook,
 		} satisfies CompactionEntry<T>);
 	}
@@ -231,7 +233,7 @@ export class Session<TMetadata extends SessionMetadata = SessionMetadata> {
 
 	async moveTo(
 		entryId: string | null,
-		summary?: { summary: string; details?: unknown; fromHook?: boolean },
+		summary?: { summary: string; details?: unknown; usage?: Usage; fromHook?: boolean },
 	): Promise<string | undefined> {
 		if (entryId !== null && !(await this.storage.getEntry(entryId))) {
 			throw new SessionError("not_found", `Entry ${entryId} not found`);
@@ -246,6 +248,7 @@ export class Session<TMetadata extends SessionMetadata = SessionMetadata> {
 			fromId: entryId ?? "root",
 			summary: summary.summary,
 			details: summary.details,
+			usage: summary.usage,
 			fromHook: summary.fromHook,
 		} satisfies BranchSummaryEntry);
 	}

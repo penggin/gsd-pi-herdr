@@ -163,8 +163,35 @@ export interface CompactionResult<T = unknown> {
 	firstKeptEntryId: string;
 	/** Estimated context tokens before compaction. */
 	tokensBefore: number;
+	/** Usage from the LLM call(s) that generated this summary, if available. */
+	usage?: Usage;
 	/** Optional implementation-specific details stored with the compaction entry. */
 	details?: T;
+}
+
+interface GeneratedSummary {
+	text: string;
+	usage: Usage;
+}
+
+function combineUsage(first: Usage, second: Usage): Usage {
+	return {
+		input: first.input + second.input,
+		output: first.output + second.output,
+		cacheRead: first.cacheRead + second.cacheRead,
+		cacheWrite: first.cacheWrite + second.cacheWrite,
+		...(first.reasoning !== undefined || second.reasoning !== undefined
+			? { reasoning: (first.reasoning ?? 0) + (second.reasoning ?? 0) }
+			: {}),
+		totalTokens: first.totalTokens + second.totalTokens,
+		cost: {
+			input: first.cost.input + second.cost.input,
+			output: first.cost.output + second.cost.output,
+			cacheRead: first.cost.cacheRead + second.cost.cacheRead,
+			cacheWrite: first.cost.cacheWrite + second.cost.cacheWrite,
+			total: first.cost.total + second.cost.total,
+		},
+	};
 }
 
 /** Compaction thresholds and retention settings. */
@@ -520,8 +547,7 @@ Use this EXACT format:
 
 Keep each section concise. Preserve exact file paths, function names, and error messages.`;
 
-/** Generate or update a conversation summary for compaction. */
-export async function generateSummary(
+async function generateSummaryWithUsage(
 	currentMessages: AgentMessage[],
 	model: Model<any>,
 	reserveTokens: number,
@@ -532,7 +558,7 @@ export async function generateSummary(
 	previousSummary?: string,
 	thinkingLevel?: ThinkingLevel,
 	requestOptions?: SummaryRequestOptions,
-): Promise<Result<string, CompactionError>> {
+): Promise<Result<GeneratedSummary, CompactionError>> {
 	const maxTokens = Math.min(
 		Math.floor(0.8 * reserveTokens),
 		model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY,
@@ -591,7 +617,35 @@ export async function generateSummary(
 		.map((c) => c.text)
 		.join("\n");
 
-	return ok(textContent);
+	return ok({ text: textContent, usage: response.usage });
+}
+
+/** Generate or update a conversation summary for compaction. */
+export async function generateSummary(
+	currentMessages: AgentMessage[],
+	model: Model<any>,
+	reserveTokens: number,
+	apiKey: string,
+	headers?: Record<string, string>,
+	signal?: AbortSignal,
+	customInstructions?: string,
+	previousSummary?: string,
+	thinkingLevel?: ThinkingLevel,
+	requestOptions?: SummaryRequestOptions,
+): Promise<Result<string, CompactionError>> {
+	const result = await generateSummaryWithUsage(
+		currentMessages,
+		model,
+		reserveTokens,
+		apiKey,
+		headers,
+		signal,
+		customInstructions,
+		previousSummary,
+		thinkingLevel,
+		requestOptions,
+	);
+	return result.ok ? ok(result.value.text) : err(result.error);
 }
 
 /** Prepared inputs for a compaction run. */
@@ -726,11 +780,12 @@ export async function compact(
 	}
 
 	let summary: string;
+	let summaryUsage: Usage;
 
 	if (isSplitTurn && turnPrefixMessages.length > 0) {
 		const [historyResult, turnPrefixResult] = await Promise.all([
 			messagesToSummarize.length > 0
-				? generateSummary(
+				? generateSummaryWithUsage(
 						messagesToSummarize,
 						model,
 						settings.reserveTokens,
@@ -742,7 +797,7 @@ export async function compact(
 						thinkingLevel,
 						requestOptions,
 					)
-				: Promise.resolve(ok<string, CompactionError>("No prior history.")),
+				: Promise.resolve(ok<GeneratedSummary | undefined, CompactionError>(undefined)),
 			generateTurnPrefixSummary(
 				turnPrefixMessages,
 				model,
@@ -756,9 +811,13 @@ export async function compact(
 		]);
 		if (!historyResult.ok) return err(historyResult.error);
 		if (!turnPrefixResult.ok) return err(turnPrefixResult.error);
-		summary = `${historyResult.value}\n\n---\n\n**Turn Context (split turn):**\n\n${turnPrefixResult.value}`;
+		const historyText = historyResult.value?.text ?? "No prior history.";
+		summary = `${historyText}\n\n---\n\n**Turn Context (split turn):**\n\n${turnPrefixResult.value.text}`;
+		summaryUsage = historyResult.value
+			? combineUsage(historyResult.value.usage, turnPrefixResult.value.usage)
+			: turnPrefixResult.value.usage;
 	} else {
-		const summaryResult = await generateSummary(
+		const summaryResult = await generateSummaryWithUsage(
 			messagesToSummarize,
 			model,
 			settings.reserveTokens,
@@ -771,7 +830,8 @@ export async function compact(
 			requestOptions,
 		);
 		if (!summaryResult.ok) return err(summaryResult.error);
-		summary = summaryResult.value;
+		summary = summaryResult.value.text;
+		summaryUsage = summaryResult.value.usage;
 	}
 
 	const { readFiles, modifiedFiles } = computeFileLists(fileOps);
@@ -781,6 +841,7 @@ export async function compact(
 		summary,
 		firstKeptEntryId,
 		tokensBefore,
+		usage: summaryUsage,
 		details: { readFiles, modifiedFiles } as CompactionDetails,
 	});
 }
@@ -793,7 +854,7 @@ async function generateTurnPrefixSummary(
 	signal?: AbortSignal,
 	thinkingLevel?: ThinkingLevel,
 	requestOptions?: SummaryRequestOptions,
-): Promise<Result<string, CompactionError>> {
+): Promise<Result<GeneratedSummary, CompactionError>> {
 	const maxTokens = Math.min(
 		Math.floor(0.5 * reserveTokens),
 		model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY,
@@ -843,10 +904,11 @@ async function generateTurnPrefixSummary(
 		);
 	}
 
-	return ok(
-		response.content
+	return ok({
+		text: response.content
 			.filter((c): c is { type: "text"; text: string } => c.type === "text")
 			.map((c) => c.text)
 			.join("\n"),
-	);
+		usage: response.usage,
+	});
 }

@@ -75,6 +75,7 @@ export class AgentSessionExtensionsModule {
 				content: result.content,
 				details: result.details,
 				isError,
+				usage: result.usage,
 			});
 
 			if (!hookResult) {
@@ -85,6 +86,7 @@ export class AgentSessionExtensionsModule {
 				content: hookResult.content,
 				details: hookResult.details,
 				isError: hookResult.isError ?? isError,
+				usage: hookResult.usage,
 			};
 		};
 	}

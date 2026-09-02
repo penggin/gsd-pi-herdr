@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ThinkingLevel } from "@gsd/pi-agent-core";
-import type { AssistantMessage } from "@gsd/pi-ai";
+import type { AssistantMessage, Usage } from "@gsd/pi-ai";
 import { resolvePath } from "@gsd/pi-coding-agent/utils/paths.js";
 import { DEFAULT_THINKING_LEVEL } from "@gsd/pi-coding-agent/core/defaults.js";
 import type { ContextUsage } from "@gsd/pi-coding-agent/core/extensions/index.js";
@@ -25,6 +25,22 @@ import { createToolHtmlRenderer } from "../export-html/tool-renderer.js";
 import type { SessionStats } from "./agent-session-types.js";
 import type { AgentSessionHost } from "./agent-session-host.js";
 import { createRetryingSummaryCompleteFn } from "./summarization-retry.js";
+
+interface UsageTotals {
+	input: number;
+	output: number;
+	cacheRead: number;
+	cacheWrite: number;
+	cost: number;
+}
+
+function addUsage(totals: UsageTotals, usage: Usage): void {
+	totals.input += usage.input;
+	totals.output += usage.output;
+	totals.cacheRead += usage.cacheRead;
+	totals.cacheWrite += usage.cacheWrite;
+	totals.cost += usage.cost.total;
+}
 
 export class AgentSessionNavigationModule {
 	constructor(readonly host: AgentSessionHost) {}
@@ -288,7 +304,7 @@ export class AgentSessionNavigationModule {
 		this.host._branchSummaryAbortController = new AbortController();
 
 		try {
-			let extensionSummary: { summary: string; details?: unknown } | undefined;
+			let extensionSummary: { summary: string; details?: unknown; usage?: Usage } | undefined;
 			let fromExtension = false;
 
 			if (this.host._extensionRunner.hasHandlers("session_before_tree")) {
@@ -320,6 +336,7 @@ export class AgentSessionNavigationModule {
 
 			let summaryText: string | undefined;
 			let summaryDetails: unknown;
+			let summaryUsage: Usage | undefined;
 			if (options.summarize && entriesToSummarize.length > 0 && !extensionSummary) {
 				const model = this.host.model!;
 				const { apiKey, headers } = await this.host.getRequiredRequestAuth(model);
@@ -341,6 +358,7 @@ export class AgentSessionNavigationModule {
 					throw new Error(result.error);
 				}
 				summaryText = result.summary;
+				summaryUsage = result.usage;
 				summaryDetails = {
 					readFiles: result.readFiles || [],
 					modifiedFiles: result.modifiedFiles || [],
@@ -348,6 +366,7 @@ export class AgentSessionNavigationModule {
 			} else if (extensionSummary) {
 				summaryText = extensionSummary.summary;
 				summaryDetails = extensionSummary.details;
+				summaryUsage = extensionSummary.usage;
 			}
 
 			let newLeafId: string | null;
@@ -376,6 +395,7 @@ export class AgentSessionNavigationModule {
 					summaryText,
 					summaryDetails,
 					fromExtension,
+					summaryUsage,
 				);
 				summaryEntry = this.host.sessionManager.getEntry(summaryId) as BranchSummaryEntry;
 
@@ -438,27 +458,30 @@ export class AgentSessionNavigationModule {
 	}
 
 	getSessionStats(): SessionStats {
-		const state = this.host.state;
-		const userMessages = state.messages.filter((m) => m.role === "user").length;
-		const assistantMessages = state.messages.filter((m) => m.role === "assistant").length;
-		const toolResults = state.messages.filter((m) => m.role === "toolResult").length;
-
+		let userMessages = 0;
+		let assistantMessages = 0;
+		let toolResults = 0;
+		let totalMessages = 0;
 		let toolCalls = 0;
-		let totalInput = 0;
-		let totalOutput = 0;
-		let totalCacheRead = 0;
-		let totalCacheWrite = 0;
-		let totalCost = 0;
+		const usageTotals: UsageTotals = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
 
-		for (const message of state.messages) {
-			if (message.role === "assistant") {
+		for (const entry of this.host.sessionManager.getEntries()) {
+			if ((entry.type === "branch_summary" || entry.type === "compaction") && entry.usage) {
+				addUsage(usageTotals, entry.usage);
+			}
+			if (entry.type !== "message") continue;
+			totalMessages++;
+			const message = entry.message;
+			if (message.role === "user") {
+				userMessages++;
+			} else if (message.role === "toolResult") {
+				toolResults++;
+				if (message.usage) addUsage(usageTotals, message.usage);
+			} else if (message.role === "assistant") {
+				assistantMessages++;
 				const assistantMsg = message as AssistantMessage;
 				toolCalls += assistantMsg.content.filter((c) => c.type === "toolCall").length;
-				totalInput += assistantMsg.usage.input;
-				totalOutput += assistantMsg.usage.output;
-				totalCacheRead += assistantMsg.usage.cacheRead;
-				totalCacheWrite += assistantMsg.usage.cacheWrite;
-				totalCost += assistantMsg.usage.cost.total;
+				addUsage(usageTotals, assistantMsg.usage);
 			}
 		}
 
@@ -469,15 +492,15 @@ export class AgentSessionNavigationModule {
 			assistantMessages,
 			toolCalls,
 			toolResults,
-			totalMessages: state.messages.length,
+			totalMessages,
 			tokens: {
-				input: totalInput,
-				output: totalOutput,
-				cacheRead: totalCacheRead,
-				cacheWrite: totalCacheWrite,
-				total: totalInput + totalOutput + totalCacheRead + totalCacheWrite,
+				input: usageTotals.input,
+				output: usageTotals.output,
+				cacheRead: usageTotals.cacheRead,
+				cacheWrite: usageTotals.cacheWrite,
+				total: usageTotals.input + usageTotals.output + usageTotals.cacheRead + usageTotals.cacheWrite,
 			},
-			cost: totalCost,
+			cost: usageTotals.cost,
 			contextUsage: this.getContextUsage(),
 		};
 	}

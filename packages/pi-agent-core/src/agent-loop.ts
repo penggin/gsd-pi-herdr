@@ -1050,6 +1050,7 @@ async function finalizeExecutedToolCall(
 				result = normalizeAgentToolResult({
 					content: afterResult.content ?? result.content,
 					details: afterResult.details ?? result.details,
+					usage: afterResult.usage ?? result.usage,
 					addedToolNames: afterResult.addedToolNames ?? result.addedToolNames,
 					terminate: afterResult.terminate ?? result.terminate,
 				});
@@ -1086,6 +1087,7 @@ function normalizeAgentToolResult(result: Partial<AgentToolResult<any>> | undefi
 	return {
 		content: normalizeToolResultContent(result?.content),
 		details: result?.details,
+		usage: result?.usage,
 		addedToolNames: result?.addedToolNames,
 		terminate: result?.terminate,
 	};
@@ -1108,6 +1110,7 @@ function createToolResultMessage(finalized: FinalizedToolCallOutcome): ToolResul
 		toolName: finalized.toolCall.name,
 		content: finalized.result.content,
 		details: finalized.result.details,
+		usage: finalized.result.usage,
 		addedToolNames: finalized.result.addedToolNames,
 		isError: finalized.isError,
 		timestamp: Date.now(),

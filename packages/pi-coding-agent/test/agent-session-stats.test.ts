@@ -109,7 +109,7 @@ describe("AgentSession.getSessionStats", () => {
 			syncAgentMessages(session, sessionManager);
 
 			const stats = session.getSessionStats();
-			expect(stats.tokens.input).toBe(195_000);
+			expect(stats.tokens.input).toBe(375_000);
 			expect(stats.contextUsage).toBeDefined();
 			expect(stats.contextUsage?.tokens).toBeNull();
 			expect(stats.contextUsage?.percent).toBeNull();
@@ -132,10 +132,46 @@ describe("AgentSession.getSessionStats", () => {
 			syncAgentMessages(session, sessionManager);
 
 			const stats = session.getSessionStats();
-			expect(stats.tokens.input).toBe(220_000);
+			expect(stats.tokens.input).toBe(400_000);
 			expect(stats.contextUsage).toBeDefined();
 			expect(stats.contextUsage?.tokens).toBe(25_000);
 			expect(stats.contextUsage?.percent).toBe((25_000 / model.contextWindow) * 100);
+		} finally {
+			session.dispose();
+		}
+	});
+
+	it("includes compaction, branch-summary, and tool-result usage in durable totals", () => {
+		const { session, sessionManager } = createSession();
+
+		try {
+			const userId = sessionManager.appendMessage(createUserMessage("first", 1));
+			sessionManager.appendMessage(createAssistantMessage("response", 10, 2));
+			sessionManager.appendMessage({
+				role: "toolResult",
+				toolCallId: "call-1",
+				toolName: "llm-backed-tool",
+				content: [{ type: "text", text: "tool result" }],
+				usage: createUsage(20),
+				isError: false,
+				timestamp: 3,
+			});
+			const compactionId = sessionManager.appendCompaction(
+				"summary",
+				userId,
+				30,
+				undefined,
+				false,
+				createUsage(30),
+			);
+			sessionManager.branchWithSummary(compactionId, "branch summary", undefined, false, createUsage(40));
+			syncAgentMessages(session, sessionManager);
+
+			const stats = session.getSessionStats();
+			expect(stats.tokens.input).toBe(100);
+			expect(stats.tokens.total).toBe(100);
+			expect(stats.assistantMessages).toBe(1);
+			expect(stats.toolResults).toBe(1);
 		} finally {
 			session.dispose();
 		}

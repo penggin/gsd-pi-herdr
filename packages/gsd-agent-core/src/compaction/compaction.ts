@@ -105,8 +105,35 @@ export interface CompactionResult<T = unknown> {
 	summary: string;
 	firstKeptEntryId: string;
 	tokensBefore: number;
+	/** Usage from every LLM call that contributed to this summary. */
+	usage?: Usage;
 	/** Extension-specific data (e.g., ArtifactIndex, version markers for structured compaction) */
 	details?: T;
+}
+
+interface GeneratedSummary {
+	text: string;
+	usage: Usage;
+}
+
+function combineUsage(first: Usage, second: Usage): Usage {
+	return {
+		input: first.input + second.input,
+		output: first.output + second.output,
+		cacheRead: first.cacheRead + second.cacheRead,
+		cacheWrite: first.cacheWrite + second.cacheWrite,
+		...(first.reasoning !== undefined || second.reasoning !== undefined
+			? { reasoning: (first.reasoning ?? 0) + (second.reasoning ?? 0) }
+			: {}),
+		totalTokens: first.totalTokens + second.totalTokens,
+		cost: {
+			input: first.cost.input + second.cost.input,
+			output: first.cost.output + second.cost.output,
+			cacheRead: first.cost.cacheRead + second.cost.cacheRead,
+			cacheWrite: first.cost.cacheWrite + second.cost.cacheWrite,
+			total: first.cost.total + second.cost.total,
+		},
+	};
 }
 
 // ============================================================================
@@ -672,7 +699,7 @@ async function summarizeOnce(
 	previousSummary: string | undefined,
 	streamFn: StreamFn | undefined,
 	completeFn: SummaryCompleteFn | undefined,
-): Promise<string> {
+): Promise<GeneratedSummary> {
 	const promptText = buildSummarizationPrompt(messages, customInstructions, previousSummary);
 	const summarizationMessages = [
 		{
@@ -694,14 +721,14 @@ async function summarizeOnce(
 		throw new Error(`Summarization failed: ${response.errorMessage || "Unknown error"}`);
 	}
 
-	return summaryText(response);
+	return { text: summaryText(response), usage: response.usage };
 }
 
 /**
  * Generate a summary of the conversation using the LLM.
  * If previousSummary is provided, uses the update prompt to merge.
  */
-export async function generateSummary(
+async function generateSummaryWithUsage(
 	currentMessages: AgentMessage[],
 	model: Model<any>,
 	reserveTokens: number,
@@ -713,7 +740,7 @@ export async function generateSummary(
 	thinkingLevel?: ThinkingLevel | SummaryCompleteFn,
 	streamFn?: StreamFn,
 	completeFn?: SummaryCompleteFn,
-): Promise<string> {
+): Promise<GeneratedSummary> {
 	if (typeof previousSummary === "function") {
 		completeFn = previousSummary as SummaryCompleteFn;
 		previousSummary = customInstructions;
@@ -745,6 +772,7 @@ export async function generateSummary(
 	}
 
 	let runningSummary = previousSummary;
+	let accumulatedUsage: Usage | undefined;
 	let degenerateRetriesUsed = 0;
 	// Messages from earlier chunks whose summarization came back degenerate and
 	// were therefore never folded into runningSummary. They are carried into the
@@ -766,7 +794,7 @@ export async function generateSummary(
 		const chunkInput = carriedForward.length > 0 ? [...carriedForward, ...chunk] : chunk;
 
 		const summaryBeforeChunk = runningSummary;
-		let chunkSummary = await summarizeOnce(
+		let chunkResult = await summarizeOnce(
 			chunkInput,
 			model,
 			completionOptions,
@@ -775,14 +803,15 @@ export async function generateSummary(
 			streamFn,
 			completeFn,
 		);
+		accumulatedUsage = accumulatedUsage ? combineUsage(accumulatedUsage, chunkResult.usage) : chunkResult.usage;
 
 		// A tiny chunk legitimately yields a short summary — retrying won't help.
 		// Cap retries at one per compaction run (not per chunk) so a large,
 		// already-expensive chunked run can't double its cost per chunk.
 		const chunkInputSize = serializeConversation(convertToLlm(chunkInput)).length;
-		if (isDegenerateSummary(chunkSummary) && degenerateRetriesUsed < 1 && chunkInputSize >= 100) {
+		if (isDegenerateSummary(chunkResult.text) && degenerateRetriesUsed < 1 && chunkInputSize >= 100) {
 			degenerateRetriesUsed++;
-			chunkSummary = await summarizeOnce(
+			chunkResult = await summarizeOnce(
 				chunkInput,
 				model,
 				completionOptions,
@@ -791,10 +820,11 @@ export async function generateSummary(
 				streamFn,
 				completeFn,
 			);
+			accumulatedUsage = combineUsage(accumulatedUsage, chunkResult.usage);
 		}
 
-		if (!isDegenerateSummary(chunkSummary)) {
-			runningSummary = chunkSummary;
+		if (!isDegenerateSummary(chunkResult.text)) {
+			runningSummary = chunkResult.text;
 			carriedForward = [];
 		} else {
 			// Keep the prior running summary and carry this segment's messages
@@ -805,12 +835,45 @@ export async function generateSummary(
 	}
 
 	if (runningSummary && !isDegenerateSummary(runningSummary)) {
-		return runningSummary;
+		return { text: runningSummary, usage: accumulatedUsage! };
 	}
 	if (previousSummary) {
-		return previousSummary;
+		return { text: previousSummary, usage: accumulatedUsage! };
 	}
 	throw new CompactionProducedNoSummaryError("Summarization produced no usable summary");
+}
+
+/**
+ * Generate a summary of the conversation using the LLM.
+ * If previousSummary is provided, uses the update prompt to merge.
+ */
+export async function generateSummary(
+	currentMessages: AgentMessage[],
+	model: Model<any>,
+	reserveTokens: number,
+	apiKey: string | undefined,
+	headers?: Record<string, string>,
+	signal?: AbortSignal,
+	customInstructions?: string,
+	previousSummary?: string | SummaryCompleteFn,
+	thinkingLevel?: ThinkingLevel | SummaryCompleteFn,
+	streamFn?: StreamFn,
+	completeFn?: SummaryCompleteFn,
+): Promise<string> {
+	const result = await generateSummaryWithUsage(
+		currentMessages,
+		model,
+		reserveTokens,
+		apiKey,
+		headers,
+		signal,
+		customInstructions,
+		previousSummary,
+		thinkingLevel,
+		streamFn,
+		completeFn,
+	);
+	return result.text;
 }
 
 // ============================================================================
@@ -976,12 +1039,13 @@ export async function compact(
 
 	// Generate summaries (can be parallel if both needed) and merge into one
 	let summary: string;
+	let summaryUsage: Usage;
 
 	if (isSplitTurn && turnPrefixMessages.length > 0) {
 		// Generate both summaries in parallel
 		const [historyResult, turnPrefixResult] = await Promise.all([
 			messagesToSummarize.length > 0
-				? generateSummary(
+				? generateSummaryWithUsage(
 						messagesToSummarize,
 						model,
 						settings.reserveTokens,
@@ -994,7 +1058,7 @@ export async function compact(
 						streamFn,
 						completeFn,
 					)
-				: Promise.resolve("No prior history."),
+				: Promise.resolve<GeneratedSummary | undefined>(undefined),
 			generateTurnPrefixSummary(
 				turnPrefixMessages,
 				model,
@@ -1008,10 +1072,14 @@ export async function compact(
 			),
 		]);
 		// Merge into single summary
-		summary = `${historyResult}\n\n---\n\n**Turn Context (split turn):**\n\n${turnPrefixResult}`;
+		const historyText = historyResult?.text ?? "No prior history.";
+		summary = `${historyText}\n\n---\n\n**Turn Context (split turn):**\n\n${turnPrefixResult.text}`;
+		summaryUsage = historyResult
+			? combineUsage(historyResult.usage, turnPrefixResult.usage)
+			: turnPrefixResult.usage;
 	} else {
 		// Just generate history summary
-		summary = await generateSummary(
+		const result = await generateSummaryWithUsage(
 			messagesToSummarize,
 			model,
 			settings.reserveTokens,
@@ -1024,6 +1092,8 @@ export async function compact(
 			streamFn,
 			completeFn,
 		);
+		summary = result.text;
+		summaryUsage = result.usage;
 	}
 
 	if (isDegenerateSummary(summary)) {
@@ -1042,6 +1112,7 @@ export async function compact(
 		summary,
 		firstKeptEntryId,
 		tokensBefore,
+		usage: summaryUsage,
 		details: { readFiles, modifiedFiles } as CompactionDetails,
 	};
 }
@@ -1059,7 +1130,7 @@ async function generateTurnPrefixSummary(
 	thinkingLevel?: ThinkingLevel,
 	streamFn?: StreamFn,
 	completeFn?: SummaryCompleteFn,
-): Promise<string> {
+): Promise<GeneratedSummary> {
 	const maxTokens = Math.min(
 		Math.floor(0.5 * reserveTokens),
 		model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY,
@@ -1087,5 +1158,5 @@ async function generateTurnPrefixSummary(
 		throw new Error(`Turn prefix summarization failed: ${response.errorMessage || "Unknown error"}`);
 	}
 
-	return summaryText(response);
+	return { text: summaryText(response), usage: response.usage };
 }

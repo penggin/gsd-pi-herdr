@@ -285,6 +285,7 @@ export async function generateBranchSummary(
 
 	return ok({
 		summary: summary || "No summary generated",
+		usage: response.usage,
 		readFiles,
 		modifiedFiles,
 	});

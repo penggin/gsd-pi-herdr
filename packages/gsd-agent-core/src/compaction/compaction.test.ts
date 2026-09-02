@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { describe, it, mock } from "node:test";
 
 import type { AgentMessage } from "@gsd/pi-agent-core";
-import type { Model, AssistantMessage } from "@gsd/pi-ai";
+import type { AssistantMessage, Model, Usage } from "@gsd/pi-ai";
 
 import {
 	compact,
@@ -21,6 +21,7 @@ import {
 	type CompactionPreparation,
 } from "./compaction.js";
 import { estimateSerializedTokens } from "./utils.js";
+import { generateBranchSummary } from "./branch-summarization.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -81,9 +82,27 @@ function makeModel(contextWindow: number): Model<any> {
 	} as Model<any>;
 }
 
-function makeFakeResponse(text: string): AssistantMessage {
+function makeUsage(input: number, output: number, cacheRead = 0, cacheWrite = 0): Usage {
+	return {
+		input,
+		output,
+		cacheRead,
+		cacheWrite,
+		totalTokens: input + output + cacheRead + cacheWrite,
+		cost: {
+			input: input / 100,
+			output: output / 100,
+			cacheRead: cacheRead / 100,
+			cacheWrite: cacheWrite / 100,
+			total: (input + output + cacheRead + cacheWrite) / 100,
+		},
+	};
+}
+
+function makeFakeResponse(text: string, usage = makeUsage(0, 0)): AssistantMessage {
 	return {
 		content: [{ type: "text", text }],
+		usage,
 		stopReason: "end_turn",
 	} as unknown as AssistantMessage;
 }
@@ -193,6 +212,31 @@ describe("chunkMessages", () => {
 			estimateSerializedTokens(hugeAssistant) < 2_000,
 			"assistant thinking + text must each cap; total under 2x TOOL_RESULT_MAX_CHARS/4",
 		);
+	});
+});
+
+describe("branch summary usage", () => {
+	it("returns provider usage with the generated summary", async () => {
+		const usage = makeUsage(9, 8, 7, 6);
+		const result = await generateBranchSummary(
+			[
+				{
+					type: "message",
+					id: "entry-1",
+					parentId: null,
+					timestamp: new Date(0).toISOString(),
+					message: { role: "user", content: "branch work", timestamp: 0 },
+				},
+			],
+			{
+				model: makeModel(200_000),
+				apiKey: "test-key",
+				signal: new AbortController().signal,
+				completeFn: async () => makeFakeResponse("## Goal\nSummarize the branch.", usage),
+			},
+		);
+
+		assert.deepEqual(result.usage, usage);
 	});
 });
 
@@ -440,6 +484,42 @@ describe("(#4665) degenerate summary guard", () => {
 			() => compact(preparation, makeModel(200_000), undefined),
 			(err: unknown) => err instanceof CompactionInvalidInputError,
 		);
+	});
+
+	it("aggregates usage from both split-turn summary calls", async () => {
+		const preparation: CompactionPreparation = {
+			firstKeptEntryId: "entry-split",
+			messagesToSummarize: [makeUserMessage(10)],
+			turnPrefixMessages: [makeUserMessage(10)],
+			isSplitTurn: true,
+			tokensBefore: 100,
+			fileOps: { read: new Set(), written: new Set(), edited: new Set() },
+			settings: { enabled: true, reserveTokens: 16_384, keepRecentTokens: 20_000 },
+		};
+		const usages = [makeUsage(1, 2, 3, 4), makeUsage(5, 6, 7, 8)];
+		let callIndex = 0;
+		const complete = mock.fn(async () => {
+			const usage = usages[callIndex++]!;
+			return makeFakeResponse(
+				"## Goal\nPreserve the split turn context with enough detail to remain a valid non-degenerate summary for persistence.",
+				usage,
+			);
+		});
+
+		const result = await compact(preparation, makeModel(200_000), undefined, undefined, undefined, complete as any);
+
+		assert.deepEqual(
+			result.usage && {
+				input: result.usage.input,
+				output: result.usage.output,
+				cacheRead: result.usage.cacheRead,
+				cacheWrite: result.usage.cacheWrite,
+				totalTokens: result.usage.totalTokens,
+			},
+			{ input: 6, output: 8, cacheRead: 10, cacheWrite: 12, totalTokens: 36 },
+		);
+		assert.equal(result.usage?.cost.input, usages[0]!.cost.input + usages[1]!.cost.input);
+		assert.equal(result.usage?.cost.total, usages[0]!.cost.total + usages[1]!.cost.total);
 	});
 
 	it("(#109) compact refuses degenerate single-pass summaries", async () => {
