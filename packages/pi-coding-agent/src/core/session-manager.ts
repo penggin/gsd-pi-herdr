@@ -45,6 +45,7 @@ import {
 	type ThinkingLevelChangeEntry,
 } from "./session-manager-types.js";
 import { buildSessionContext, getLatestCompactionEntry } from "./session-manager-context.js";
+import { requireLegacySessionFile } from "./session-file-format.js";
 import {
 	buildSessionInfosWithConcurrency,
 	findMostRecentSession,
@@ -95,6 +96,12 @@ export {
 } from "./session-manager-list.js";
 
 export {
+	inspectSessionFileFormat,
+	requireLegacySessionFile,
+	SessionFileOpenError,
+} from "./session-file-format.js";
+
+export {
 	migrateSessionEntries,
 	parseSessionEntries,
 } from "./session-manager-migration.js";
@@ -120,6 +127,18 @@ function createSessionId(): string {
 	return uuidv7();
 }
 
+function sessionFileEndsWithNewline(sessionFile: string): boolean {
+	const size = statSync(sessionFile).size;
+	if (size === 0) return true;
+	const fd = openSync(sessionFile, "r");
+	try {
+		const finalByte = Buffer.allocUnsafe(1);
+		return readSync(fd, finalByte, 0, 1, size - 1) === 1 && finalByte[0] === 0x0a;
+	} finally {
+		closeSync(fd);
+	}
+}
+
 /**
  * Manages conversation sessions as append-only trees stored in JSONL files.
  *
@@ -143,6 +162,7 @@ export class SessionManager {
 	private labelsById: Map<string, string> = new Map();
 	private labelTimestampsById: Map<string, string> = new Map();
 	private leafId: string | null = null;
+	private needsRecordSeparator = false;
 
 	private constructor(cwd: string, sessionDir: string, sessionFile: string | undefined, persist: boolean) {
 		this.cwd = resolvePath(cwd);
@@ -161,20 +181,16 @@ export class SessionManager {
 
 	/** Switch to a different session file (used for resume and branching) */
 	setSessionFile(sessionFile: string): void {
-		this.sessionFile = resolvePath(sessionFile);
-		if (existsSync(this.sessionFile)) {
-			this.fileEntries = loadEntriesFromFile(this.sessionFile);
-
-			// If file was empty or corrupted (no valid header), truncate and start fresh
-			// to avoid appending messages without a session header (which breaks the session)
-			if (this.fileEntries.length === 0) {
-				const explicitPath = this.sessionFile;
-				this.newSession();
-				this.sessionFile = explicitPath;
-				this._rewriteFile();
-				this.flushed = true;
-				return;
+		const resolvedSessionFile = resolvePath(sessionFile);
+		if (existsSync(resolvedSessionFile)) {
+			requireLegacySessionFile(resolvedSessionFile);
+			const loadedEntries = loadEntriesFromFile(resolvedSessionFile);
+			if (loadedEntries.length === 0) {
+				throw new Error(`Cannot open session ${resolvedSessionFile}: valid legacy header produced no entries`);
 			}
+			this.sessionFile = resolvedSessionFile;
+			this.fileEntries = loadedEntries;
+			this.needsRecordSeparator = !sessionFileEndsWithNewline(resolvedSessionFile);
 
 			const header = this.fileEntries.find((e) => e.type === "session") as SessionHeader | undefined;
 			this.sessionId = header?.id ?? createSessionId();
@@ -186,7 +202,7 @@ export class SessionManager {
 			this._buildIndex();
 			this.flushed = true;
 		} else {
-			const explicitPath = this.sessionFile;
+			const explicitPath = resolvedSessionFile;
 			this.newSession();
 			this.sessionFile = explicitPath; // preserve explicit path from --session flag
 		}
@@ -210,6 +226,7 @@ export class SessionManager {
 		this.byId.clear();
 		this.labelsById.clear();
 		this.leafId = null;
+		this.needsRecordSeparator = false;
 		this.flushed = false;
 
 		if (this.persist) {
@@ -244,6 +261,7 @@ export class SessionManager {
 		if (!this.persist || !this.sessionFile) return;
 		const content = `${this.fileEntries.map((e) => JSON.stringify(e)).join("\n")}\n`;
 		writeFileSync(this.sessionFile, content);
+		this.needsRecordSeparator = false;
 	}
 
 	isPersisted(): boolean {
@@ -277,13 +295,21 @@ export class SessionManager {
 		}
 
 		if (!this.flushed) {
+			this._ensureRecordSeparator();
 			for (const e of this.fileEntries) {
 				appendFileSync(this.sessionFile, `${JSON.stringify(e)}\n`);
 			}
 			this.flushed = true;
 		} else {
+			this._ensureRecordSeparator();
 			appendFileSync(this.sessionFile, `${JSON.stringify(entry)}\n`);
 		}
+	}
+
+	private _ensureRecordSeparator(): void {
+		if (!this.needsRecordSeparator || !this.sessionFile) return;
+		appendFileSync(this.sessionFile, "\n");
+		this.needsRecordSeparator = false;
 	}
 
 	private _appendEntry(entry: SessionEntry): void {
@@ -748,6 +774,7 @@ export class SessionManager {
 	static open(path: string, sessionDir?: string, cwdOverride?: string): SessionManager {
 		const resolvedPath = resolvePath(path);
 		// Extract cwd from session header if possible, otherwise use process.cwd()
+		if (existsSync(resolvedPath)) requireLegacySessionFile(resolvedPath);
 		const entries = loadEntriesFromFile(resolvedPath);
 		const header = entries.find((e) => e.type === "session") as SessionHeader | undefined;
 		const cwd = cwdOverride ?? header?.cwd ?? process.cwd();
@@ -785,6 +812,7 @@ export class SessionManager {
 	static forkFrom(sourcePath: string, targetCwd: string, sessionDir?: string): SessionManager {
 		const resolvedSourcePath = resolvePath(sourcePath);
 		const resolvedTargetCwd = resolvePath(targetCwd);
+		if (existsSync(resolvedSourcePath)) requireLegacySessionFile(resolvedSourcePath);
 		const sourceEntries = loadEntriesFromFile(resolvedSourcePath);
 		if (sourceEntries.length === 0) {
 			throw new Error(`Cannot fork: source session file is empty or invalid: ${resolvedSourcePath}`);

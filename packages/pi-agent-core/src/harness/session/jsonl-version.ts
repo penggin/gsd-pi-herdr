@@ -2,6 +2,7 @@ import type { FileSystem } from "../types.js";
 
 export const LEGACY_JSONL_SESSION_VERSION = 3 as const;
 export const HARNESS_JSONL_SESSION_VERSION = 4 as const;
+export type LegacyJsonlSessionVersion = 1 | 2 | typeof LEGACY_JSONL_SESSION_VERSION;
 
 export type JsonlSessionFormat = "legacy-v3" | "harness-v4";
 export type JsonlSessionHeaderFamily = "legacy" | "harness";
@@ -10,7 +11,7 @@ export type JsonlSessionFormatDetection =
 	| {
 			status: "supported";
 			format: JsonlSessionFormat;
-			version: typeof LEGACY_JSONL_SESSION_VERSION | typeof HARNESS_JSONL_SESSION_VERSION;
+			version: LegacyJsonlSessionVersion | typeof HARNESS_JSONL_SESSION_VERSION;
 	  }
 	| {
 			status: "unsupported";
@@ -67,13 +68,14 @@ export function detectJsonlSessionHeader(line: string): JsonlSessionFormatDetect
 	if (!isLegacy && !isHarness) {
 		return invalid("invalid-header", "session header has no recognized format discriminator");
 	}
-	if (!Number.isSafeInteger(value.version) || (value.version as number) <= 0) {
+	const implicitLegacyV1 = isLegacy && value.version === undefined;
+	if (!implicitLegacyV1 && (!Number.isSafeInteger(value.version) || (value.version as number) <= 0)) {
 		return invalid("invalid-header", "session header has an invalid version");
 	}
 
-	const version = value.version as number;
-	if (isLegacy && version === LEGACY_JSONL_SESSION_VERSION) {
-		return { status: "supported", format: "legacy-v3", version: LEGACY_JSONL_SESSION_VERSION };
+	const version = implicitLegacyV1 ? 1 : (value.version as number);
+	if (isLegacy && (version === 1 || version === 2 || version === LEGACY_JSONL_SESSION_VERSION)) {
+		return { status: "supported", format: "legacy-v3", version };
 	}
 	if (isHarness && version === HARNESS_JSONL_SESSION_VERSION) {
 		return { status: "supported", format: "harness-v4", version: HARNESS_JSONL_SESSION_VERSION };

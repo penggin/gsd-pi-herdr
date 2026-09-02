@@ -39,6 +39,19 @@ describe("JSONL session format detection", () => {
 		});
 	});
 
+	it("keeps legacy v1 and v2 headers readable for the existing migration path", () => {
+		expect(detectJsonlSessionHeader('{"type":"session","id":"v1"}')).toEqual({
+			status: "supported",
+			format: "legacy-v3",
+			version: 1,
+		});
+		expect(detectJsonlSessionHeader('{"type":"session","version":2,"id":"v2"}')).toEqual({
+			status: "supported",
+			format: "legacy-v3",
+			version: 2,
+		});
+	});
+
 	it("classifies malformed, missing, invalid, and ambiguous headers deterministically", async () => {
 		const env = new NodeExecutionEnv({ cwd: fixtures });
 		await expect(detectJsonlSessionFormat(env, fixture("session-malformed.jsonl"))).resolves.toMatchObject({

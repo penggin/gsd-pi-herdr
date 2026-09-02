@@ -1625,6 +1625,28 @@ this session does not merge, push, tag, or publish.
   version-neutral repository contract over the existing legacy-v3 backend.
   Keep legacy-v3 as the only creatable/default format and reject v4 opens as
   recognized-but-not-yet-readable rather than creating an empty replacement.
+- Began P3.1 at the coding-agent boundary. Existing session paths now pass
+  through a bounded format inspection seam before `SessionManager` or
+  `forkFrom` reads them. Legacy v1/v2 remain supported by the inherited
+  migration path, v3 remains the only active format, and recognized v4 returns
+  a typed `unsupported-session-format` error. Empty, malformed, ambiguous, and
+  symlinked session files fail closed and are never replaced by a new header.
+- Removed the old open-time file mutation that appended a missing newline.
+  Opening a valid v3 session is now read-only; the separator is repaired only
+  immediately before the next real append. Regression tests assert that
+  corrupt/v4/symlink sources remain byte-for-byte unchanged and that the
+  deferred separator still produces valid JSONL.
+- Verification: format detector **7/7**, inherited session file operations
+  **19/19**, compiled coding-agent format guards **3/3**,
+  `typecheck:extensions`, `test:packages`, `build:core`, and
+  `git diff --check` pass. Compiled package counts remain unchanged except
+  coding-agent is now **72/72**; all other counts match the preceding P3.0
+  matrix.
+- Exact next task: commit and push this P3.1 safety slice, then add the
+  version-neutral `SessionRepositoryAdapter` over legacy `JsonlSessionRepo`.
+  Its read-only snapshot/open path must use the shared detector; create/fork
+  remain v3-only, and v4/unsupported/corrupt inputs must return typed failures
+  without file or GSD-state mutation.
 
 ## 11. Working-session protocol
 
