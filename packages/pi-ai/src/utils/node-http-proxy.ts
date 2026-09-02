@@ -2,6 +2,8 @@ import type { Agent as HttpAgent } from "node:http";
 import type { Agent as HttpsAgent } from "node:https";
 import { HttpProxyAgent } from "http-proxy-agent";
 import { HttpsProxyAgent } from "https-proxy-agent";
+import type { ProviderEnv } from "../types.js";
+import { getProviderEnvValue } from "./provider-env.js";
 
 const DEFAULT_PROXY_PORTS: Record<string, number> = {
 	ftp: 21,
@@ -20,8 +22,8 @@ export interface NodeHttpProxyAgents {
 export const UNSUPPORTED_PROXY_PROTOCOL_MESSAGE =
 	"Unsupported proxy protocol. SOCKS and PAC proxy URLs are not supported; use an HTTP or HTTPS proxy URL.";
 
-function getProxyEnv(key: string): string {
-	return process.env[key.toLowerCase()] || process.env[key.toUpperCase()] || "";
+function getProxyEnv(key: string, env?: ProviderEnv): string {
+	return getProviderEnvValue(key.toLowerCase(), env) || getProviderEnvValue(key.toUpperCase(), env) || "";
 }
 
 function parseProxyTargetUrl(targetUrl: string | URL): URL | undefined {
@@ -36,8 +38,8 @@ function parseProxyTargetUrl(targetUrl: string | URL): URL | undefined {
 	}
 }
 
-function shouldProxyHostname(hostname: string, port: number): boolean {
-	const noProxy = getProxyEnv("no_proxy").toLowerCase();
+function shouldProxyHostname(hostname: string, port: number, env?: ProviderEnv): boolean {
+	const noProxy = getProxyEnv("no_proxy", env).toLowerCase();
 	if (!noProxy) {
 		return true;
 	}
@@ -68,7 +70,7 @@ function shouldProxyHostname(hostname: string, port: number): boolean {
 	});
 }
 
-function getProxyForUrl(targetUrl: string | URL): string {
+function getProxyForUrl(targetUrl: string | URL, env?: ProviderEnv): string {
 	const parsedUrl = parseProxyTargetUrl(targetUrl);
 	if (!parsedUrl?.protocol || !parsedUrl.host) {
 		return "";
@@ -77,19 +79,19 @@ function getProxyForUrl(targetUrl: string | URL): string {
 	const protocol = parsedUrl.protocol.split(":", 1)[0]!;
 	const hostname = parsedUrl.host.replace(/:\d*$/, "");
 	const port = Number.parseInt(parsedUrl.port, 10) || DEFAULT_PROXY_PORTS[protocol] || 0;
-	if (!shouldProxyHostname(hostname, port)) {
+	if (!shouldProxyHostname(hostname, port, env)) {
 		return "";
 	}
 
-	let proxy = getProxyEnv(`${protocol}_proxy`) || getProxyEnv("all_proxy");
+	let proxy = getProxyEnv(`${protocol}_proxy`, env) || getProxyEnv("all_proxy", env);
 	if (proxy && !proxy.includes("://")) {
 		proxy = `${protocol}://${proxy}`;
 	}
 	return proxy;
 }
 
-export function resolveHttpProxyUrlForTarget(targetUrl: string | URL): URL | undefined {
-	const proxy = getProxyForUrl(targetUrl);
+export function resolveHttpProxyUrlForTarget(targetUrl: string | URL, env?: ProviderEnv): URL | undefined {
+	const proxy = getProxyForUrl(targetUrl, env);
 	if (!proxy) {
 		return undefined;
 	}
@@ -110,8 +112,11 @@ export function resolveHttpProxyUrlForTarget(targetUrl: string | URL): URL | und
 	return proxyUrl;
 }
 
-export function createHttpProxyAgentsForTarget(targetUrl: string | URL): NodeHttpProxyAgents | undefined {
-	const proxyUrl = resolveHttpProxyUrlForTarget(targetUrl);
+export function createHttpProxyAgentsForTarget(
+	targetUrl: string | URL,
+	env?: ProviderEnv,
+): NodeHttpProxyAgents | undefined {
+	const proxyUrl = resolveHttpProxyUrlForTarget(targetUrl, env);
 	if (!proxyUrl) {
 		return undefined;
 	}

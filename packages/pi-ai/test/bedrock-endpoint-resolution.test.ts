@@ -46,7 +46,7 @@ vi.mock("@aws-sdk/client-bedrock-runtime", () => {
 
 import { getModel } from "../src/models.ts";
 import { streamBedrock } from "../src/providers/amazon-bedrock.ts";
-import type { Context, Model } from "../src/types.ts";
+import type { Context, Model, StreamOptions } from "../src/types.ts";
 
 const context: Context = {
 	messages: [{ role: "user", content: "hello", timestamp: Date.now() }],
@@ -83,8 +83,11 @@ afterEach(() => {
 	}
 });
 
-async function captureClientConfig(model: Model<"bedrock-converse-stream">): Promise<Record<string, unknown>> {
-	await streamBedrock(model, context, { cacheRetention: "none" }).result();
+async function captureClientConfig(
+	model: Model<"bedrock-converse-stream">,
+	options: StreamOptions = {},
+): Promise<Record<string, unknown>> {
+	await streamBedrock(model, context, { cacheRetention: "none", ...options }).result();
 	expect(bedrockMock.constructorCalls).toHaveLength(1);
 	return bedrockMock.constructorCalls[0];
 }
@@ -127,5 +130,30 @@ describe("bedrock endpoint resolution", () => {
 
 		expect(config.endpoint).toBe("https://bedrock-vpc.example.com");
 		expect(config.region).toBe("us-west-2");
+	});
+
+	it("resolves region, profile, and credentials from scoped provider env", async () => {
+		const model = getModel("amazon-bedrock", "us.anthropic.claude-opus-4-7");
+		const config = await captureClientConfig(model, {
+			env: {
+				AWS_REGION: "ap-southeast-2",
+				AWS_PROFILE: "scoped-profile",
+				AWS_ACCESS_KEY_ID: "scoped-access-key",
+				AWS_SECRET_ACCESS_KEY: "scoped-secret-key",
+				AWS_SESSION_TOKEN: "scoped-session-token",
+			},
+		});
+
+		expect(config).toMatchObject({
+			region: "ap-southeast-2",
+			profile: "scoped-profile",
+			credentials: {
+				accessKeyId: "scoped-access-key",
+				secretAccessKey: "scoped-secret-key",
+				sessionToken: "scoped-session-token",
+			},
+		});
+		expect(process.env.AWS_REGION).toBeUndefined();
+		expect(process.env.AWS_PROFILE).toBeUndefined();
 	});
 });

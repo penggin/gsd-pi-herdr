@@ -1479,6 +1479,32 @@ this session does not merge, push, tag, or publish.
 - Exact next task: commit and push this scoped-env core, then isolate the
   Bedrock and Google Vertex scoped configuration paths with dedicated tests
   before extending the overlay into proxy selection.
+- Completed the remaining high-risk scoped runtime configuration paths for
+  Bedrock, Google Vertex, and HTTP(S) proxy selection. Bedrock now accepts a
+  request-scoped profile, region, bearer/static credentials, session token,
+  transport/cache switches, and proxy environment without mutating ambient
+  process state. Google Vertex resolves scoped project, location, API key, and
+  ADC key-file configuration. Proxy resolution applies scoped `HTTPS_PROXY`
+  and `NO_PROXY` consistently while retaining the established explicit-option
+  and ambient fallback precedence.
+- Added dedicated isolation regressions proving that scoped values reach the
+  provider SDK/client configuration and proxy routing while the corresponding
+  ambient variables remain unchanged. Focused Bedrock/Vertex/proxy/env
+  verification passes **23/23**; `build:pi-ai`, `typecheck:extensions`,
+  `build:core`, `git diff --check`, and all ten compiled package suites pass.
+  Counts remain agent-core **136/136**, agent-modes **287/287**, native **223
+  pass / 1 platform skip**, pi-agent-core **3/3**, pi-ai **49/49**,
+  coding-agent **66/66**, pi-tui **8/8**, contracts **9/9**, MCP **377/377**,
+  and RPC client **30/30**. No dependency or lockfile change was introduced.
+- Compatibility note: Bedrock keeps upstream v0.80's endpoint-resolution
+  distinction: a scoped profile is provided to the AWS SDK, but only an
+  ambient profile suppresses standard endpoint pinning. This avoids inventing
+  downstream endpoint semantics while still isolating credentials.
+- Exact next task: commit and push this provider-runtime slice, then audit the
+  remaining bounded ambient provider reads (Anthropic Vertex project/region,
+  Cloudflare URL placeholders, and Codex proxy selection) and cover only the
+  request-scoped paths that can honor `StreamOptions.env` without changing
+  OAuth/startup-global behavior.
 
 ## 11. Working-session protocol
 

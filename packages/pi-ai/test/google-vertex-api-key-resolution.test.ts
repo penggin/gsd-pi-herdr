@@ -220,4 +220,24 @@ describe("google-vertex api key resolution", () => {
 			},
 		});
 	});
+
+	it("resolves ADC project, location, and key file from scoped provider env", async () => {
+		const stream = streamGoogleVertex(model, context, {
+			env: {
+				GOOGLE_CLOUD_PROJECT: "scoped-project",
+				GOOGLE_CLOUD_LOCATION: "asia-northeast3",
+				GOOGLE_APPLICATION_CREDENTIALS: "/tmp/scoped-google-credentials.json",
+			},
+		});
+
+		await stream.result();
+
+		expect(googleGenAiMock.constructorCalls).toHaveLength(1);
+		expect(googleGenAiMock.constructorCalls[0]).toMatchObject({
+			vertexai: true,
+			project: "scoped-project",
+			location: "asia-northeast3",
+			googleAuthOptions: { keyFilename: "/tmp/scoped-google-credentials.json" },
+		});
+	});
 });

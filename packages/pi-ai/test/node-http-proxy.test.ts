@@ -62,4 +62,18 @@ describe("node HTTP proxy resolution", () => {
 			UNSUPPORTED_PROXY_PROTOCOL_MESSAGE,
 		);
 	});
+
+	it("uses scoped proxy and no-proxy values without mutating process.env", () => {
+		resetProxyEnv();
+		const env = {
+			HTTPS_PROXY: "http://scoped-proxy.example:8080",
+			NO_PROXY: "excluded.example.com",
+		};
+
+		expect(resolveHttpProxyUrlForTarget("https://bedrock-runtime.us-east-1.amazonaws.com", env)?.toString()).toBe(
+			"http://scoped-proxy.example:8080/",
+		);
+		expect(resolveHttpProxyUrlForTarget("https://excluded.example.com", env)).toBeUndefined();
+		expect(process.env.HTTPS_PROXY).toBeUndefined();
+	});
 });
