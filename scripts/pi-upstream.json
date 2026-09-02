@@ -40,6 +40,7 @@
     "packages/pi-agent-core/test/agent.test.ts",
     "packages/pi-agent-core/test/agent-loop.test.ts",
     "packages/pi-agent-core/test/proxy.test.ts",
+    "packages/pi-coding-agent/test/suite/regressions/6879-post-tool-compaction.test.ts",
     "packages/pi-coding-agent/test/suite/regressions/8724-in-memory-fork-active-tool.test.ts",
     "packages/pi-agent-core/src/harness/agent-harness.ts",
     "packages/pi-agent-core/src/harness/compaction/branch-summarization.ts",

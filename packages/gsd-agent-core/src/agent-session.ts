@@ -15,9 +15,11 @@
 
 import type {
 	Agent,
+	AgentContext,
 	AgentMessage,
 	AgentState,
 	AgentTool,
+	PrepareNextTurnContext,
 	ThinkingLevel,
 } from "@gsd/pi-agent-core";
 import type { AssistantMessage, ImageContent, Model, TextContent } from "@gsd/pi-ai";
@@ -42,6 +44,7 @@ import type { ResourceLoader } from "@gsd/pi-coding-agent/core/resource-loader.j
 import type { BranchSummaryEntry, SessionManager } from "@gsd/pi-coding-agent/core/session-manager.js";
 import type { SettingsManager } from "@gsd/pi-coding-agent/core/settings-manager.js";
 import type { BuildSystemPromptOptions } from "./system-prompt.js";
+import { estimateContextTokens, shouldCompact } from "./compaction/index.js";
 import type { BashOperations } from "@gsd/pi-coding-agent/core/tools/bash.js";
 import {
 	type AgentSessionConfig,
@@ -175,10 +178,50 @@ export class AgentSession implements AgentSessionHost {
 
 		this._unsubscribeAgent = this.agent.subscribe(this._events.handleAgentEvent);
 		this._extensions.installAgentToolHooks();
+		this.installAgentNextTurnRefresh();
 		this._extensions.buildRuntime({
 			activeToolNames: this._initialActiveToolNames,
 			includeAllExtensionTools: true,
 		});
+	}
+
+	private async compactBeforeNextAssistantResponse(context: AgentContext): Promise<AgentContext> {
+		const model = this.model;
+		const settings = this.settingsManager.getCompactionSettings();
+		if (
+			!model ||
+			model.contextWindow <= 0 ||
+			!shouldCompact(estimateContextTokens(context.messages).tokens, model.contextWindow, settings)
+		) {
+			return context;
+		}
+
+		await this._compaction.runAutoCompaction("threshold", false);
+		return { ...context, messages: this.agent.state.messages.slice() };
+	}
+
+	private installAgentNextTurnRefresh(): void {
+		const previousPrepareNextTurnWithContext =
+			this.agent.prepareNextTurnWithContext ??
+			(this.agent.prepareNextTurn
+				? async (_turn: PrepareNextTurnContext, signal?: AbortSignal) => await this.agent.prepareNextTurn?.(signal)
+				: undefined);
+		this.agent.prepareNextTurnWithContext = async (turn, signal) => {
+			const context = await this.compactBeforeNextAssistantResponse(turn.context);
+			const previousSnapshot = await previousPrepareNextTurnWithContext?.({ ...turn, context }, signal);
+			const nextContext = previousSnapshot?.context ?? context;
+
+			return {
+				...previousSnapshot,
+				context: {
+					...nextContext,
+					systemPrompt: this._baseSystemPrompt,
+					tools: this.agent.state.tools.slice(),
+				},
+				model: this.agent.state.model,
+				thinkingLevel: this.agent.state.thinkingLevel,
+			};
+		};
 	}
 
 	get modelRegistry(): ModelRegistry {

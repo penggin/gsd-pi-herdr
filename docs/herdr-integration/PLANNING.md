@@ -1963,6 +1963,32 @@ this session does not merge, push, tag, or publish.
 - Exact next task: commit and push this settlement slice, then evaluate upstream
   `56700d42e` (compact before post-tool model requests) against downstream
   compaction semantics before importing it.
+- Evaluated and ported the semantic portion of upstream `56700d42e`. The agent
+  loop now invokes next-turn preparation only when another turn will actually
+  start and after graceful-stop decisions. AgentSession uses that boundary to
+  threshold-compact an oversized tool result, then refresh the provider context
+  from the compacted transcript plus the current system prompt, tools, model,
+  and thinking level before the same run's next request.
+- Next-turn preparation re-polls steering only when the earlier poll was empty,
+  so input queued while a long compaction runs is delivered without violating
+  one-at-a-time queue semantics. A terminating/no-next-turn path does not run
+  preparation. This is conversation lifecycle only and does not change GSD
+  retry, Task Attempt, or Herdr pane authority.
+- Focused verification passes: Agent/agent-loop **49/49**, harness plus v4
+  parity matrix **78/78**, and standalone AgentSession post-tool compaction plus
+  active-fork regressions **2/2**. The post-tool test proves compaction precedes
+  the follow-up provider call, the compacted summary and retained large result
+  are both present, and the operation remains one agent run.
+- Final post-tool-compaction gates pass: `verify:pi-patches`, extension
+  typecheck, `build:core`, `test:packages`, `test:changed:src` (no root-source
+  tests for this package-only slice), and `git diff --check`. Compiled package
+  totals remain GSD agent-core **139/139**, agent-modes **287/287**, native
+  **223 pass / 1 skip**, pi-agent-core **3/3**, pi-ai **49/49**,
+  pi-coding-agent **72/72**, pi-tui **8/8**, contracts **9/9**, MCP server
+  **377/377**, and RPC client **30/30**.
+- Exact next task: commit and push the post-tool compaction slice, then audit
+  current upstream Anthropic per-turn thinking preservation (`4e69b0c28`)
+  without changing session-format selection.
 
 ## 11. Working-session protocol
 

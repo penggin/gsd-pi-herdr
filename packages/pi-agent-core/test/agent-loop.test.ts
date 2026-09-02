@@ -1688,11 +1688,13 @@ describe("agentLoop with AgentMessage", () => {
 			tools: [tool],
 		};
 		let convertedSecondTurnSystemPrompt = "";
+		let prepareCalls = 0;
 		let prepared = false;
 		const config: AgentLoopConfig = {
 			model: createModel(),
 			convertToLlm: identityConverter,
 			prepareNextTurn: async ({ context: currentContext }) => {
+				prepareCalls++;
 				if (prepared) return undefined;
 				prepared = true;
 				return {
@@ -1738,7 +1740,77 @@ describe("agentLoop with AgentMessage", () => {
 		}
 
 		expect(llmCalls).toBe(2);
+		expect(prepareCalls).toBe(1);
 		expect(convertedSecondTurnSystemPrompt).toBe("second prompt");
+	});
+
+	it("picks up steering that arrives while preparing the next turn", async () => {
+		const toolSchema = Type.Object({});
+		const tool: AgentTool<typeof toolSchema, Record<string, never>> = {
+			name: "continue",
+			label: "Continue",
+			description: "Continue to another turn",
+			parameters: toolSchema,
+			async execute() {
+				return { content: [{ type: "text", text: "continued" }], details: {} };
+			},
+		};
+		const context: AgentContext = { systemPrompt: "", messages: [], tools: [tool] };
+		let steeringPolls = 0;
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+			prepareNextTurn: async () => undefined,
+			getSteeringMessages: async () => {
+				steeringPolls++;
+				return steeringPolls === 3 ? [createUserMessage("late steering")] : [];
+			},
+		};
+		let llmCalls = 0;
+		let secondTurnRoles: string[] = [];
+		let secondTurnUserText = "";
+		const stream = agentLoop([createUserMessage("start")], context, config, undefined, (_model, nextContext) => {
+			llmCalls++;
+			if (llmCalls === 2) {
+				secondTurnRoles = nextContext.messages.map((message) => message.role);
+				const lastUser = nextContext.messages.filter((message) => message.role === "user").at(-1);
+				secondTurnUserText =
+					lastUser?.role === "user" && typeof lastUser.content === "string"
+						? lastUser.content
+						: lastUser?.role === "user"
+							? lastUser.content.filter((part) => part.type === "text").map((part) => part.text).join("")
+							: "";
+			}
+			const mockStream = new MockAssistantStream();
+			queueMicrotask(() => {
+				mockStream.push(
+					llmCalls === 1
+						? {
+								type: "done",
+								reason: "toolUse",
+								message: createAssistantMessage(
+									[{ type: "toolCall", id: "tool-1", name: tool.name, arguments: {} }],
+									"toolUse",
+								),
+							}
+						: {
+								type: "done",
+								reason: "stop",
+								message: createAssistantMessage([{ type: "text", text: "done" }]),
+							},
+				);
+			});
+			return mockStream;
+		});
+
+		for await (const _event of stream) {
+			// consume
+		}
+
+		expect(llmCalls).toBe(2);
+		expect(steeringPolls).toBe(4);
+		expect(secondTurnRoles).toEqual(["user", "assistant", "toolResult", "user"]);
+		expect(secondTurnUserText).toBe("late steering");
 	});
 
 	it("should stop after the current turn when shouldStopAfterTurn returns true", async () => {
@@ -1766,6 +1838,7 @@ describe("agentLoop with AgentMessage", () => {
 
 		let steeringPolls = 0;
 		let followUpPolls = 0;
+		let prepareCalls = 0;
 		let callbackToolResultIds: string[] = [];
 		let callbackContextRoles: string[] = [];
 		const config: AgentLoopConfig = {
@@ -1784,6 +1857,10 @@ describe("agentLoop with AgentMessage", () => {
 				callbackToolResultIds = toolResults.map((toolResult) => toolResult.toolCallId);
 				callbackContextRoles = context.messages.map((contextMessage) => contextMessage.role);
 				return true;
+			},
+			prepareNextTurn: async () => {
+				prepareCalls++;
+				return undefined;
 			},
 		};
 
@@ -1819,6 +1896,7 @@ describe("agentLoop with AgentMessage", () => {
 		expect(executed).toEqual(["hello"]);
 		expect(steeringPolls).toBe(1);
 		expect(followUpPolls).toBe(0);
+		expect(prepareCalls).toBe(0);
 		expect(callbackToolResultIds).toEqual(["tool-1"]);
 		expect(callbackContextRoles).toEqual(["user", "assistant", "toolResult"]);
 		expect(messages.map((message) => message.role)).toEqual(["user", "assistant", "toolResult"]);
