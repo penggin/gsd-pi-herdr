@@ -2,13 +2,12 @@ import type { FileSystem, Result } from "../types.js";
 import { SessionError } from "../types.js";
 import {
 	type JsonlV4Entry,
-	type JsonlV4Header,
-	type JsonlV4Mutation,
 	JsonlV4DecodeError,
 	type JsonlV4Record,
 	parseJsonlV4Header,
 	parseJsonlV4Mutation,
 } from "./jsonl-v4-codec.js";
+import { V4SessionState, V4SessionStateError } from "./session-v4-state.js";
 
 export const DEFAULT_JSONL_V4_MAX_FILE_BYTES = 64 * 1024 * 1024;
 export const DEFAULT_JSONL_V4_MAX_LINE_BYTES = 1024 * 1024;
@@ -48,13 +47,6 @@ export interface ReadOnlyJsonlV4SessionSnapshot {
 	name?: string;
 	labels: Readonly<Record<string, string>>;
 	ignoredTornTail: boolean;
-}
-
-class JsonlV4StateError extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = "JsonlV4StateError";
-	}
 }
 
 function boundedText(value: string, maxLength: number): string {
@@ -123,111 +115,6 @@ function deepFreeze<T>(value: T): Readonly<T> {
 	return value;
 }
 
-class JsonlV4ReadState {
-	private sequence = 0;
-	private readonly usedIds = new Set<string>();
-	private readonly entries: JsonlV4Entry[] = [];
-	private readonly entriesById = new Map<string, JsonlV4Entry>();
-	private readonly records: JsonlV4Record[] = [];
-	private readonly lanes = new Map<string, string | null>([["main", null]]);
-	private readonly labels = new Map<string, string>();
-	private name: string | undefined;
-
-	apply(mutation: JsonlV4Mutation): void {
-		const seq =
-			mutation.kind === "entry"
-				? mutation.entry.seq
-				: mutation.kind === "record"
-					? mutation.record.seq
-					: mutation.seq;
-		if (seq !== this.sequence + 1) throw new JsonlV4StateError(`has non-consecutive seq ${seq}`);
-
-		switch (mutation.kind) {
-			case "entry": {
-				if (this.usedIds.has(mutation.entry.id)) {
-					throw new JsonlV4StateError(`contains duplicate id ${mutation.entry.id}`);
-				}
-				if (mutation.lane !== undefined) {
-					if (!this.lanes.has(mutation.lane)) {
-						throw new JsonlV4StateError(`references missing lane ${mutation.lane}`);
-					}
-					if (mutation.entry.parentId !== this.lanes.get(mutation.lane)) {
-						throw new JsonlV4StateError("does not chain to the lane leaf");
-					}
-				}
-				if (mutation.entry.parentId !== null && !this.entriesById.has(mutation.entry.parentId)) {
-					throw new JsonlV4StateError(`references missing parent ${mutation.entry.parentId}`);
-				}
-				this.usedIds.add(mutation.entry.id);
-				this.entries.push(mutation.entry);
-				this.entriesById.set(mutation.entry.id, mutation.entry);
-				if (mutation.lane !== undefined) this.lanes.set(mutation.lane, mutation.entry.id);
-				break;
-			}
-			case "record":
-				if (!this.lanes.has(mutation.record.lane)) {
-					throw new JsonlV4StateError(`references missing lane ${mutation.record.lane}`);
-				}
-				if (this.usedIds.has(mutation.record.id)) {
-					throw new JsonlV4StateError(`contains duplicate id ${mutation.record.id}`);
-				}
-				this.usedIds.add(mutation.record.id);
-				this.records.push(mutation.record);
-				break;
-			case "lane":
-				if (mutation.leafId !== null && !this.entriesById.has(mutation.leafId)) {
-					throw new JsonlV4StateError(`references missing lane target ${mutation.leafId}`);
-				}
-				this.lanes.set(mutation.lane, mutation.leafId);
-				break;
-			case "fact":
-				if (mutation.fact === "name") {
-					this.name = mutation.name;
-				} else {
-					if (!this.entriesById.has(mutation.targetId)) {
-						throw new JsonlV4StateError(`references missing label target ${mutation.targetId}`);
-					}
-					if (mutation.label === undefined) this.labels.delete(mutation.targetId);
-					else this.labels.set(mutation.targetId, mutation.label);
-				}
-				break;
-		}
-		this.sequence = seq;
-	}
-
-	snapshot(
-		header: JsonlV4Header,
-		path: string,
-		modifiedAt: number,
-		ignoredTornTail: boolean,
-	): ReadOnlyJsonlV4SessionSnapshot {
-		const metadata: JsonlV4SessionMetadata = {
-			id: header.id,
-			createdAt: header.createdAt,
-			cwd: header.cwd,
-			path,
-			modifiedAt,
-			sourceFormat: 4,
-			...(header.parentSessionId === undefined ? {} : { parentSessionId: header.parentSessionId }),
-			...(header.legacyParentSessionPath === undefined
-				? {}
-				: { legacyParentSessionPath: header.legacyParentSessionPath }),
-			...(header.metadata === undefined ? {} : { metadata: structuredClone(header.metadata) }),
-		};
-		return deepFreeze({
-			format: "harness-v4" as const,
-			metadata,
-			sequence: this.sequence,
-			entries: structuredClone(this.entries),
-			records: structuredClone(this.records),
-			lanes: [...this.lanes].map(([lane, leafId]) => ({ lane, leafId })),
-			...(this.name === undefined ? {} : { name: this.name }),
-			labels: Object.fromEntries(this.labels),
-			ignoredTornTail,
-		});
-	}
-}
-
 /**
  * Decode and reduce a v4 session without acquiring a writer or repairing the
  * source. A final syntactically torn append is ignored in memory only.
@@ -268,7 +155,7 @@ export async function readJsonlV4Session(
 		throw new SessionError("invalid_session", "JSONL v4 session exceeds the record count limit");
 	}
 
-	const state = new JsonlV4ReadState();
+	const state = new V4SessionState();
 	let ignoredTornTail = false;
 	for (let index = 1; index < lines.length; index++) {
 		const line = lines[index]!;
@@ -286,11 +173,31 @@ export async function readJsonlV4Session(
 		try {
 			state.apply(mutationResult.value);
 		} catch (error) {
-			if (error instanceof JsonlV4StateError) throw invalidLine(path, index + 1, error);
+			if (error instanceof V4SessionStateError) throw invalidLine(path, index + 1, error);
 			throw error;
 		}
 	}
-	return state.snapshot(headerResult.value, path, info.mtimeMs, ignoredTornTail);
+	const stateSnapshot = state.snapshot();
+	const header = headerResult.value;
+	const metadata: JsonlV4SessionMetadata = {
+		id: header.id,
+		createdAt: header.createdAt,
+		cwd: header.cwd,
+		path,
+		modifiedAt: info.mtimeMs,
+		sourceFormat: 4,
+		...(header.parentSessionId === undefined ? {} : { parentSessionId: header.parentSessionId }),
+		...(header.legacyParentSessionPath === undefined
+			? {}
+			: { legacyParentSessionPath: header.legacyParentSessionPath }),
+		...(header.metadata === undefined ? {} : { metadata: structuredClone(header.metadata) }),
+	};
+	return deepFreeze({
+		format: "harness-v4" as const,
+		metadata,
+		...stateSnapshot,
+		ignoredTornTail,
+	});
 }
 
 /** Return one immutable leaf-to-root branch from an already validated snapshot. */

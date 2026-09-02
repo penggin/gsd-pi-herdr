@@ -1710,6 +1710,22 @@ this session does not merge, push, tag, or publish.
   conformance surface for legacy-v3 and harness-v4. Do not add v4 mutation or
   default selection until memory/JSONL equivalence and downstream lifecycle
   parity are proven.
+- Began P3.3 by extracting `V4SessionState` as the single deterministic reducer
+  shared by the v4 reader and future memory/JSONL writers. It owns consecutive
+  sequence, unique ID, lane, parent, label, and name invariants without doing
+  any I/O; snapshots and individual reads are detached clones.
+- Added a reducer parity fixture that applies the same mutation stream directly
+  in memory and through the bounded JSONL reader, then compares entries,
+  records, lanes, facts, and branch traversal. Focused reader/state tests pass
+  **8/8**; `@gsd/pi-agent-core` build, `typecheck:extensions`, all compiled
+  package suites via `test:packages`, `build:core`, and `git diff --check` also
+  pass. No v4 writer, CLI selection, GSD state mutation, or Herdr behavior was
+  introduced.
+- Exact next task: commit and push the P3.3 reducer foundation, then implement
+  an isolated v4 memory storage over the reducer and a JSONL writer that
+  appends before applying state. Run one shared backend conformance suite for
+  lanes, entries, records, facts, branch reads, cloning, and deterministic
+  errors before exposing either backend through the version-neutral adapter.
 
 ## 11. Working-session protocol
 

@@ -47,6 +47,12 @@ the in-memory snapshot, but the source file is never repaired or rewritten by
 the read-only path. No open or list operation performs an implicit format
 migration.
 
+`V4SessionState` is the format-independent deterministic reducer used by the
+v4 reader and the forthcoming memory/JSONL writable backends. It owns shared
+sequence, ID, lane, parent, name, and label invariants and returns detached
+snapshots. Backend implementations must durably accept a mutation before
+applying it to this reducer; the reducer itself performs no I/O.
+
 ## Session owns durable state
 
 Treat session as all durable agent state, not just transcript history.
