@@ -2223,6 +2223,20 @@ this session does not merge, push, tag, or publish.
   then repack that clean commit and switch the remote shared links to its new
   immutable prefix. A successful live model response remains externally blocked
   until the provider's displayed account-limit reset.
+- Committed the classifier as `ec14fbb1`, built a clean 51 MB candidate with
+  SHA-256 `754780020ce21019fb1e85d6da2633cd6585bb54c45133d58ab3109378d91062`,
+  and installed it at
+  `/srv/penglab/gsd-runs/toolchains/gsd-pi-herdr-1.16.2-ec14fbb1-75478002`.
+  The shared remote `gsd` and `gsd-mcp-server` links now resolve to that prefix;
+  the `68a8e280` and older prefixes remain intact for rollback. No Mac global
+  installation was changed and no running Herdr/GSD process was killed.
+- Remote post-install verification confirms clean commit metadata, seven repaired
+  internal workspace links, `nativeLoaded=true`, identity-lock/directory-sync
+  exports, and `accountLimitRetryable=false` for the exact production 429 text.
+  Model catalog discovery is operational. Live generation remains externally
+  unavailable until the account's displayed five-hour limit resets; rerun the
+  no-session exact-response smoke after reset, and restart any already-running
+  GSD TUI from inside its Herdr pane to load the newly linked bundle.
 
 ## 11. Working-session protocol
 
