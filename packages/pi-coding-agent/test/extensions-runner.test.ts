@@ -876,4 +876,55 @@ describe("ExtensionRunner", () => {
 		expect(captured).toEqual(model);
 		delete (globalThis as unknown as { __bprEventModel?: unknown }).__bprEventModel;
 	});
+
+	it("emits one outer UI prompt lifecycle span for overlapping prompts", async () => {
+		const extCode = `
+			export default function(pi) {
+				pi.on("ui_prompt_start", (event) => {
+					globalThis.__uiPromptEvents.push({ ...event });
+				});
+				pi.on("ui_prompt_end", (event) => {
+					globalThis.__uiPromptEvents.push({ ...event });
+				});
+			}
+		`;
+		fs.writeFileSync(path.join(extensionsDir, "ui-prompt-events.ts"), extCode);
+		(globalThis as unknown as { __uiPromptEvents: unknown[] }).__uiPromptEvents = [];
+
+		const result = await discoverAndLoadExtensions([], tempDir, tempDir);
+		const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
+		const baseUI = runner.getUIContext();
+		let resolveSelect!: (value: string | undefined) => void;
+		let resolveConfirm!: (value: boolean) => void;
+		runner.setUIContext({
+			...baseUI,
+			select: () => new Promise((resolve) => { resolveSelect = resolve; }),
+			confirm: () => new Promise((resolve) => { resolveConfirm = resolve; }),
+		});
+
+		const select = runner.getUIContext().select("Choose deployment", ["staging"]);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		const confirm = runner.getUIContext().confirm("Confirm", "Proceed?");
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		const events = (globalThis as unknown as { __uiPromptEvents: Array<Record<string, unknown>> }).__uiPromptEvents;
+		expect(events).toEqual([
+			{ type: "ui_prompt_start", reason: "ui_prompt", kind: "select", title: "Choose deployment" },
+		]);
+
+		resolveConfirm(true);
+		await confirm;
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(events).toHaveLength(1);
+
+		resolveSelect("staging");
+		await select;
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(events).toEqual([
+			{ type: "ui_prompt_start", reason: "ui_prompt", kind: "select", title: "Choose deployment" },
+			{ type: "ui_prompt_end", reason: "ui_prompt", kind: "select", title: "Choose deployment" },
+		]);
+
+		delete (globalThis as unknown as { __uiPromptEvents?: unknown }).__uiPromptEvents;
+	});
 });

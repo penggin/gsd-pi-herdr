@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { HerdrRootReporter } from "../root-state.js";
-import { describeHerdrInteractiveInput } from "../interactive-input.js";
+import { describeHerdrInteractiveInput, describeHerdrUIPrompt } from "../interactive-input.js";
 
 class FakeHerdrClient {
   reports: Array<{ state: string; seq: number; message?: string }> = [];
@@ -228,6 +228,23 @@ test("agent end clears stale interactive input before returning idle", async () 
   await delay(5);
   assert.equal(client.reports.at(-1)?.state, "idle");
   assert.doesNotMatch(client.reports.at(-1)?.message ?? "", /secure input/);
+});
+
+test("authoritative Pi UI prompt events report blocked without exposing the title", async () => {
+  const client = new FakeHerdrClient();
+  const reporter = new HerdrRootReporter(client);
+  await reporter.sessionStart({ reason: "startup" }, ctx, "M13/S2");
+  reporter.agentStart(ctx);
+
+  reporter.uiPromptStart(describeHerdrUIPrompt("input"));
+  await delay(0);
+  assert.equal(client.reports.at(-1)?.state, "blocked");
+  assert.match(client.reports.at(-1)?.message ?? "", /awaiting user input · input/);
+  assert.doesNotMatch(client.reports.at(-1)?.message ?? "", /private title/i);
+
+  reporter.uiPromptEnd();
+  await delay(0);
+  assert.equal(client.reports.at(-1)?.state, "working");
 });
 
 test("shutdown during session identity reporting cannot republish state after release", async () => {

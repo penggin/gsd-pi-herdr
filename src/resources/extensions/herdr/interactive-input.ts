@@ -42,6 +42,19 @@ export function describeHerdrInteractiveInput(
   }
 }
 
+/** Privacy-bounded presentation for Pi's authoritative blocking UI lifecycle. */
+export function describeHerdrUIPrompt(
+  kind: "select" | "confirm" | "input" | "editor" | "custom",
+): HerdrInteractiveInputDescriptor {
+  return {
+    kind: "questions",
+    waitingMessage: `awaiting user input · ${kind}`,
+    settledMessage: "user input settled",
+    waitingDisplay: `? awaiting user input · ${kind}`,
+    settledDisplay: "✓ user input settled",
+  };
+}
+
 function questionCount(value: unknown): number {
   if (!value || typeof value !== "object" || Array.isArray(value)) return 0;
   const questions = (value as Record<string, unknown>).questions;

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { describeHerdrInteractiveInput } from "../interactive-input.js";
+import { describeHerdrInteractiveInput, describeHerdrUIPrompt } from "../interactive-input.js";
 
 test("question input presentation is privacy-bounded and counts questions", () => {
   const descriptor = describeHerdrInteractiveInput("ask_user_questions", {
@@ -25,4 +25,10 @@ test("MCP-scoped question tools and secure input use canonical attention states"
     "secure input required",
   );
   assert.equal(describeHerdrInteractiveInput("bash"), undefined);
+});
+
+test("Pi UI prompt lifecycle exposes only its non-sensitive prompt kind", () => {
+  const descriptor = describeHerdrUIPrompt("select");
+  assert.equal(descriptor.waitingMessage, "awaiting user input · select");
+  assert.doesNotMatch(JSON.stringify(descriptor), /question text|choice value|secret/i);
 });

@@ -12,7 +12,7 @@ import { HerdrRootReporter } from "./root-state.js";
 import { HerdrRootRuntimeLease } from "./runtime-records.js";
 import { deriveHerdrWorkflowMessage } from "./workflow-context.js";
 import { gsdHome } from "../gsd/gsd-home.js";
-import { describeHerdrInteractiveInput } from "./interactive-input.js";
+import { describeHerdrInteractiveInput, describeHerdrUIPrompt } from "./interactive-input.js";
 
 export default function (pi: ExtensionAPI): void {
   const rootSource = createHerdrRootSource();
@@ -111,6 +111,14 @@ export default function (pi: ExtensionAPI): void {
     if (describeHerdrInteractiveInput(event.toolName)) {
       activeReporter.interactiveInputEnd(event.toolCallId);
     }
+  });
+
+  pi.on("ui_prompt_start", async (event) => {
+    reporter?.uiPromptStart(describeHerdrUIPrompt(event.kind));
+  });
+
+  pi.on("ui_prompt_end", async () => {
+    reporter?.uiPromptEnd();
   });
 
   pi.on("session_shutdown", async () => {

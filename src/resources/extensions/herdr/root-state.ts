@@ -43,6 +43,7 @@ export class HerdrRootReporter {
   private failureMessage: string | undefined;
   private workflowMessage: string | undefined;
   private readonly pendingInteractiveInputs = new Map<string, HerdrInteractiveInputDescriptor>();
+  private activeUiPrompt: HerdrInteractiveInputDescriptor | undefined;
   private lastState: HerdrAgentState | undefined;
   private lastMessage: string | undefined;
   private sessionRef: HerdrAgentSessionRef = {};
@@ -76,6 +77,7 @@ export class HerdrRootReporter {
     this.clearTimers();
     this.clearFailure();
     this.pendingInteractiveInputs.clear();
+    this.activeUiPrompt = undefined;
     this.lastState = undefined;
     this.lastMessage = undefined;
     this.workflowMessage = workflowMessage;
@@ -96,6 +98,7 @@ export class HerdrRootReporter {
     this.clearTimers();
     this.clearFailure();
     this.pendingInteractiveInputs.clear();
+    this.activeUiPrompt = undefined;
     if (workflowMessage !== undefined) this.workflowMessage = workflowMessage;
     this.updateSessionRef(ctx);
     this.agentActive = true;
@@ -110,6 +113,7 @@ export class HerdrRootReporter {
     this.agentActive = false;
     this.clearTimers();
     this.pendingInteractiveInputs.clear();
+    this.activeUiPrompt = undefined;
 
     const errorMessage = findAssistantError(event.messages);
     if (errorMessage) {
@@ -159,12 +163,25 @@ export class HerdrRootReporter {
     void this.publishState();
   }
 
+  uiPromptStart(descriptor: HerdrInteractiveInputDescriptor): void {
+    if (!this.rootSession) return;
+    this.activeUiPrompt = descriptor;
+    void this.publishState();
+  }
+
+  uiPromptEnd(): void {
+    if (!this.rootSession || !this.activeUiPrompt) return;
+    this.activeUiPrompt = undefined;
+    void this.publishState();
+  }
+
   async shutdown(): Promise<void> {
     if (!this.rootSession) return;
     this.rootSession = false;
     this.completionPending = false;
     this.clearTimers();
     this.pendingInteractiveInputs.clear();
+    this.activeUiPrompt = undefined;
     await this.client.releaseAgent("gsd", this.nextSeq());
   }
 
@@ -173,8 +190,9 @@ export class HerdrRootReporter {
       return { state: "blocked", message: joinMessage(this.workflowMessage, this.failureMessage) };
     }
     const pendingInput = lastMapValue(this.pendingInteractiveInputs);
-    if (pendingInput) {
-      return { state: "blocked", message: joinMessage(this.workflowMessage, pendingInput.waitingMessage) };
+    const waitingInput = pendingInput ?? this.activeUiPrompt;
+    if (waitingInput) {
+      return { state: "blocked", message: joinMessage(this.workflowMessage, waitingInput.waitingMessage) };
     }
     if (this.agentActive) {
       return { state: "working", message: this.workflowMessage };
