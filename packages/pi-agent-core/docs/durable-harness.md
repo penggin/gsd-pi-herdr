@@ -53,6 +53,14 @@ sequence, ID, lane, parent, name, and label invariants and returns detached
 snapshots. Backend implementations must durably accept a mutation before
 applying it to this reducer; the reducer itself performs no I/O.
 
+`V4MemorySessionRepository` is the isolated writable reference backend for the
+v4 contract. It provisions storage-owned sequence, parent, and timestamp
+fields; supports lanes, records, facts, branch/tree forks, and bounded queries;
+and rejects values that JSON cannot preserve without executing getters or
+`toJSON` hooks. It deliberately is not selected by the application adapter.
+Its purpose is to provide the no-I/O half of the shared conformance suite before
+the durable JSONL writer is exposed.
+
 ## Session owns durable state
 
 Treat session as all durable agent state, not just transcript history.

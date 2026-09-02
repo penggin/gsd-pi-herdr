@@ -36,6 +36,7 @@ export * from "./harness/session/memory-repo.js";
 export * from "./harness/session/repo-utils.js";
 export * from "./harness/session/session.js";
 export * from "./harness/session/session-repository-adapter.js";
+export * from "./harness/session/session-v4-memory.js";
 export * from "./harness/session/session-v4-state.js";
 export { uuidv7 } from "./harness/session/uuid.js";
 export * from "./harness/skills.js";

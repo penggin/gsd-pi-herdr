@@ -284,3 +284,21 @@ export function parseJsonlV4Mutation(line: string): Result<JsonlV4Mutation, Json
 		throw error;
 	}
 }
+
+/** Encode the reducer mutation shape into the flat durable JSONL wire shape. */
+export function serializeJsonlV4Mutation(mutation: JsonlV4Mutation): string {
+	switch (mutation.kind) {
+		case "entry":
+			return JSON.stringify({
+				kind: "entry",
+				...mutation.entry,
+				...(mutation.lane === undefined ? {} : { lane: mutation.lane }),
+			});
+		case "record":
+			return JSON.stringify({ kind: "record", ...mutation.record });
+		case "lane":
+			return JSON.stringify(mutation);
+		case "fact":
+			return JSON.stringify(mutation);
+	}
+}

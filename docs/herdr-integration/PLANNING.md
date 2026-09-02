@@ -1726,6 +1726,28 @@ this session does not merge, push, tag, or publish.
   appends before applying state. Run one shared backend conformance suite for
   lanes, entries, records, facts, branch reads, cloning, and deterministic
   errors before exposing either backend through the version-neutral adapter.
+- Added the isolated P3.3 v4 memory repository/storage reference backend. It
+  provisions storage-owned sequence, parent, and timestamp fields; implements
+  lanes, entries, operation records, names, labels, bounded entry/record/log
+  queries, open-operation recovery reads, and branch/tree forks over the shared
+  reducer. All returned metadata and payloads are detached clones.
+- Programmatic payloads now pass a side-effect-free JSON durability validator
+  that rejects cycles, accessors, `toJSON`/non-plain objects, symbols, sparse or
+  extended arrays, non-finite numbers, and values JSON would silently discard.
+  The accepted mutation is then serialized into the same flat v4 wire shape
+  and decoded by the shared codec before state application, preventing the
+  memory reference backend from accepting states the JSONL backend cannot
+  persist. Overlapping open operations on one lane are rejected.
+- Focused memory/state/reader verification passes **12/12**. The full
+  `typecheck:extensions`, compiled `test:packages`, `build:core`, and
+  `git diff --check` gates also pass with package counts unchanged from the
+  preceding slice. The backend remains isolated: the application adapter still
+  creates and mutates only legacy v3 sessions; no CLI, GSD DB, projection, or
+  Herdr behavior changed.
+- Exact next task: review and push the memory backend slice, then implement the v4 JSONL
+  repository/storage with serialized mutation commits, atomic create/fork,
+  explicit torn-tail repair on writable open, and a shared conformance suite
+  against memory. Do not select harness-v4 in the application adapter yet.
 
 ## 11. Working-session protocol
 

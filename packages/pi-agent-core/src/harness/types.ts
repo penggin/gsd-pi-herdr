@@ -186,9 +186,13 @@ export class BranchSummaryError extends Error {
 
 export type SessionErrorCode =
 	| "not_found"
+	| "already_exists"
 	| "invalid_session"
 	| "invalid_entry"
 	| "invalid_fork_target"
+	| "invalid_lane"
+	| "invalid_payload"
+	| "invalid_query"
 	| "unsupported_version"
 	| "storage"
 	| "unknown";
