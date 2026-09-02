@@ -1304,6 +1304,30 @@ this session does not merge, push, tag, or publish.
 - Exact next task: commit and push the deferred-tool slice, then begin the next
   upstream audit unit from the remaining v0.80 provider/runtime delta rather
   than expanding this cache optimization into unsupported provider protocols.
+- Added context-aware output budgeting from the audited upstream v0.80
+  provider/runtime delta. Simple provider entry points now estimate the active
+  context from the latest applicable usage marker plus trailing messages,
+  invalidate stale usage after an inserted newer prefix such as compaction,
+  count dynamically added tool definitions, reserve 4096 context tokens, and
+  clamp default or explicit output budgets to the remaining window.
+- The clamp is shared by Anthropic, Bedrock, Google, Vertex, Mistral, OpenAI
+  Responses/Codex, Azure Responses, and OpenAI-compatible completions. Legacy
+  Anthropic/Bedrock thinking budgets are re-clamped after reasoning allocation
+  so they retain answer room; OpenAI and Azure Responses preserve their
+  16-token wire minimum even when the common remaining-context floor is one.
+  Raw provider entry points remain unchanged so advanced callers retain direct
+  control over already-normalized options.
+- Focused budget/provider verification passes **222/222** with **22** expected
+  environment skips. `typecheck:extensions`, `build:core`, and all ten compiled
+  workspace package suites pass: agent-core **135/135**, agent-modes
+  **287/287**, native **223 pass / 1 platform skip**, pi-agent-core **3/3**,
+  pi-ai **49/49**, coding-agent **66/66**, pi-tui **8/8**, contracts **9/9**,
+  MCP **377/377**, and RPC client **30/30**. No dependency or lockfile change
+  was introduced.
+- Exact next task: commit and push this output-budget correctness slice, then
+  audit and import the bounded v0.80 `toolChoice` request surface for OpenAI
+  Responses and Codex Responses without changing provider selection or GSD
+  orchestration semantics.
 
 ## 11. Working-session protocol
 

@@ -139,7 +139,7 @@ export const streamSimpleAnthropicVertex: StreamFunction<"anthropic-vertex", Sim
 		);
 	}
 
-	const base = buildBaseOptions(model, options, apiKey);
+	const base = buildBaseOptions(model, context, options, apiKey);
 	if (!options?.reasoning) {
 		return streamAnthropicVertex(
 			model,

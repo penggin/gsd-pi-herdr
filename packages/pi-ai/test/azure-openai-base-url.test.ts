@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getModel } from "../src/models.ts";
-import { streamAzureOpenAIResponses } from "../src/providers/azure-openai-responses.ts";
+import {
+	streamAzureOpenAIResponses,
+	streamSimpleAzureOpenAIResponses,
+} from "../src/providers/azure-openai-responses.ts";
 import type { Context } from "../src/types.ts";
 
 interface CapturedAzureClientOptions {
@@ -13,6 +16,7 @@ interface CapturedAzureClientOptions {
 
 interface CapturedAzureResponsesPayload {
 	prompt_cache_key?: string;
+	max_output_tokens?: number;
 }
 
 const azureMock = vi.hoisted(() => ({
@@ -142,6 +146,17 @@ describe("azure-openai-responses base URL normalization", () => {
 		}).result();
 
 		expect(azureMock.lastParams?.prompt_cache_key).toBe("x".repeat(64));
+	});
+
+	it("preserves the provider minimum when the remaining context is exhausted", async () => {
+		process.env.AZURE_OPENAI_BASE_URL = "https://my-resource.openai.azure.com";
+		const baseModel = getModel("azure-openai-responses", "gpt-4o-mini");
+		const model = { ...baseModel, contextWindow: 1 };
+		await streamSimpleAzureOpenAIResponses(model, context, {
+			apiKey: "test-api-key",
+		}).result();
+
+		expect(azureMock.lastParams?.max_output_tokens).toBe(16);
 	});
 
 	it("builds correct default URL from AZURE_OPENAI_RESOURCE_NAME", async () => {

@@ -40,7 +40,7 @@ import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 
 import { resolveCloudflareBaseUrl } from "./cloudflare.js";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.js";
-import { adjustMaxTokensForThinking, buildBaseOptions } from "./simple-options.js";
+import { adjustMaxTokensForThinking, buildBaseOptions, clampMaxTokensToContext } from "./simple-options.js";
 import { transformMessages } from "./transform-messages.js";
 import {
 	requiresMoonshotToolSchemaSanitizationAnthropic,
@@ -792,7 +792,7 @@ export const streamSimpleAnthropic: StreamFunction<"anthropic-messages", SimpleS
 		throw new Error(`No API key for provider: ${model.provider}`);
 	}
 
-	const base = buildBaseOptions(model, options, apiKey);
+	const base = buildBaseOptions(model, context, options, apiKey);
 	if (!options?.reasoning) {
 		return streamAnthropic(model, context, { ...base, thinkingEnabled: false } satisfies AnthropicOptions);
 	}
@@ -816,12 +816,13 @@ export const streamSimpleAnthropic: StreamFunction<"anthropic-messages", SimpleS
 		options.reasoning,
 		options.thinkingBudgets,
 	);
+	const maxTokens = clampMaxTokensToContext(model, context, adjusted.maxTokens);
 
 	return streamAnthropic(model, context, {
 		...base,
-		maxTokens: adjusted.maxTokens,
+		maxTokens,
 		thinkingEnabled: true,
-		thinkingBudgetTokens: adjusted.thinkingBudget,
+		thinkingBudgetTokens: Math.min(adjusted.thinkingBudget, Math.max(0, maxTokens - 1024)),
 	} satisfies AnthropicOptions);
 };
 

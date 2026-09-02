@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getModel } from "../src/models.ts";
-import { streamOpenAIResponses } from "../src/providers/openai-responses.ts";
+import { streamOpenAIResponses, streamSimpleOpenAIResponses } from "../src/providers/openai-responses.ts";
 import type { Model } from "../src/types.ts";
 
 type CapturedHeaders = Headers | string[][] | Record<string, string | readonly string[]> | undefined;
@@ -89,6 +89,39 @@ describe("openai-responses provider defaults", () => {
 		expect(capturedPayload).not.toMatchObject({
 			reasoning: expect.anything(),
 		});
+	});
+
+	it("preserves the provider minimum when the remaining context is exhausted", async () => {
+		const baseModel = getModel("openai", "gpt-5.4");
+		const model = { ...baseModel, contextWindow: 1 };
+		let capturedPayload: unknown;
+
+		vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			new Response("data: [DONE]\n\n", {
+				status: 200,
+				headers: { "content-type": "text/event-stream" },
+			}),
+		);
+
+		const stream = streamSimpleOpenAIResponses(
+			model,
+			{
+				systemPrompt: "sys",
+				messages: [{ role: "user", content: "hi", timestamp: Date.now() }],
+			},
+			{
+				apiKey: "test-key",
+				onPayload: (payload) => {
+					capturedPayload = payload;
+				},
+			},
+		);
+
+		for await (const event of stream) {
+			if (event.type === "done" || event.type === "error") break;
+		}
+
+		expect(capturedPayload).toMatchObject({ max_output_tokens: 16 });
 	});
 
 	it.each(["gpt-5.1", "gpt-5.2", "gpt-5.3-codex", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] as const)(

@@ -25,6 +25,7 @@ import { convertResponsesMessages, convertResponsesTools, processResponsesStream
 import { buildBaseOptions } from "./simple-options.js";
 
 const OPENAI_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode"]);
+const OPENAI_RESPONSES_MIN_OUTPUT_TOKENS = 16;
 
 /**
  * Resolve cache retention preference.
@@ -170,7 +171,7 @@ export const streamSimpleOpenAIResponses: StreamFunction<"openai-responses", Sim
 		throw new Error(`No API key for provider: ${model.provider}`);
 	}
 
-	const base = buildBaseOptions(model, options, apiKey);
+	const base = buildBaseOptions(model, context, options, apiKey);
 	const clampedReasoning = options?.reasoning ? clampThinkingLevel(model, options.reasoning) : undefined;
 	const reasoningEffort = clampedReasoning === "off" ? undefined : clampedReasoning;
 
@@ -259,7 +260,7 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 	};
 
 	if (options?.maxTokens) {
-		params.max_output_tokens = options?.maxTokens;
+		params.max_output_tokens = Math.max(options.maxTokens, OPENAI_RESPONSES_MIN_OUTPUT_TOKENS);
 	}
 
 	if (options?.temperature !== undefined) {

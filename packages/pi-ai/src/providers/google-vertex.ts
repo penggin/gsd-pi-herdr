@@ -281,7 +281,7 @@ export const streamSimpleGoogleVertex: StreamFunction<"google-vertex", SimpleStr
 	context: Context,
 	options?: SimpleStreamOptions,
 ): AssistantMessageEventStream => {
-	const base = buildBaseOptions(model, options, undefined);
+	const base = buildBaseOptions(model, context, options, undefined);
 	if (!options?.reasoning) {
 		return streamGoogleVertex(model, context, {
 			...base,

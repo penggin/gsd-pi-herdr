@@ -17,6 +17,8 @@ import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.js";
 import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.js";
 import { buildBaseOptions } from "./simple-options.js";
 
+const OPENAI_RESPONSES_MIN_OUTPUT_TOKENS = 16;
+
 const DEFAULT_AZURE_API_VERSION = "v1";
 const AZURE_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode", "azure-openai-responses"]);
 
@@ -155,7 +157,7 @@ export const streamSimpleAzureOpenAIResponses: StreamFunction<"azure-openai-resp
 		throw new Error(`No API key for provider: ${model.provider}`);
 	}
 
-	const base = buildBaseOptions(model, options, apiKey);
+	const base = buildBaseOptions(model, context, options, apiKey);
 	const clampedReasoning = options?.reasoning ? clampThinkingLevel(model, options.reasoning) : undefined;
 	const reasoningEffort = clampedReasoning === "off" ? undefined : clampedReasoning;
 
@@ -266,7 +268,7 @@ function buildParams(
 	};
 
 	if (options?.maxTokens) {
-		params.max_output_tokens = options?.maxTokens;
+		params.max_output_tokens = Math.max(options.maxTokens, OPENAI_RESPONSES_MIN_OUTPUT_TOKENS);
 	}
 
 	if (options?.temperature !== undefined) {
