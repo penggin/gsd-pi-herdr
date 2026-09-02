@@ -6,7 +6,7 @@ import {
 	type Model,
 	registerFauxProvider,
 	type Usage,
-} from "@earendil-works/pi-ai";
+} from "@gsd/pi-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	type CompactionPreparation,
@@ -23,6 +23,7 @@ import {
 	serializeConversation,
 	shouldCompact,
 } from "../../src/harness/compaction/compaction.ts";
+import { generateBranchSummary } from "../../src/harness/compaction/branch-summarization.ts";
 import { buildSessionContext } from "../../src/harness/session/session.ts";
 import type {
 	BranchSummaryEntry,
@@ -544,6 +545,7 @@ describe("harness compaction", () => {
 	it("clamps compaction summary maxTokens to the model output cap", async () => {
 		const messages: AgentMessage[] = [createUserMessage("Summarize this.")];
 		const seenOptions: Array<Record<string, unknown> | undefined> = [];
+		const hookSessionIds: string[] = [];
 		const { faux, model } = createFauxModel(false, 128000);
 		faux.setResponses([
 			(_context, options) => {
@@ -565,9 +567,71 @@ describe("harness compaction", () => {
 			settings: { enabled: true, reserveTokens: 500000, keepRecentTokens: 20000 },
 		};
 
-		getOrThrow(await compact(preparation, model, "test-key"));
+		getOrThrow(
+			await compact(preparation, model, "test-key", undefined, undefined, undefined, undefined, {
+				timeoutMs: 1234,
+				maxRetries: 2,
+				maxRetryDelayMs: 3000,
+				metadata: { purpose: "compaction" },
+				beforeRequest: (sessionId, options) => {
+					hookSessionIds.push(sessionId);
+					expect(options.cacheRetention).toBe("none");
+					return {
+						...options,
+						cacheRetention: "long",
+						headers: { "x-summary-hook": "applied" },
+					};
+				},
+			}),
+		);
 
 		expect(seenOptions.map((options) => options?.maxTokens)).toEqual([128000, 128000]);
+		expect(seenOptions.map((options) => options?.cacheRetention)).toEqual(["none", "none"]);
+		expect(seenOptions.map((options) => options?.timeoutMs)).toEqual([1234, 1234]);
+		expect(seenOptions.map((options) => options?.maxRetries)).toEqual([2, 2]);
+		expect(seenOptions.map((options) => options?.maxRetryDelayMs)).toEqual([3000, 3000]);
+		expect(seenOptions.map((options) => options?.metadata)).toEqual([
+			{ purpose: "compaction" },
+			{ purpose: "compaction" },
+		]);
+		const sessionIds = seenOptions.map((options) => options?.sessionId);
+		expect(sessionIds.every((id) => typeof id === "string" && id.length > 0)).toBe(true);
+		expect(new Set(sessionIds).size).toBe(2);
+		expect(hookSessionIds).toEqual(sessionIds);
+		expect(seenOptions.map((options) => options?.headers)).toEqual([
+			{ "x-summary-hook": "applied" },
+			{ "x-summary-hook": "applied" },
+		]);
+	});
+
+	it("isolates branch summaries from root provider affinity and prompt cache", async () => {
+		const seenOptions: Array<Record<string, unknown> | undefined> = [];
+		const { faux, model } = createFauxModel(false);
+		faux.setResponses([
+			(_context, options) => {
+				seenOptions.push(options as Record<string, unknown> | undefined);
+				return fauxAssistantMessage("## Goal\nBranch summary");
+			},
+		]);
+		const entry = createMessageEntry(createUserMessage("branch work"));
+
+		const result = await generateBranchSummary([entry], {
+			model,
+			apiKey: "test-key",
+			headers: { "x-test": "summary" },
+			signal: new AbortController().signal,
+			requestOptions: { timeoutMs: 4321, maxRetries: 1, metadata: { purpose: "branch" } },
+		});
+
+		expect(result.ok).toBe(true);
+		expect(seenOptions[0]).toMatchObject({
+			cacheRetention: "none",
+			timeoutMs: 4321,
+			maxRetries: 1,
+			metadata: { purpose: "branch" },
+			headers: { "x-test": "summary" },
+		});
+		expect(seenOptions[0]?.sessionId).toEqual(expect.any(String));
 	});
 
 	it("returns compaction error results without throwing", async () => {

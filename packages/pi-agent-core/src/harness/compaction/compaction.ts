@@ -1,4 +1,4 @@
-import type { AssistantMessage, ImageContent, Model, TextContent, Usage } from "@gsd/pi-ai";
+import type { AssistantMessage, ImageContent, Model, SimpleStreamOptions, TextContent, Usage } from "@gsd/pi-ai";
 import { completeSimple } from "@gsd/pi-ai";
 import type { AgentMessage, ThinkingLevel } from "../../types.js";
 import {
@@ -8,6 +8,7 @@ import {
 	createCustomMessage,
 } from "../messages.js";
 import { buildSessionContext } from "../session/session.js";
+import { uuidv7 } from "../session/uuid.js";
 import { type CompactionEntry, CompactionError, err, ok, type Result, type SessionTreeEntry } from "../types.js";
 import {
 	computeFileLists,
@@ -24,6 +25,61 @@ export interface CompactionDetails {
 	readFiles: string[];
 	/** Files modified in the compacted history. */
 	modifiedFiles: string[];
+}
+
+type SummaryProviderRequestOptions = Pick<
+	SimpleStreamOptions,
+	| "transport"
+	| "timeoutMs"
+	| "maxRetries"
+	| "maxRetryDelayMs"
+	| "metadata"
+	| "cacheRetention"
+	| "onPayload"
+	| "onResponse"
+> & {
+	/** Harness-authored headers do not use provider-default suppression nulls. */
+	headers?: Record<string, string>;
+};
+
+/** Provider controls safe to forward to standalone summarization requests. */
+export interface SummaryRequestOptions
+	extends Pick<
+		SimpleStreamOptions,
+		"transport" | "timeoutMs" | "maxRetries" | "maxRetryDelayMs" | "metadata" | "onPayload" | "onResponse"
+	> {
+	/** Apply provider lifecycle hooks after the isolated request identity is assigned. */
+	beforeRequest?: (
+		sessionId: string,
+		options: SummaryProviderRequestOptions,
+	) => SummaryProviderRequestOptions | Promise<SummaryProviderRequestOptions>;
+}
+
+/** Build an isolated provider request while preserving harness lifecycle hooks. */
+export async function isolatedSummaryRequestOptions(
+	options?: SummaryRequestOptions,
+	headers?: Record<string, string>,
+): Promise<SummaryProviderRequestOptions & { cacheRetention: "none"; sessionId: string }> {
+	const { beforeRequest, ...forwarded } = options ?? {};
+	const sessionId = uuidv7();
+	const initial = {
+		...forwarded,
+		headers,
+		// Summary prompts are not continuations of the root conversation. Giving
+		// each call fresh routing identity also prevents reuse of model-native
+		// compaction or websocket state from the interactive turn.
+		cacheRetention: "none" as const,
+		sessionId,
+	};
+	const patched = (await beforeRequest?.(sessionId, initial)) ?? initial;
+	return {
+		...initial,
+		...patched,
+		// Hooks may customize transport metadata and headers, but may not attach a
+		// standalone summary request to the root session or provider prompt cache.
+		cacheRetention: "none",
+		sessionId,
+	};
 }
 function safeJsonStringify(value: unknown): string {
 	try {
@@ -462,6 +518,7 @@ export async function generateSummary(
 	customInstructions?: string,
 	previousSummary?: string,
 	thinkingLevel?: ThinkingLevel,
+	requestOptions?: SummaryRequestOptions,
 ): Promise<Result<string, CompactionError>> {
 	const maxTokens = Math.min(
 		Math.floor(0.8 * reserveTokens),
@@ -487,10 +544,11 @@ export async function generateSummary(
 		},
 	];
 
+	const isolatedOptions = await isolatedSummaryRequestOptions(requestOptions, headers);
 	const completionOptions =
 		model.reasoning && thinkingLevel && thinkingLevel !== "off"
-			? { maxTokens, signal, apiKey, headers, reasoning: thinkingLevel }
-			: { maxTokens, signal, apiKey, headers };
+			? { ...isolatedOptions, maxTokens, signal, apiKey, reasoning: thinkingLevel }
+			: { ...isolatedOptions, maxTokens, signal, apiKey };
 
 	const response = await completeSimple(
 		model,
@@ -631,6 +689,7 @@ export async function compact(
 	customInstructions?: string,
 	signal?: AbortSignal,
 	thinkingLevel?: ThinkingLevel,
+	requestOptions?: SummaryRequestOptions,
 ): Promise<Result<CompactionResult, CompactionError>> {
 	const {
 		firstKeptEntryId,
@@ -662,6 +721,7 @@ export async function compact(
 						customInstructions,
 						previousSummary,
 						thinkingLevel,
+						requestOptions,
 					)
 				: Promise.resolve(ok<string, CompactionError>("No prior history.")),
 			generateTurnPrefixSummary(
@@ -672,6 +732,7 @@ export async function compact(
 				headers,
 				signal,
 				thinkingLevel,
+				requestOptions,
 			),
 		]);
 		if (!historyResult.ok) return err(historyResult.error);
@@ -688,6 +749,7 @@ export async function compact(
 			customInstructions,
 			previousSummary,
 			thinkingLevel,
+			requestOptions,
 		);
 		if (!summaryResult.ok) return err(summaryResult.error);
 		summary = summaryResult.value;
@@ -711,6 +773,7 @@ async function generateTurnPrefixSummary(
 	headers?: Record<string, string>,
 	signal?: AbortSignal,
 	thinkingLevel?: ThinkingLevel,
+	requestOptions?: SummaryRequestOptions,
 ): Promise<Result<string, CompactionError>> {
 	const maxTokens = Math.min(
 		Math.floor(0.5 * reserveTokens),
@@ -727,12 +790,19 @@ async function generateTurnPrefixSummary(
 		},
 	];
 
+	const isolatedOptions = await isolatedSummaryRequestOptions(requestOptions, headers);
 	const response = await completeSimple(
 		model,
 		{ systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages },
 		model.reasoning && thinkingLevel && thinkingLevel !== "off"
-			? { maxTokens, signal, apiKey, headers, reasoning: thinkingLevel }
-			: { maxTokens, signal, apiKey, headers },
+			? {
+					...isolatedOptions,
+					maxTokens,
+					signal,
+					apiKey,
+					reasoning: thinkingLevel,
+				}
+			: { ...isolatedOptions, maxTokens, signal, apiKey },
 	);
 	if (response.stopReason === "aborted") {
 		return err(new CompactionError("aborted", response.errorMessage || "Turn prefix summarization aborted"));

@@ -17,7 +17,12 @@ import type {
 	ThinkingLevel,
 } from "../types.js";
 import { collectEntriesForBranchSummary, generateBranchSummary } from "./compaction/branch-summarization.js";
-import { compact, DEFAULT_COMPACTION_SETTINGS, prepareCompaction } from "./compaction/compaction.js";
+import {
+	compact,
+	DEFAULT_COMPACTION_SETTINGS,
+	prepareCompaction,
+	type SummaryRequestOptions,
+} from "./compaction/compaction.js";
 import { convertToLlm } from "./messages.js";
 import { formatPromptTemplateInvocation } from "./prompt-templates.js";
 import { formatSkillInvocation } from "./skills.js";
@@ -288,6 +293,23 @@ export class AgentHarness<
 			}
 		}
 		return current;
+	}
+
+	private summaryRequestOptions(model: Model<any>): SummaryRequestOptions {
+		return {
+			transport: this.streamOptions.transport,
+			timeoutMs: this.streamOptions.timeoutMs,
+			maxRetries: this.streamOptions.maxRetries,
+			maxRetryDelayMs: this.streamOptions.maxRetryDelayMs,
+			metadata: this.streamOptions.metadata,
+			beforeRequest: async (sessionId, options) =>
+				await this.emitBeforeProviderRequest(model, sessionId, options),
+			onPayload: async (payload) => await this.emitBeforeProviderPayload(model, payload),
+			onResponse: async (response) => {
+				const headers = { ...response.headers };
+				await this.emitOwn({ type: "after_provider_response", status: response.status, headers });
+			},
+		};
 	}
 
 	private async emitQueueUpdate(): Promise<void> {
@@ -710,10 +732,11 @@ export class AgentHarness<
 						preparation,
 						model,
 						auth.apiKey,
-						auth.headers,
+						mergeHeaders(this.streamOptions.headers, auth.headers),
 						customInstructions,
 						undefined,
 						this.thinkingLevel,
+						this.summaryRequestOptions(model),
 					);
 			if (!compactResult.ok) throw compactResult.error;
 			const result = compactResult.value;
@@ -772,10 +795,11 @@ export class AgentHarness<
 				const branchSummary = await generateBranchSummary(entries, {
 					model,
 					apiKey: auth.apiKey,
-					headers: auth.headers,
+					headers: mergeHeaders(this.streamOptions.headers, auth.headers),
 					signal: new AbortController().signal,
 					customInstructions: hookResult?.customInstructions ?? options?.customInstructions,
 					replaceInstructions: hookResult?.replaceInstructions ?? options?.replaceInstructions,
+					requestOptions: this.summaryRequestOptions(model),
 				});
 				if (!branchSummary.ok) {
 					if (branchSummary.error.code === "aborted") return { cancelled: true };

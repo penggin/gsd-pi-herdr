@@ -1,4 +1,4 @@
-import { fauxAssistantMessage, fauxToolCall, registerFauxProvider, type StreamOptions } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage, fauxToolCall, registerFauxProvider, type StreamOptions } from "@gsd/pi-ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentHarness } from "../../src/harness/agent-harness.ts";
 import { NodeExecutionEnv } from "../../src/harness/env/nodejs.ts";
@@ -202,5 +202,69 @@ describe("AgentHarness stream configuration", () => {
 
 		expect(seenPayloads).toEqual([{ steps: ["provider"] }, { steps: ["provider", "first"] }]);
 		expect(finalPayload).toEqual({ steps: ["provider", "first", "second"] });
+	});
+
+	it("runs standalone compaction requests through provider hooks with isolated affinity", async () => {
+		let summaryOptions: StreamOptions | undefined;
+		const payloads: unknown[] = [];
+		const responses: number[] = [];
+		const requestSessionIds: string[] = [];
+		const registration = registerFauxProvider();
+		registrations.push(registration);
+		registration.setResponses([
+			fauxAssistantMessage("initial response"),
+			async (_context, options, _state, model) => {
+				summaryOptions = captureOptions(options);
+				await options?.onPayload?.({ purpose: "summary" }, model);
+				return fauxAssistantMessage("## Goal\nCompacted");
+			},
+		]);
+
+		const session = new Session(
+			new InMemorySessionStorage({ metadata: { id: "root-session", createdAt: "now" } }),
+		);
+		const harness = createHarness({
+			env: new NodeExecutionEnv({ cwd: process.cwd() }),
+			session,
+			model: registration.getModel(),
+			streamOptions: {
+				timeoutMs: 2500,
+				maxRetries: 3,
+				headers: { "x-base": "base" },
+				metadata: { root: true },
+				cacheRetention: "long",
+			},
+			getApiKeyAndHeaders: async () => ({ apiKey: "secret", headers: { "x-auth": "auth" } }),
+		});
+
+		harness.on("before_provider_request", (event) => {
+			requestSessionIds.push(event.sessionId);
+			return { streamOptions: { headers: { "x-hook": "hook" }, metadata: { hooked: true } } };
+		});
+		harness.on("before_provider_payload", (event) => {
+			payloads.push(event.payload);
+			return undefined;
+		});
+		harness.subscribe((event) => {
+			if (event.type === "after_provider_response") responses.push(event.status);
+		});
+
+		await harness.prompt("hello");
+		await harness.compact();
+
+		expect(requestSessionIds).toHaveLength(2);
+		expect(requestSessionIds[0]).toBe("root-session");
+		expect(requestSessionIds[1]).not.toBe("root-session");
+		expect(summaryOptions).toMatchObject({
+			apiKey: "secret",
+			timeoutMs: 2500,
+			maxRetries: 3,
+			cacheRetention: "none",
+			headers: { "x-base": "base", "x-auth": "auth", "x-hook": "hook" },
+			metadata: { root: true, hooked: true },
+		});
+		expect(summaryOptions?.sessionId).toBe(requestSessionIds[1]);
+		expect(payloads).toEqual([{ purpose: "summary" }]);
+		expect(responses).toEqual([200, 200]);
 	});
 });

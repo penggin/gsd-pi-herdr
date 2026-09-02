@@ -9,7 +9,12 @@ import {
 } from "../messages.js";
 import type { BranchSummaryResult, Session, SessionTreeEntry } from "../types.js";
 import { BranchSummaryError, err, ok, type Result, SessionError } from "../types.js";
-import { estimateTokens, SUMMARIZATION_SYSTEM_PROMPT } from "./compaction.js";
+import {
+	estimateTokens,
+	isolatedSummaryRequestOptions,
+	type SummaryRequestOptions,
+	SUMMARIZATION_SYSTEM_PROMPT,
+} from "./compaction.js";
 import {
 	computeFileLists,
 	createFileOps,
@@ -63,6 +68,8 @@ export interface GenerateBranchSummaryOptions {
 	replaceInstructions?: boolean;
 	/** Tokens reserved for prompt and model output. Defaults to 16384. */
 	reserveTokens?: number;
+	/** Curated transport/retry controls inherited from the parent harness. */
+	requestOptions?: SummaryRequestOptions;
 }
 
 /** Collect entries that should be summarized before navigating to a different session tree entry. */
@@ -201,7 +208,16 @@ export async function generateBranchSummary(
 	entries: SessionTreeEntry[],
 	options: GenerateBranchSummaryOptions,
 ): Promise<Result<BranchSummaryResult, BranchSummaryError>> {
-	const { model, apiKey, headers, signal, customInstructions, replaceInstructions, reserveTokens = 16384 } = options;
+	const {
+		model,
+		apiKey,
+		headers,
+		signal,
+		customInstructions,
+		replaceInstructions,
+		reserveTokens = 16384,
+		requestOptions,
+	} = options;
 	const contextWindow = model.contextWindow || 128000;
 	const tokenBudget = contextWindow - reserveTokens;
 
@@ -229,10 +245,16 @@ export async function generateBranchSummary(
 			timestamp: Date.now(),
 		},
 	];
+	const isolatedOptions = await isolatedSummaryRequestOptions(requestOptions, headers);
 	const response = await completeSimple(
 		model,
 		{ systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages },
-		{ apiKey, headers, signal, maxTokens: 2048 },
+		{
+			...isolatedOptions,
+			apiKey,
+			signal,
+			maxTokens: 2048,
+		},
 	);
 	if (response.stopReason === "aborted") {
 		return err(new BranchSummaryError("aborted", response.errorMessage || "Branch summary aborted"));

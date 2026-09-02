@@ -2,7 +2,7 @@
 
 Date: 2026-09-03
 
-Status: P3.0–P3.3 complete; P3.4 harness reconciliation next; no runtime cutover
+Status: P3.0–P3.3 complete; P3.4 harness reconciliation in progress; no runtime cutover
 
 Upstream reference: `refs/pi-upstream/v0.84.4`
 

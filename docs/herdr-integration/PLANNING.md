@@ -1812,6 +1812,40 @@ this session does not merge, push, tag, or publish.
   shutdown contracts against upstream v0.84.4. Import only missing behavior by
   capability; keep the v4 application adapter disabled until both memory and
   JSONL harness parity pass.
+- Began P3.4 with a capability-level comparison rather than importing the
+  upstream v0.84.4 `AgentHarness` package tree. The tagged v0.84.4 harness is a
+  compile-complete scaffold whose public methods still reject with
+  `HarnessNotImplemented`; replacing the downstream working harness with it
+  would be a functional regression. The useful summary-request behavior comes
+  from the earlier v0.81–v0.83 evolution and was adapted independently.
+- Compaction history, split-turn prefix, and branch-summary requests now each
+  receive a fresh routing session ID and force `cacheRetention: none`, so they
+  cannot inherit root websocket/Remote Compaction affinity or pollute the root
+  prompt cache. Transport, timeout, bounded retry, metadata, merged auth/base
+  headers, and the downstream provider request/payload/response lifecycle hooks
+  still apply. Hook patches may customize supported request fields but cannot
+  override the isolated session identity or re-enable caching.
+- Repointed the three source-level harness tests at the local `@gsd/pi-ai` faux
+  provider registry. Their former `@earendil-works/pi-ai` import registered a
+  separate module instance and produced false “No provider registered” failures
+  even though the runtime imported the downstream registry. Added regression
+  coverage for two concurrent split summaries receiving distinct identities,
+  branch-summary isolation, hook header/metadata propagation, payload hooks,
+  and response observability. The focused build and harness suites pass
+  **37/37**. `verify:pi-patches`, `typecheck:extensions`, `build:core`, the full
+  compiled package suite, and `git diff --check` also pass. Package counts are
+  agent-core **136/136**, agent-modes **287/287**, native **223 pass / 1
+  platform skip**, pi-agent-core **3/3**, pi-ai **49/49**, coding-agent
+  **72/72**, pi-tui **8/8**, contracts **9/9**, MCP **377/377**, and RPC client
+  **30/30**.
+- Remaining P3.4 scope: characterize and close any semantic gaps in prompt/tool
+  result reduction, steer/follow-up queues, retry classification, abort, and
+  shutdown against the working downstream contracts. Then run the same harness
+  parity matrix over memory and v4 JSONL before enabling an adapter.
+- Exact next task: commit and push the isolated-summary slice, then compare the
+  downstream event/reducer/result and retry/shutdown behavior with upstream
+  v0.81–v0.84 capability history. Do not replace the downstream harness with the
+  v0.84.4 scaffold and do not select v4 at runtime yet.
 
 ## 11. Working-session protocol
 
