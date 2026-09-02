@@ -498,6 +498,24 @@ describe("ModelRegistry", () => {
 			expect(compat?.supportsMaxOutputTokens).toBe(false);
 		});
 
+		test("OpenAI-compatible vLLM models can set scheduler priority", () => {
+			writeRawModelsJson({
+				vllm: {
+					baseUrl: "http://127.0.0.1:8000/v1",
+					apiKey: "LOCAL_VLLM_KEY",
+					api: "openai-completions",
+					compat: { vllmPriority: 10 },
+					models: [{ id: "local/model" }],
+				},
+			});
+
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			const compat = registry.find("vllm", "local/model")?.compat as OpenAICompletionsCompat | undefined;
+
+			expect(registry.getError()).toBeUndefined();
+			expect(compat?.vllmPriority).toBe(10);
+		});
+
 		test("Anthropic-compatible models can opt into mid-conversation effort binding", () => {
 			writeRawModelsJson({
 				proxy: {

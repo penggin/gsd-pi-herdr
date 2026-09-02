@@ -172,8 +172,12 @@ interface OpenAICompatCacheControl {
 	ttl?: string;
 }
 
-type ResolvedOpenAICompletionsCompat = Omit<Required<OpenAICompletionsCompat>, "cacheControlFormat"> & {
+type ResolvedOpenAICompletionsCompat = Omit<
+	Required<OpenAICompletionsCompat>,
+	"cacheControlFormat" | "vllmPriority"
+> & {
 	cacheControlFormat?: OpenAICompletionsCompat["cacheControlFormat"];
+	vllmPriority?: OpenAICompletionsCompat["vllmPriority"];
 };
 
 type ChatCompletionInstructionMessageParam = ChatCompletionDeveloperMessageParam | ChatCompletionSystemMessageParam;
@@ -671,6 +675,11 @@ function buildParams(
 
 	if (options?.toolChoice) {
 		params.tool_choice = options.toolChoice;
+	}
+
+	if (compat.vllmPriority !== undefined) {
+		(params as OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming & { priority?: number }).priority =
+			compat.vllmPriority;
 	}
 
 	if (compat.thinkingFormat === "zai" && model.reasoning) {
@@ -1345,5 +1354,6 @@ function getCompat(model: Model<"openai-completions">): ResolvedOpenAICompletion
 		sendSessionAffinityHeaders: model.compat.sendSessionAffinityHeaders ?? detected.sendSessionAffinityHeaders,
 		sessionAffinityFormat: model.compat.sessionAffinityFormat ?? detected.sessionAffinityFormat,
 		supportsLongCacheRetention: model.compat.supportsLongCacheRetention ?? detected.supportsLongCacheRetention,
+		vllmPriority: model.compat.vllmPriority,
 	};
 }

@@ -162,6 +162,7 @@ const OpenAICompletionsCompatSchema = Type.Object({
 	vercelGatewayRouting: Type.Optional(VercelGatewayRoutingSchema),
 	supportsStrictMode: Type.Optional(Type.Boolean()),
 	supportsLongCacheRetention: Type.Optional(Type.Boolean()),
+	vllmPriority: Type.Optional(Type.Number()),
 	sendSessionAffinityHeaders: Type.Optional(Type.Boolean()),
 	sessionAffinityFormat: Type.Optional(
 		Type.Union([Type.Literal("openai"), Type.Literal("openai-nosession"), Type.Literal("openrouter")]),

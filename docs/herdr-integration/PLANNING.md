@@ -2088,6 +2088,23 @@ this session does not merge, push, tag, or publish.
   **8/8**, contracts **9/9**, MCP server **377/377**, and RPC client **30/30**.
 - Exact next task: review, commit, and push this provider-routing slice; then
   evaluate optional vLLM scheduler priority (`256f63024`) independently.
+- Ported upstream `256f63024` as an opt-in OpenAI Completions compatibility
+  field. Custom vLLM model definitions can set numeric `compat.vllmPriority`,
+  which is emitted as the top-level request `priority`; all existing generated
+  and custom models omit the field unless explicitly configured. The option is
+  accepted by both catalog and `models.json` validation and does not introduce
+  scheduling policy into GSD orchestration or Herdr.
+- Focused evidence passes: request payload/default coverage **2/2** and exact
+  custom model-registry validation **1/1**. Final gates pass:
+  `verify:pi-patches`, extension typecheck, `test:changed:src` (no root-source
+  tests for this package-only slice), the pi-ai build, `build:core`,
+  `test:packages`, and `git diff --check`. Compiled package totals remain GSD
+  agent-core **139/139**, agent-modes **287/287**, native **223 pass / 1 skip**,
+  pi-agent-core **3/3**, pi-ai **49/49**, pi-coding-agent **72/72**, pi-tui
+  **8/8**, contracts **9/9**, MCP server **377/377**, and RPC client **30/30**.
+- Exact next task: review, commit, and push this opt-in vLLM compatibility
+  slice; then audit the remaining low-risk upstream corrections (`e583b290a`,
+  current NO_PROXY behavior) without importing metadata-only version spoofing.
 
 ## 11. Working-session protocol
 
