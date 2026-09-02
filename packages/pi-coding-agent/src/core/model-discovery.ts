@@ -9,7 +9,7 @@ export interface DiscoveredModel {
 	contextWindow?: number;
 	maxTokens?: number;
 	reasoning?: boolean;
-	input?: ("text" | "image")[];
+	input?: ("text" | "image" | "video")[];
 	cost?: { input: number; output: number; cacheRead: number; cacheWrite: number };
 }
 

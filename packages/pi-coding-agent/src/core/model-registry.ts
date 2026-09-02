@@ -12,6 +12,7 @@ import {
 	isModelsCatalogOverlay,
 	type KnownProvider,
 	type Model,
+	type ModelsStore,
 	type OAuthProviderInterface,
 	type OpenAICodexResponsesCompat,
 	type OpenAICompletionsCompat,
@@ -33,6 +34,7 @@ import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "./provider-display-names.js";
 import { isLocalModel } from "./local-model-check.js";
 import { applyCapabilityPatches } from "./capability-patches.js";
 import { ModelDiscoveryCache } from "./discovery-cache.js";
+import { FileModelsStore, InMemoryCodingAgentModelsStore } from "./models-store.js";
 import type { DiscoveryResult } from "./model-discovery.js";
 import {
 	getDefaultTTL,
@@ -56,6 +58,12 @@ import {
 } from "./provider-readiness.js";
 
 export type { ProviderAuthMode } from "./provider-readiness.js";
+
+export interface DiscoverModelsOptions {
+	signal?: AbortSignal;
+	/** Ignore a fresh stored catalog and contact the provider. */
+	force?: boolean;
+}
 
 // Schema for OpenRouter routing preferences
 const PercentileCutoffsSchema = Type.Object({
@@ -384,6 +392,7 @@ export class ModelRegistry {
 	private models: Model<Api>[] = [];
 	private discoveredModels: Model<Api>[] = [];
 	private discoveryCache: ModelDiscoveryCache;
+	private modelsStore: ModelsStore;
 	private providerRequestConfigs: Map<string, ProviderRequestConfig> = new Map();
 	private modelRequestHeaders: Map<string, Record<string, string>> = new Map();
 	private registeredProviders: Map<string, ProviderConfigInput> = new Map();
@@ -392,19 +401,32 @@ export class ModelRegistry {
 	readonly authStorage: AuthStorage;
 	private _modelsJsonPath: string | undefined;
 
-	private constructor(authStorage: AuthStorage, modelsJsonPath: string | undefined) {
+	private constructor(
+		authStorage: AuthStorage,
+		modelsJsonPath: string | undefined,
+		modelsStore: ModelsStore | undefined,
+	) {
 		this.authStorage = authStorage;
 		this._modelsJsonPath = modelsJsonPath ? normalizePath(modelsJsonPath) : undefined;
 		this.discoveryCache = new ModelDiscoveryCache();
+		this.modelsStore =
+			modelsStore ??
+			(this._modelsJsonPath
+				? new FileModelsStore(join(dirname(this._modelsJsonPath), "models-store.json"))
+				: new InMemoryCodingAgentModelsStore());
 		this.loadModels();
 	}
 
-	static create(authStorage: AuthStorage, modelsJsonPath: string = join(getAgentDir(), "models.json")): ModelRegistry {
-		return new ModelRegistry(authStorage, modelsJsonPath);
+	static create(
+		authStorage: AuthStorage,
+		modelsJsonPath: string = join(getAgentDir(), "models.json"),
+		modelsStore?: ModelsStore,
+	): ModelRegistry {
+		return new ModelRegistry(authStorage, modelsJsonPath, modelsStore);
 	}
 
-	static inMemory(authStorage: AuthStorage): ModelRegistry {
-		return new ModelRegistry(authStorage, undefined);
+	static inMemory(authStorage: AuthStorage, modelsStore?: ModelsStore): ModelRegistry {
+		return new ModelRegistry(authStorage, undefined, modelsStore);
 	}
 
 	/**
@@ -1074,41 +1096,73 @@ export class ModelRegistry {
 		return this.discoveredModels.some((m) => m.provider === model.provider && m.id === model.id);
 	}
 
-	async discoverModels(providers?: string[]): Promise<DiscoveryResult[]> {
+	async discoverModels(providers?: string[], options: DiscoverModelsOptions = {}): Promise<DiscoveryResult[]> {
 		const targetProviders = providers ?? this.getAutoDiscoverableProviders();
 		const results: DiscoveryResult[] = [];
 
 		for (const providerName of targetProviders) {
+			options.signal?.throwIfAborted();
 			const providerApis = this.getProviderApis(providerName);
 			const adapter = getDiscoveryAdapter(providerName, providerApis);
 			if (!adapter.supportsDiscovery) continue;
 
-			if (!this.discoveryCache.isStale(providerName)) {
-				const cached = this.discoveryCache.get(providerName);
-				if (cached) {
+			try {
+				const ttlMs = this.getDiscoveryTtl(providerName, providerApis);
+				const stored = options.force ? undefined : await this.modelsStore.read(providerName, options);
+				if (stored?.checkedAt !== undefined && Date.now() - stored.checkedAt <= ttlMs) {
 					results.push({
 						provider: providerName,
-						models: cached.models,
-						fetchedAt: cached.fetchedAt,
+						models: stored.models.map((model) => this.toDiscoveredModel(model)),
+						fetchedAt: stored.checkedAt,
 					});
 					continue;
 				}
-			}
 
-			try {
+				// Promote a fresh legacy discovery-cache entry once. The new store is
+				// canonical after this write; the old file remains a compatibility input.
+				if (!options.force && !this.discoveryCache.isStale(providerName)) {
+					const legacy = this.discoveryCache.get(providerName);
+					if (legacy) {
+						const result = {
+							provider: providerName,
+							models: legacy.models,
+							fetchedAt: legacy.fetchedAt,
+						};
+						await this.modelsStore.write(
+							providerName,
+							{
+								models: applyCapabilityPatches(this.convertDiscoveredModels([result])),
+								checkedAt: legacy.fetchedAt,
+							},
+							options,
+						);
+						results.push(result);
+						continue;
+					}
+				}
+
 				const apiKey = await this.getApiKeyForProvider(providerName);
 				if (!apiKey && !this.isProviderRequestReady(providerName)) continue;
 
 				const baseUrl = this.getProviderBaseUrl(providerName);
 				const models = await adapter.fetchModels(apiKey ?? "", baseUrl);
-				const ttlMs = this.getDiscoveryTtl(providerName, providerApis);
-				this.discoveryCache.set(providerName, models, ttlMs);
-				results.push({
+				options.signal?.throwIfAborted();
+				const result = {
 					provider: providerName,
 					models,
 					fetchedAt: Date.now(),
-				});
+				};
+				await this.modelsStore.write(
+					providerName,
+					{
+						models: applyCapabilityPatches(this.convertDiscoveredModels([result])),
+						checkedAt: result.fetchedAt,
+					},
+					options,
+				);
+				results.push(result);
 			} catch (error) {
+				if (options.signal?.aborted) throw options.signal.reason;
 				results.push({
 					provider: providerName,
 					models: [],
@@ -1124,6 +1178,23 @@ export class ModelRegistry {
 
 	getDiscoveryCache(): ModelDiscoveryCache {
 		return this.discoveryCache;
+	}
+
+	/** Canonical provider catalog store. */
+	getModelsStore(): ModelsStore {
+		return this.modelsStore;
+	}
+
+	private toDiscoveredModel(model: Model<Api>): import("./model-discovery.js").DiscoveredModel {
+		return {
+			id: model.id,
+			name: model.name,
+			contextWindow: model.contextWindow,
+			maxTokens: model.maxTokens,
+			reasoning: model.reasoning,
+			input: [...model.input],
+			cost: { ...model.cost },
+		};
 	}
 
 	private convertDiscoveredModels(results: DiscoveryResult[]): Model<Api>[] {
