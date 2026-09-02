@@ -7,6 +7,7 @@ import {
 	type Api,
 	type AssistantMessageEventStream,
 	type Context,
+	type CredentialStore,
 	getModels,
 	getProviders,
 	isModelsCatalogOverlay,
@@ -34,6 +35,7 @@ import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "./provider-display-names.js";
 import { isLocalModel } from "./local-model-check.js";
 import { applyCapabilityPatches } from "./capability-patches.js";
 import { ModelDiscoveryCache } from "./discovery-cache.js";
+import { AuthStorageCredentialAdapter } from "./credential-store-adapter.js";
 import { FileModelsStore, InMemoryCodingAgentModelsStore } from "./models-store.js";
 import type { DiscoveryResult } from "./model-discovery.js";
 import {
@@ -387,6 +389,7 @@ export class ModelRegistry {
 	private discoveredModels: Model<Api>[] = [];
 	private discoveryCache: ModelDiscoveryCache;
 	private modelsStore: ModelsStore;
+	private credentialStore: CredentialStore;
 	private providerRequestConfigs: Map<string, ProviderRequestConfig> = new Map();
 	private modelRequestHeaders: Map<string, Record<string, string>> = new Map();
 	private registeredProviders: Map<string, ProviderConfigInput> = new Map();
@@ -401,6 +404,7 @@ export class ModelRegistry {
 		modelsStore: ModelsStore | undefined,
 	) {
 		this.authStorage = authStorage;
+		this.credentialStore = new AuthStorageCredentialAdapter(authStorage);
 		this._modelsJsonPath = modelsJsonPath ? normalizePath(modelsJsonPath) : undefined;
 		this.discoveryCache = new ModelDiscoveryCache(
 			this._modelsJsonPath ? join(dirname(this._modelsJsonPath), "discovery-cache.json") : undefined,
@@ -1111,6 +1115,11 @@ export class ModelRegistry {
 	/** Canonical provider catalog store. */
 	getModelsStore(): ModelsStore {
 		return this.modelsStore;
+	}
+
+	/** Canonical credential-store adapter for v0.80 model runtime consumers. */
+	getCredentialStore(): CredentialStore {
+		return this.credentialStore;
 	}
 
 	private toDiscoveredModel(model: Model<Api>): import("./model-discovery.js").DiscoveredModel {

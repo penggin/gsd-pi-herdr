@@ -345,6 +345,27 @@ export class AuthStorage {
 		this.persistProviderChange(provider, undefined);
 	}
 
+	/** Atomic adapter seam for the v0.80 CredentialStore contract. */
+	async modifyCredential(
+		provider: string,
+		fn: (current: AuthCredential | undefined) => Promise<AuthCredential | undefined>,
+		options: { signal?: AbortSignal } = {},
+	): Promise<AuthCredential | undefined> {
+		options.signal?.throwIfAborted();
+		const result = await this.storage.withLockAsync(async (content) => {
+			options.signal?.throwIfAborted();
+			const data = content ? (JSON.parse(content) as AuthStorageData) : {};
+			const stored = data[provider];
+			const current = Array.isArray(stored) ? stored[0] : stored;
+			const next = await fn(current);
+			options.signal?.throwIfAborted();
+			if (next !== undefined) data[provider] = next;
+			return { result: next ?? current, next: JSON.stringify(data, null, 2) };
+		});
+		this.reload();
+		return result;
+	}
+
 	/**
 	 * List all providers with credentials.
 	 */

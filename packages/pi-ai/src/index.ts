@@ -2,6 +2,7 @@ export type { Static, TSchema } from "typebox";
 export { Type } from "typebox";
 
 export * from "./api-registry.js";
+export * from "./credential-store.js";
 export * from "./env-api-keys.js";
 export * from "./image-models.js";
 export * from "./images.js";
