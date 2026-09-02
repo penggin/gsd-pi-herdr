@@ -26,8 +26,7 @@ export class ThemeSelectorComponent extends Container {
 		const themes = getAvailableThemes();
 		const themeItems: SelectItem[] = themes.map((name) => ({
 			value: name,
-			label: name,
-			description: name === currentTheme ? "(current)" : undefined,
+			label: `${name === currentTheme ? "✓ " : "  "}${name}`,
 		}));
 
 		// Add top border

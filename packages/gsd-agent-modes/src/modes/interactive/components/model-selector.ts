@@ -430,15 +430,10 @@ export class ModelSelectorComponent extends Container implements Focusable {
 				? `[${providerDisplayName(item.provider)} · ${authLabel}]`
 				: `[${providerDisplayName(item.provider)}]`;
 			const providerBadge = theme.fg("muted", providerBadgeText);
-			const checkmark = isCurrent ? theme.fg("success", " ✓") : "";
-
-			let line: string;
-			if (isSelected) {
-				const prefix = theme.fg("accent", "→ ");
-				line = `${prefix}${theme.fg("accent", item.id)} ${ctxBadge} ${providerBadge}${checkmark}`;
-			} else {
-				line = `  ${item.id} ${ctxBadge} ${providerBadge}${checkmark}`;
-			}
+			const cursor = isSelected ? theme.fg("accent", "→ ") : "  ";
+			const currentMarker = isCurrent ? theme.fg("accent", "✓ ") : "  ";
+			const modelText = isSelected ? theme.fg("accent", item.id) : item.id;
+			const line = `${cursor}${currentMarker}${modelText} ${ctxBadge} ${providerBadge}`;
 
 			this.listContainer.addChild(new Text(line, 0, 0));
 		}
@@ -514,14 +509,10 @@ export class ModelSelectorComponent extends Container implements Focusable {
 
 				const ctx = formatTokenCount(row.item.model.contextWindow);
 				const ctxBadge = theme.fg("muted", ` ${ctx}`);
-				const checkmark = isCurrent ? theme.fg("success", " ✓") : "";
-
-				let line: string;
-				if (isSelected) {
-					line = `  ${theme.fg("accent", "→")} ${theme.fg("accent", row.item.id)}${ctxBadge}${checkmark}`;
-				} else {
-					line = `    ${row.item.id}${ctxBadge}${checkmark}`;
-				}
+				const cursor = isSelected ? theme.fg("accent", "→ ") : "  ";
+				const currentMarker = isCurrent ? theme.fg("accent", "✓ ") : "  ";
+				const modelText = isSelected ? theme.fg("accent", row.item.id) : row.item.id;
+				const line = `  ${cursor}${currentMarker}${modelText}${ctxBadge}`;
 
 				// Single-line: a long model id must truncate, not wrap — a
 				// wrapped row would break the fixed-height selection window.

@@ -2174,6 +2174,31 @@ this session does not merge, push, tag, or publish.
 - Exact next task: review, commit, and push the Zed compatibility slice; then
   adapt the selector-state corrections from `f2a622789` and `3fc3ef532` to the
   fork-owned `gsd-agent-modes` UI rather than copying obsolete upstream paths.
+- Began the selector-state adaptation in the fork-owned UI. Current thinking,
+  theme, model, and scoped-model values retain leading markers while browsing;
+  toggling a scoped model from the all-enabled state now disables only that
+  model instead of clearing the entire scope. The focused downstream marker and
+  toggle regression passes **5/5**, together with the existing selector footer
+  and theme regressions for **7/7**.
+- Pi patch inventory, extension typecheck, agent-modes and core builds, and all
+  compiled package suites pass — agent-core **139/139**, agent-modes **292/292**,
+  native **223 passed / 1 skipped**, pi-agent-core **3/3**, pi-ai **49/49**,
+  pi-coding-agent **72/72**, pi-tui **8/8**, contracts **9/9**, MCP server
+  **377/377**, and RPC client **30/30**. The package-local agent-modes command's
+  inherited shell glob only discovers nine top-level tests; the root compiled
+  package suite is therefore the authoritative complete package result.
+- Candidate dispositions: the applicable portions of `f2a622789` and
+  `3fc3ef532` are adapted here; their upstream trust selector, unavailable-model
+  rendering, and automatic dual-theme paths do not exist in this fork's UI.
+  `96317e50b` is rejected because spoofing a newer Claude Code user-agent adds
+  brittleness without a runtime capability. `8d1b1178c` and `853a80d26` are
+  upstream-only documentation/changelog changes, and `e266507b6` removes a
+  duplicate event the fork's split runtime never had. The current post-v0.84.4
+  candidate audit is otherwise covered by the isolated ports above.
+- Exact next task: review, commit, and push this selector adaptation, then build
+  one clean remote development artifact from the committed branch and deploy it
+  to a new immutable `penglab:/srv/penglab/gsd-runs/toolchains` prefix without
+  changing the Mac's global installation.
 
 ## 11. Working-session protocol
 

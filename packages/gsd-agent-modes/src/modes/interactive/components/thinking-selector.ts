@@ -30,7 +30,7 @@ export class ThinkingSelectorComponent extends Container {
 
 		const thinkingLevels: SelectItem[] = availableLevels.map((level) => ({
 			value: level,
-			label: level,
+			label: `${level === currentLevel ? "✓ " : "  "}${level}`,
 			description: LEVEL_DESCRIPTIONS[level],
 		}));
 

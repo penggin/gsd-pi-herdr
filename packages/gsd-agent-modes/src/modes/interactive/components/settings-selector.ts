@@ -246,7 +246,7 @@ export class SettingsSelectorComponent extends Container {
 						"Select reasoning depth for thinking-capable models",
 						config.availableThinkingLevels.map((level) => ({
 							value: level,
-							label: level,
+							label: `${level === currentValue ? "✓ " : "  "}${level}`,
 							description: THINKING_DESCRIPTIONS[level],
 						})),
 						currentValue,
@@ -268,7 +268,7 @@ export class SettingsSelectorComponent extends Container {
 						"Select color theme",
 						config.availableThemes.map((t) => ({
 							value: t,
-							label: t,
+							label: `${t === currentValue ? "✓ " : "  "}${t}`,
 						})),
 						currentValue,
 						(value) => {
