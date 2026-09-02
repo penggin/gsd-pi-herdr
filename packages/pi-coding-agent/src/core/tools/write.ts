@@ -5,7 +5,7 @@ import { dirname } from "path";
 import { type Static, Type } from "typebox";
 import { keyHint } from "../tool-ui/keybinding-hints.js";
 import { getLanguageFromPath, highlightCode } from "../../theme/theme.js";
-import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
+import type { ExtensionContext, ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
 import { withFileMutationQueue } from "./file-mutation-queue.js";
 import { resolveToCwd } from "./path-utils.js";
 import { getDisplayReason, invalidArgText, normalizeDisplayText, replaceTabs, shortenPath, str } from "./render-utils.js";
@@ -199,9 +199,9 @@ export function createWriteToolDefinition(
 			{ path, content }: { path: string; content: string },
 			signal?: AbortSignal,
 			_onUpdate?,
-			_ctx?,
+			ctx?: ExtensionContext,
 		) {
-			const absolutePath = resolveToCwd(path, cwd);
+			const absolutePath = resolveToCwd(path, ctx?.cwd || cwd);
 			const dir = dirname(absolutePath);
 			return withFileMutationQueue(absolutePath, async () => {
 				// Do not reject from an abort event listener here: that would release the

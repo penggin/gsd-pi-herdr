@@ -11,7 +11,7 @@ import { getLanguageFromPath, highlightCode, type Theme } from "../../theme/them
 import { formatDimensionNote, resizeImage } from "../../utils/image-resize.js";
 import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.js";
 import { formatPathRelativeToCwdOrAbsolute } from "../../utils/paths.js";
-import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
+import type { ExtensionContext, ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
 import { resolveReadPathAsync, resolveToCwd } from "./path-utils.js";
 import { getTextOutput, invalidArgText, replaceTabs, shortenPath, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
@@ -231,7 +231,7 @@ export function createReadToolDefinition(
 			{ path, offset, limit }: { path: string; offset?: number; limit?: number },
 			signal?: AbortSignal,
 			_onUpdate?,
-			ctx?,
+			ctx?: ExtensionContext,
 		) {
 			return new Promise<{ content: (TextContent | ImageContent)[]; details: ReadToolDetails | undefined }>(
 				(resolve, reject) => {
@@ -248,7 +248,7 @@ export function createReadToolDefinition(
 
 					(async () => {
 						try {
-							const absolutePath = await resolveReadPathAsync(path, cwd);
+							const absolutePath = await resolveReadPathAsync(path, ctx?.cwd || cwd);
 							if (aborted) return;
 							// Check if file exists and is readable.
 							await ops.access(absolutePath);

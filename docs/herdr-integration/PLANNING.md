@@ -2149,6 +2149,19 @@ this session does not merge, push, tag, or publish.
 - Exact next task: review, commit, and push the restricted-runtime terminal
   slice, then port and validate the cwd-sensitive tool execution correction
   from `62835ea81` against the fork's extension context seam.
+- Ported the runtime half of upstream `62835ea81` against the fork's current
+  tool definitions. Bash, read, write, edit, find, grep, and ls now prefer the
+  invocation-time `ExtensionContext.cwd`, while preserving their construction
+  cwd fallback for ordinary callers. The focused seven-tool regression passes
+  **7/7** (and **8/8** together with the write-result regression).
+- Pi patch inventory, extension typecheck, coding-agent and core builds, and all
+  package suites pass — agent-core **139/139**, agent-modes **287/287**, native
+  **223 passed / 1 skipped**, pi-agent-core **3/3**, pi-ai **49/49**,
+  pi-coding-agent **72/72**, pi-tui **8/8**, contracts **9/9**, MCP server
+  **377/377**, and RPC client **30/30**.
+- Exact next task: review, commit, and push the context-cwd slice; then record
+  explicit dispositions for the remaining current upstream candidates before
+  selecting any further isolated compatibility work.
 
 ## 11. Working-session protocol
 

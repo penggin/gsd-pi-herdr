@@ -17,7 +17,7 @@ import {
 	trackDetachedChildPid,
 	untrackDetachedChildPid,
 } from "../../utils/shell.js";
-import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
+import type { ExtensionContext, ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
 import { OutputAccumulator } from "./output-accumulator.js";
 import { getDisplayReason, getTextOutput, invalidArgText, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
@@ -333,10 +333,10 @@ export function createBashToolDefinition(
 			{ command, timeout }: { command: string; timeout?: number },
 			signal?: AbortSignal,
 			onUpdate?,
-			_ctx?,
+			ctx?: ExtensionContext,
 		) {
 			const resolvedCommand = commandPrefix ? `${commandPrefix}\n${command}` : command;
-			const spawnContext = resolveSpawnContext(resolvedCommand, cwd, spawnHook);
+			const spawnContext = resolveSpawnContext(resolvedCommand, ctx?.cwd || cwd, spawnHook);
 			const output = new OutputAccumulator({ tempFilePrefix: "pi-bash" });
 			let updateTimer: NodeJS.Timeout | undefined;
 			let updateDirty = false;

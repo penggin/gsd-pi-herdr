@@ -7,7 +7,7 @@ import path from "path";
 import { type Static, Type } from "typebox";
 import { keyHint } from "../tool-ui/keybinding-hints.js";
 import { ensureTool } from "../../utils/tools-manager.js";
-import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
+import type { ExtensionContext, ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
 import { resolveToCwd } from "./path-utils.js";
 import { getTextOutput, invalidArgText, shortenPath, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
@@ -151,7 +151,7 @@ export function createGrepToolDefinition(
 			},
 			signal?: AbortSignal,
 			_onUpdate?,
-			_ctx?,
+			ctx?: ExtensionContext,
 		) {
 			return new Promise((resolve, reject) => {
 				if (signal?.aborted) {
@@ -174,7 +174,7 @@ export function createGrepToolDefinition(
 							return;
 						}
 
-						const searchPath = resolveToCwd(searchDir || ".", cwd);
+						const searchPath = resolveToCwd(searchDir || ".", ctx?.cwd || cwd);
 						const ops = customOps ?? defaultGrepOperations;
 						let isDirectory: boolean;
 						try {

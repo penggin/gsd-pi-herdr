@@ -6,7 +6,7 @@ import path from "path";
 import { type Static, Type } from "typebox";
 import { keyHint } from "../tool-ui/keybinding-hints.js";
 import { ensureTool } from "../../utils/tools-manager.js";
-import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
+import type { ExtensionContext, ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
 import { pathExists, resolveToCwd } from "./path-utils.js";
 import { getTextOutput, invalidArgText, shortenPath, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
@@ -124,7 +124,7 @@ export function createFindToolDefinition(
 			{ pattern, path: searchDir, limit }: { pattern: string; path?: string; limit?: number },
 			signal?: AbortSignal,
 			_onUpdate?,
-			_ctx?,
+			ctx?: ExtensionContext,
 		) {
 			return new Promise((resolve, reject) => {
 				if (signal?.aborted) {
@@ -149,7 +149,7 @@ export function createFindToolDefinition(
 
 				(async () => {
 					try {
-						const searchPath = resolveToCwd(searchDir || ".", cwd);
+						const searchPath = resolveToCwd(searchDir || ".", ctx?.cwd || cwd);
 						const effectiveLimit = limit ?? DEFAULT_LIMIT;
 						const ops = customOps ?? defaultFindOperations;
 

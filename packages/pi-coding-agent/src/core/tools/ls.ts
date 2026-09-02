@@ -4,7 +4,7 @@ import { Text } from "@gsd/pi-tui";
 import nodePath from "path";
 import { type Static, Type } from "typebox";
 import { keyHint } from "../tool-ui/keybinding-hints.js";
-import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
+import type { ExtensionContext, ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
 import { pathExists, resolveToCwd } from "./path-utils.js";
 import { getTextOutput, invalidArgText, shortenPath, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
@@ -112,7 +112,7 @@ export function createLsToolDefinition(
 			{ path, limit }: { path?: string; limit?: number },
 			signal?: AbortSignal,
 			_onUpdate?,
-			_ctx?,
+			ctx?: ExtensionContext,
 		) {
 			return new Promise((resolve, reject) => {
 				if (signal?.aborted) {
@@ -125,7 +125,7 @@ export function createLsToolDefinition(
 
 				(async () => {
 					try {
-						const dirPath = resolveToCwd(path || ".", cwd);
+						const dirPath = resolveToCwd(path || ".", ctx?.cwd || cwd);
 						const effectiveLimit = limit ?? DEFAULT_LIMIT;
 
 						// Check if path exists.
