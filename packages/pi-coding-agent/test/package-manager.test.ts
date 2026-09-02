@@ -5,6 +5,7 @@ import { join, relative } from "node:path";
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DefaultPackageManager, type ProgressEvent, type ResolvedResource } from "../src/core/package-manager.ts";
+import { formatSkillsForPrompt, loadSkills } from "../src/core/skills.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 
 function normalizeForMatch(value: string): string {
@@ -510,13 +511,35 @@ Content`,
 			expect(result.skills.some((r) => r.path === middleSkill && r.enabled)).toBe(true);
 		});
 
-		it("should ignore root markdown files in .agents/skills", async () => {
+		it("should ignore root markdown files in .agents/skills but discover nested markdown skills", async () => {
 			const agentsSkillsDir = join(tempDir, ".agents", "skills");
 			mkdirSync(join(agentsSkillsDir, "nested-skill"), { recursive: true });
+			mkdirSync(join(agentsSkillsDir, "third-party", "vendor", "pack"), { recursive: true });
 			const rootSkill = join(agentsSkillsDir, "root-file.md");
 			const nestedSkill = join(agentsSkillsDir, "nested-skill", "SKILL.md");
+			const nestedMarkdownSkill = join(agentsSkillsDir, "third-party", "child-skill.md");
+			const deeplyNestedMarkdownSkill = join(agentsSkillsDir, "third-party", "vendor", "pack", "deep-skill.md");
 			writeFileSync(rootSkill, "---\nname: root-file\ndescription: Root markdown file\n---\n");
 			writeFileSync(nestedSkill, "---\nname: nested-skill\ndescription: Nested skill\n---\n");
+			writeFileSync(
+				nestedMarkdownSkill,
+				[
+					"---",
+					"name: child-skill",
+					"description: Nested report-only gate",
+					"gsd:",
+					"  kind: assessment-gate",
+					"  invocation: manual",
+					"  lifecycle: [post-validation]",
+					"  effect: report-only",
+					"  revisionBinding: required",
+					"  resultSchema: gsd.findings/v1",
+					"  capabilities: [repository.read]",
+					"---",
+					"Nested gate body",
+				].join("\n"),
+			);
+			writeFileSync(deeplyNestedMarkdownSkill, "---\nname: deep-skill\ndescription: Deep markdown skill\n---\n");
 
 			const pm = new DefaultPackageManager({
 				cwd: join(tempDir, "work"),
@@ -528,6 +551,19 @@ Content`,
 			const result = await pm.resolve();
 			expect(result.skills.some((r) => r.path === rootSkill)).toBe(false);
 			expect(result.skills.some((r) => r.path === nestedSkill && r.enabled)).toBe(true);
+			expect(result.skills.some((r) => r.path === nestedMarkdownSkill && r.enabled)).toBe(true);
+			expect(result.skills.some((r) => r.path === deeplyNestedMarkdownSkill && r.enabled)).toBe(true);
+
+			const loaded = loadSkills({
+				cwd: join(tempDir, "work"),
+				agentDir,
+				skillPaths: result.skills.filter((resource) => resource.enabled).map((resource) => resource.path),
+				includeDefaults: false,
+			});
+			const gate = loaded.skills.find((skill) => skill.name === "child-skill");
+			expect(gate?.gsd?.kind).toBe("assessment-gate");
+			expect(gate?.disableModelInvocation).toBe(true);
+			expect(formatSkillsForPrompt(loaded.skills)).not.toContain("Nested gate body");
 		});
 
 		it("should keep ~/.agents/skills user-scoped when cwd is under home in a non-git directory", async () => {

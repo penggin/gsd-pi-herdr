@@ -1560,6 +1560,35 @@ this session does not merge, push, tag, or publish.
   v0.84.3 nested `.agents/skills/` discovery and health diagnostics against the
   downstream Assessment Gate metadata/parser. Add compatibility tests before
   changing discovery precedence or diagnostics.
+- Audited upstream `5e11f6586` and the related startup/settings diagnostics.
+  Downstream already has the stronger directory model (nearest-first ancestor
+  `.agents/skills` discovery through the git root), namespaced Assessment Gate
+  validation, fatal/advisory health diagnostics, and gate catalog separation.
+  Those paths were retained instead of importing upstream's competing settings
+  diagnostic surface.
+- Added the one missing compatibility rule: root-level arbitrary Markdown in an
+  `.agents/skills` directory remains ignored, but `.md` skills nested inside a
+  vendor/pack subtree are now discovered at any depth. All discovered files
+  still pass through the existing skill frontmatter and GSD metadata validator;
+  a nested `assessment-gate` remains forced out of the ordinary model prompt.
+- Targeted upstream-style discovery and GSD metadata tests pass **2/2**, and a
+  new downstream compiled contract proves nested gate discovery/catalog
+  isolation **1/1**. `typecheck:extensions`, `build:core`, `git diff --check`,
+  and all ten compiled package suites pass; counts are agent-core **136/136**,
+  agent-modes **287/287**, native **223 pass / 1 platform skip**,
+  pi-agent-core **3/3**, pi-ai **49/49**, coding-agent **69/69**, pi-tui
+  **8/8**, contracts **9/9**, MCP **377/377**, and RPC client **30/30**.
+- Known test-harness limitation: the full inherited
+  `packages/pi-coding-agent/test/package-manager.test.ts` has 12 pre-existing
+  expectations tied to upstream `.pi` directories and install paths; the
+  changed test and its metadata companion pass when targeted, while the
+  downstream compiled suite is the authoritative full regression gate.
+- Exact next task: commit and push this nested-skill compatibility slice. This
+  closes the audited priority-2 set (extension/tool lifecycle, provider/model
+  store and affinity, startup transpilation, and skill discovery). Before any
+  priority-3 code import, write a dedicated migration plan for the v0.84
+  harness/session-v4 and provider-directory reorganization, including GSD DB,
+  Herdr worker, JSONL, compaction, and Assessment Gate compatibility boundaries.
 
 ## 11. Working-session protocol
 
