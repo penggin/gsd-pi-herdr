@@ -1859,6 +1859,31 @@ this session does not merge, push, tag, or publish.
   settlement against upstream `82c485983` through `9cde1725d`. Do not replace
   the downstream harness with the v0.84.4 scaffold and do not select v4 at
   runtime yet.
+- Reconciled harness operation ownership and shutdown semantics. Prompt, skill,
+  prompt-template, compaction, and branch navigation now share one active
+  abort-controller contract and are tracked independently from idle session
+  mutations. `waitForIdle()` waits only for an operation; idempotent
+  `shutdown()` rejects future work, clears queued/pending work, aborts the active
+  operation, and waits for both operations and already-started mutations.
+- Compaction and branch hooks/provider calls receive the active operation signal.
+  A shutdown after a provider call begins cannot persist a late compaction or
+  move the session leaf, while ordinary `abort()` cancels compaction without
+  permanently closing the harness. Normal compaction/navigation settlement now
+  flushes listener-queued session writes instead of leaving them pending until a
+  later prompt.
+- Focused lifecycle and harness verification passes **42/42**, covering active
+  prompt shutdown, idempotent close, post-close rejection, compaction abort and
+  reuse, late compaction suppression, branch-leaf preservation, and shutdown
+  waiting for a blocked idle mutation.
+- Full regression gates pass: `verify:pi-patches`, extension typecheck,
+  `build:core`, `test:packages`, and `git diff --check`. Package counts remain
+  **136/136**, **287/287**, **223/224 with one native skip**, **3/3**, **49/49**,
+  **72/72**, **8/8**, **9/9**, **377/377**, and **30/30** across the ten package
+  runners.
+- Exact next task: commit and push the operation-lifecycle slice, then port
+  usage aggregation/persistence for generated compaction, branch summaries,
+  and tool results while keeping GSD workflow accounting and session-v4 usage
+  ledgers separate.
 
 ## 11. Working-session protocol
 

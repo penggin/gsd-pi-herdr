@@ -4,7 +4,7 @@ import { AgentHarness } from "../../src/harness/agent-harness.ts";
 import { NodeExecutionEnv } from "../../src/harness/env/nodejs.ts";
 import { InMemorySessionStorage } from "../../src/harness/session/memory-storage.ts";
 import { Session } from "../../src/harness/session/session.ts";
-import type { PromptTemplate, Skill } from "../../src/harness/types.ts";
+import type { PromptTemplate, SessionTreeEntry, Skill } from "../../src/harness/types.ts";
 import type { AgentMessage, AgentTool } from "../../src/types.ts";
 import { calculateTool } from "../utils/calculate.ts";
 import { getCurrentTimeTool } from "../utils/get-current-time.ts";
@@ -43,6 +43,17 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
 	return { promise, resolve };
 }
 
+class BlockingSessionStorage extends InMemorySessionStorage {
+	readonly writeStarted = deferred();
+	readonly releaseWrite = deferred();
+
+	override async appendEntry(entry: SessionTreeEntry): Promise<void> {
+		this.writeStarted.resolve();
+		await this.releaseWrite.promise;
+		await super.appendEntry(entry);
+	}
+}
+
 function getReasoning(options: unknown): unknown {
 	if (!options || typeof options !== "object" || !("reasoning" in options)) return undefined;
 	return options.reasoning;
@@ -77,6 +88,178 @@ describe("AgentHarness", () => {
 		harness.setFollowUpMode("one-at-a-time");
 		expect(harness.getSteeringMode()).toBe("one-at-a-time");
 		expect(harness.getFollowUpMode()).toBe("one-at-a-time");
+	});
+
+	it("shutdown aborts and awaits an active prompt and rejects future work", async () => {
+		const registration = registerFauxProvider();
+		registrations.push(registration);
+		const entered = deferred();
+		const release = deferred();
+		let signal: AbortSignal | undefined;
+		registration.setResponses([
+			async (_context, options) => {
+				signal = options?.signal;
+				entered.resolve();
+				await release.promise;
+				return fauxAssistantMessage("finished after shutdown");
+			},
+		]);
+		const harness = new AgentHarness({
+			env: new NodeExecutionEnv({ cwd: process.cwd() }),
+			session: new Session(new InMemorySessionStorage()),
+			model: registration.getModel(),
+		});
+
+		const prompt = harness.prompt("hello");
+		await entered.promise;
+		let shutdownSettled = false;
+		const shutdown = harness.shutdown().then(() => {
+			shutdownSettled = true;
+		});
+		const secondShutdown = harness.shutdown();
+		await Promise.resolve();
+
+		expect(signal?.aborted).toBe(true);
+		expect(shutdownSettled).toBe(false);
+		release.resolve();
+		await expect(prompt).resolves.toMatchObject({ role: "assistant" });
+		await Promise.all([shutdown, secondShutdown]);
+		await expect(harness.prompt("again")).rejects.toMatchObject({
+			code: "invalid_state",
+			message: "AgentHarness has been shut down",
+		});
+		await expect(harness.nextTurn("again")).rejects.toMatchObject({ code: "invalid_state" });
+	});
+
+	it("shutdown prevents an active compaction result from being persisted", async () => {
+		const registration = registerFauxProvider();
+		registrations.push(registration);
+		const entered = deferred();
+		const release = deferred();
+		let signal: AbortSignal | undefined;
+		registration.setResponses([
+			async (_context, options) => {
+				signal = options?.signal;
+				entered.resolve();
+				await release.promise;
+				return fauxAssistantMessage("summary produced after shutdown");
+			},
+		]);
+		const session = new Session(new InMemorySessionStorage());
+		await session.appendMessage({ role: "user", content: "one", timestamp: Date.now() });
+		await session.appendMessage(fauxAssistantMessage("two"));
+		const harness = new AgentHarness({
+			env: new NodeExecutionEnv({ cwd: process.cwd() }),
+			session,
+			model: registration.getModel(),
+			getApiKeyAndHeaders: async () => ({ apiKey: "secret" }),
+		});
+
+		const compaction = harness.compact();
+		await entered.promise;
+		const shutdown = harness.shutdown();
+		expect(signal?.aborted).toBe(true);
+		release.resolve();
+
+		await expect(compaction).rejects.toMatchObject({ code: "compaction" });
+		await shutdown;
+		expect((await session.getEntries()).some((entry) => entry.type === "compaction")).toBe(false);
+	});
+
+	it("abort cancels active compaction and leaves the harness reusable", async () => {
+		const registration = registerFauxProvider();
+		registrations.push(registration);
+		const entered = deferred();
+		const release = deferred();
+		let signal: AbortSignal | undefined;
+		registration.setResponses([
+			async (_context, options) => {
+				signal = options?.signal;
+				entered.resolve();
+				await release.promise;
+				return fauxAssistantMessage("cancelled summary");
+			},
+			fauxAssistantMessage("successful summary"),
+		]);
+		const session = new Session(new InMemorySessionStorage());
+		await session.appendMessage({ role: "user", content: "one", timestamp: Date.now() });
+		await session.appendMessage(fauxAssistantMessage("two"));
+		const harness = new AgentHarness({
+			env: new NodeExecutionEnv({ cwd: process.cwd() }),
+			session,
+			model: registration.getModel(),
+			getApiKeyAndHeaders: async () => ({ apiKey: "secret" }),
+		});
+
+		const firstCompaction = harness.compact();
+		await entered.promise;
+		const abort = harness.abort();
+		expect(signal?.aborted).toBe(true);
+		release.resolve();
+
+		await expect(firstCompaction).rejects.toMatchObject({ code: "compaction" });
+		await expect(abort).resolves.toEqual({ clearedSteer: [], clearedFollowUp: [] });
+		await expect(harness.compact()).resolves.toMatchObject({ summary: expect.stringContaining("successful summary") });
+	});
+
+	it("shutdown prevents active branch summarization from moving the leaf", async () => {
+		const registration = registerFauxProvider();
+		registrations.push(registration);
+		const entered = deferred();
+		const release = deferred();
+		let signal: AbortSignal | undefined;
+		registration.setResponses([
+			async (_context, options) => {
+				signal = options?.signal;
+				entered.resolve();
+				await release.promise;
+				return fauxAssistantMessage("summary produced after shutdown");
+			},
+		]);
+		const session = new Session(new InMemorySessionStorage());
+		const targetId = await session.appendMessage({ role: "user", content: "first", timestamp: Date.now() });
+		await session.appendMessage(fauxAssistantMessage("first reply"));
+		await session.appendMessage({ role: "user", content: "abandoned", timestamp: Date.now() });
+		const originalLeafId = await session.appendMessage(fauxAssistantMessage("abandoned reply"));
+		const harness = new AgentHarness({
+			env: new NodeExecutionEnv({ cwd: process.cwd() }),
+			session,
+			model: registration.getModel(),
+			getApiKeyAndHeaders: async () => ({ apiKey: "secret" }),
+		});
+
+		const navigation = harness.navigateTree(targetId, { summarize: true });
+		await entered.promise;
+		const shutdown = harness.shutdown();
+		expect(signal?.aborted).toBe(true);
+		release.resolve();
+
+		await expect(navigation).resolves.toEqual({ cancelled: true });
+		await shutdown;
+		expect(await session.getLeafId()).toBe(originalLeafId);
+	});
+
+	it("shutdown awaits an idle session mutation without making it an active operation", async () => {
+		const storage = new BlockingSessionStorage();
+		const harness = new AgentHarness({
+			env: new NodeExecutionEnv({ cwd: process.cwd() }),
+			session: new Session(storage),
+			model: getModel("anthropic", "claude-sonnet-4-5"),
+		});
+		const mutation = harness.appendMessage({ role: "user", content: "concurrent", timestamp: Date.now() });
+		await storage.writeStarted.promise;
+
+		await expect(harness.waitForIdle()).resolves.toBeUndefined();
+		let shutdownSettled = false;
+		const shutdown = harness.shutdown().then(() => {
+			shutdownSettled = true;
+		});
+		await Promise.resolve();
+		expect(shutdownSettled).toBe(false);
+		storage.releaseWrite.resolve();
+
+		await Promise.all([mutation, shutdown]);
+		expect(await storage.getEntries()).toHaveLength(1);
 	});
 
 	it("drains one queued steering message at a time and emits queue updates", async () => {
