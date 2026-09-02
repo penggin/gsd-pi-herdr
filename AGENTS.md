@@ -33,8 +33,9 @@ Before ending the session:
 ## Downstream repository policy
 
 - `main` is the downstream integration/release line; feature work stays on focused branches until reviewed.
-- Do not fetch, pull, push, open issues, create PRs, publish, or otherwise make network requests against the original source project.
-- Source lineage is historical metadata only. Any future source import requires explicit user authorization and a new decision record.
+- Read-only upstream research, fetches, and source comparisons are permitted when evaluating or importing updates.
+- Do not push, open issues, create PRs, publish, or otherwise mutate an upstream source project unless the user explicitly requests that external action.
+- Record reviewed source imports and any downstream compatibility decisions in the appropriate planning or decision document.
 - Runtime, CI, release, installer, documentation, and support links must target `penggin/gsd-pi-herdr` or remain local.
 - Prefer normal abstractions over tiny patch seams when the downstream architecture benefits from a proper refactor.
 - Preserve inherited behavior unless a downstream decision explicitly changes it, and run the relevant regression matrix for every intentional change.

@@ -1,7 +1,7 @@
 # GSD–Herdr Living Plan
 
 > **Status:** M0–M7 and final downstream-isolation revalidation complete
-> **Last updated:** 2026-08-31
+> **Last updated:** 2026-09-02
 > **Current milestone:** Complete — downstream-only install and release validation passed
 > **Canonical rule:** Every Herdr-integration development session starts by reading this file and ends by updating it.
 
@@ -662,6 +662,430 @@ this session does not merge, push, tag, or publish.
   implementation, then perform the non-destructive operational check above in
   the existing Herdr session. No merge, tag, registry publish, or source-project
   request was performed.
+
+### 2026-09-01 — Accepted submission startup watchdog
+
+- Investigated a live `validate-milestone` parallel dispatch whose parent
+  remained inside the public `subagent` tool for more than ten minutes while
+  every visible worker row was idle. Root runtime
+  `root-8bb159efa1ca5c8bc26c`, dispatch
+  `dispatch-163718e51c269906fab7` contained two completed children with
+  `exitCode=0`, immutable exit evidence, and `ownership.status=settled`.
+  Third child `child-cba0ff9b98f83f37ca24` remained
+  `ownership.status=submitted` on pane `w5:p8`; it still had `env.json` and had
+  never produced `state.json`, `heartbeat.json`, `stdout.jsonl`, or `exit.json`.
+  The root heartbeat remained active, proving this was a lost worker startup,
+  not completed-child relay latency or a dead parent.
+- Root cause: `pane run` success was treated as sufficient launch progress, but
+  the liveness loop deliberately skipped checks while `state.json` was absent.
+  A live idle pane could therefore keep the backend pending until the normal
+  30-minute execution timeout, which also held the parent `Promise.all` open.
+- HerdrBackend now requires the private worker to publish durable startup
+  evidence within ten seconds after an accepted submission. Missing evidence
+  sends `ctrl+c` to the exact reserved pane, records the execution as orphaned,
+  failure-retains the pane/artifacts, and returns an explicit runtime error to
+  the common semantic runner. It never retries the ambiguous submission or
+  falls back to Local execution.
+- Added a regression for an accepted submission whose pane survives but never
+  starts the worker. The test also verifies exact-pane interruption, orphaned
+  ownership, failure retention, and absence of successful authority cleanup.
+  Stabilized the existing pane-loss fixture so it deterministically tests pane
+  disappearance rather than racing an intentionally dead fake runner PID.
+- Verification: HerdrBackend **8/8 pass**; execution/backend and Local↔Herdr
+  semantic parity **57/57 pass**; compiled changed-source **8/8 pass**; Herdr
+  integration/automation **19/19 pass**; `typecheck:extensions`, `build:core`,
+  `NPM_CONFIG_USERCONFIG=/dev/null pnpm run validate-pack`, and
+  `git diff --check` pass. Packaging again completed isolated and global-root
+  checks with **`Package is installable. Safe to publish.`**
+- Installed the verified development tarball globally and repaired/relinked its
+  packaged workspace dependencies. Global `gsd --version` returns `1.16.2`,
+  `@gsd/pi-coding-agent` imports successfully, and the installed backend
+  contains the ten-second startup watchdog and bounded runtime error path.
+- Known operational limitation: already-running root GSD processes keep the old
+  backend module and cannot be repaired in place from outside their managed
+  Herdr pane. The currently hung tool must be cancelled and the root GSD process
+  restarted after installing this build. Exact next task is a public three-way
+  parallel dispatch in that restarted root, confirming either three completed
+  children or a bounded startup error in roughly ten seconds rather than an
+  indefinite parent wait.
+
+### 2026-09-01 — Herdr human-input attention state
+
+- Implemented the existing root-state contract that maps GSD human-input
+  boundaries to Herdr `blocked`. Universal `tool_execution_start` and
+  `tool_execution_end` hooks now recognize native and MCP-scoped
+  `ask_user_questions`/`secure_env_collect` calls, track their call IDs, and
+  restore the surrounding working/idle lifecycle only after every outstanding
+  input request settles.
+- Added the same bounded projection to JSON-mode Herdr workers. A worker with a
+  configured remote question transport now shows `awaiting user input` while
+  waiting; a headless worker without that transport settles through its existing
+  explicit UI-unavailable result and cannot remain falsely blocked. Worker stdin
+  remains intentionally unavailable and is not an answer surface.
+- The shared presentation emits only an input category and question count.
+  Question text, options, answers, secure field names, and collected values are
+  excluded from Herdr state and worker terminal activity. Agent end, reload,
+  shutdown, cancellation, and matching tool completion clear stale attention.
+- Added privacy, native/MCP normalization, nested-call, state restoration, and
+  stale-cleanup regressions. Focused root/worker tests **19/19 pass**, full Herdr
+  root/worker/backend/pane/runtime regression **80/80 pass**, and
+  `typecheck:extensions` passes. Backend execution regression **41/41 pass**,
+  Local↔Herdr semantic parity/subagent regression **16/16 pass**, compiled
+  changed-source gate **21/21 pass**, and integration/automation **19/19 pass**.
+  `build:core`, `validate-pack`, and `git diff --check` pass; packaging included
+  the new shared module and completed isolated/global-root installation with
+  **`Package is installable. Safe to publish.`** The isolated package check
+  still emits the known native-addon fallback because the platform package is
+  not registry-published; this does not change the attention-state contract.
+- No live TUI question was triggered in the user's active Herdr workspace during
+  implementation. Exact next operational check after installing the resulting
+  build is to invoke one public root `ask_user_questions`, verify the root row
+  changes `working → blocked → working`, then verify one configured remote
+  worker question follows `working → blocked → working` without exposing prompt
+  content. No new architecture decision was required because this completes the
+  input-to-`blocked` mapping already specified in `ARCHITECTURE.md`.
+
+### 2026-09-01 — Native completion and blocked notifications
+
+- Added Herdr v0.8.2 `notification.show` to the runtime client and required
+  capability contract. Live schema inspection confirmed `done`/`request` sounds
+  and delivery reasons `shown`, `disabled`, `rate_limited`,
+  `no_foreground_client`, and `busy`; the supported v0.8.2 capability check
+  passes with all **14/14 required methods** present.
+- Root normal `agent_end` now requests one `GSD finished` notification after the
+  idle debounce. Duplicate terminal events for the same turn are deduplicated.
+  The first transition into question/secure-input/failure
+  `blocked` requests `GSD needs attention`; repeated updates inside that blocked
+  interval are suppressed, returning to working resets the interval, and a
+  quickly settled question cannot emit a stale delayed notification.
+- Worker completion requests `GSD worker finished`; question/action/failure
+  blocked intervals request `GSD worker needs attention`. Completed uses sound
+  `done`, blocked uses `request`, failed-after-already-blocked is deduplicated,
+  and aborted workers do not produce a misleading completion notification.
+- Notification titles are fixed and bodies are single-line, 160-character
+  bounded, and credential-redacted. Question text/options/answers and secure
+  input details are not included. Delivery is best-effort: notification failure
+  is caught and cannot change lifecycle state, backend semantics, or exit
+  evidence (ADR-H021).
+- Verification: notification/client/root/worker/capability focused suite **35/35
+  pass**; full Herdr root/worker/backend/pane/runtime suite **89/89 pass**;
+  compiled changed-source
+  gate **39/39 pass**; backend regression **41/41 pass**; Local↔Herdr semantic
+  parity/subagent regression **16/16 pass**; integration/automation **19/19
+  pass**; `typecheck:extensions`, `build:core`, `validate-pack`, and
+  `git diff --check` pass. Packaging contains the notification client and both
+  reporters and completed with **`Package is installable. Safe to publish.`**
+- A real Herdr v0.8.2 CLI smoke sent `GSD notification integration verified`
+  with sound `done`; the live server returned
+  `notification_show { shown: true, reason: "shown" }`. Exact next operational
+  check after installing this build is one real root question and one real
+  completion, confirming request/done sounds and no duplicate alert while the
+  question stays blocked.
+
+### 2026-09-02 — Verification-retry dispatch scope incident
+
+- Investigated production wedge `W-6aa93846` for `execute-task M013/S01/T01`.
+  Attempt 1 and coordination dispatch 4 had already settled
+  `succeeded`/`completed`. Verification then requested a durable retry after
+  derived state advanced to T02. Retry dispatches 5 and 6 retained canonical
+  `unit_id=M013/S01/T01` but incorrectly copied `task_id=T02` from
+  `state.activeTask`; `attempt.claim` correctly rejected both with `Task Attempt
+  claim must activate exactly one matching coordination dispatch`.
+- `openDispatchClaim()` now derives slice/task coordination scope from the
+  canonical `unitId`, not the mutable prompt/state snapshot. This keeps a
+  verification retry bound to T01 even when ordinary state derivation already
+  points at T02. GSD remains the only authority for the retry and Task Attempt;
+  no project DB row was edited or removed during diagnosis.
+- Added a focused payload regression and an integrated UnitRun →
+  `claimTaskAttempt()` regression reproducing the exact advanced-state shape.
+  Focused dispatch/UnitRun/Task-cutover tests **72/72 pass**, full auto-loop and
+  orchestrator regression **192/192 pass**, compiled changed-source gate
+  **63/63 pass**, and `typecheck:extensions` passes.
+- Built and installed the repaired `1.16.2` package globally. npm's local
+  `allow-scripts` policy skipped postinstall, so managed resources were synced
+  explicitly; the deployed adapter imports `parseUnitId` and no longer reads
+  `state.activeTask` for dispatch scope. The root package now includes
+  `native/addon/*.node`, the installed darwin-arm64 addon reports
+  `nativeLoaded=true`, and the previous JS-fallback warning is no longer
+  expected for new processes. Final package validation passed at 9,471 entries
+  and 279.6 MB unpacked with **`Package is installable. Safe to publish.`**
+- Exact next operational task: restart the root GSD process so it loads the new
+  dispatch adapter, then acknowledge the preserved wedge with
+  `/gsd auto --resume-wedge W-6aa93846`. The failed
+  dispatch rows are immutable history and need no direct repair; the next
+  canonical retry will mint a correctly scoped dispatch. Do not run broad
+  `/gsd doctor fix` against the migrated project until its unrelated snapshot
+  and legacy-validation diagnostics are reviewed separately.
+
+### 2026-09-02 — Coalesced worker thinking and assistant output
+
+- Extended the private worker pane renderer to show provider-emitted reasoning
+  and assistant text as labelled `◇ thinking:` and `› assistant:` lines in
+  addition to existing lifecycle/tool activity. Streaming `message_update`
+  records are never printed directly: deltas are buffered until newline or
+  content-block boundaries, line-wrapped, and capped at 16,000 characters per
+  kind per assistant message.
+- Preserved the raw-stream boundary: `stdout.jsonl` and the parent callback
+  still receive exact complete JSONL records in order, while the pane receives
+  only the derived human projection. Model text updates last-activity evidence
+  without changing Herdr lifecycle status, GSD result parsing, usage, retry, or
+  pane-release authority.
+- Added cross-delta credential redaction, terminal escape/control stripping,
+  duplicate end-content suppression, and explicit truncation activity. Only
+  reasoning actually emitted by the provider is displayable; hidden model state
+  is not inferred.
+- Focused activity/runner regression **19/19 passes**; full Herdr
+  worker/backend/runtime regression **109/109 passes**; changed-source gate
+  **77/77 passes**; Local↔Herdr semantic parity and launch regression **26/26
+  passes**. `typecheck:extensions`, `build:core`, `validate-pack`, and
+  `git diff --check` pass, with packaging reporting **`Package is installable.
+  Safe to publish.`**
+- Repacked and installed `1.16.2` globally, explicitly synchronized the managed
+  `~/.gsd/agent` resources after npm skipped postinstall under its local
+  `allow-scripts` policy, and verified both installed copies contain the 16,000
+  character cap and labelled projections. An installed-module smoke rendered
+  exact `◇ thinking: Inspecting worker state` and `› assistant: Worker output
+  ready`; the bundled darwin-arm64 addon still reports `nativeLoaded=true`.
+  Exact next operational task is to restart the root GSD process and run one
+  real public subagent dispatch, confirming the same output in its actual Herdr
+  pane without raw JSON or token-fragment flood.
+
+### 2026-09-02 — Selective GSD Pi upstream hardening import
+
+- Compared the current downstream branch with the locally cached
+  `upstream/main` (`2a1882e9`, last locally updated 2026-09-02) without fetching
+  or contacting the original project. Imported the coordination watchdog fix
+  so long-running `subagent`/`Task` calls remain bounded by the unit hard
+  timeout but are not falsely aborted by the shorter stalled-tool timeout
+  (`a476b32f`). Dedicated regression: **4/4 pass**.
+- Imported the evidence-backed lifecycle shadow repair series (`754735d0`,
+  `e21e726e`, `72ab25e0`, `516f602c`). Validation can now repair supported
+  legacy Task/Slice shadows before closeout, sibling corroboration remains
+  evidence-bound, legacy completed slices no longer deadlock reopen/closeout,
+  and reassessment metadata correction advances descendant task lifecycles.
+  Focused lifecycle/current-dispatch regression: **164/164 pass**.
+- Imported DB-authoritative progress reads (`9b07dc1b`) across the CLI and MCP
+  seams. Adapted the upstream newer-schema test to the downstream schema version
+  and package identity instead of hard-coding v48 and `@opengsd/gsd-pi`.
+  Focused DB/MCP/Assessment Gate regression: **198/198 pass** after adaptation.
+- Added the self-repairing `dist/bootstrap.js` bin entry, installed-package link
+  repair, directory-valued `@gsd/agent-core` jiti alias, strip-types migration
+  worker propagation, native coverage parity, and packaged local native addon
+  inventory (`8edaeb85`). `build:core` and focused install/alias/migration
+  regression **40/40 pass**. The upstream agent-loop error terminal,
+  `execCommand` SIGKILL escalation, and Anthropic stop-reason fixes were already
+  patch-equivalent in this fork; their regressions passed (**14 total**).
+- Imported non-persistent model switching (`a2135776`), in-session model catalog
+  refresh (`86a511e7`), and generated-catalog cost normalization (`176bc3e1`).
+  The refresh URL was changed from the original project to the downstream
+  `penggin/gsd-pi-herdr` catalog (`77c36469`) to preserve repository isolation.
+  Model routing plus Codex Remote V2 compatibility regression **157/157 pass**.
+- The full generated catalog snapshot from upstream was deliberately not
+  selected: its provider inventory is from a different generation and choosing
+  it wholesale would remove downstream OpenCodex/Codex-compaction model
+  definitions. Runtime refresh now provides a bounded downstream-owned update
+  path instead. Existing extension registry/install/list/update behavior was
+  already a superset of the upstream fixes; installation/discovery regression
+  **52/52 pass**.
+- Broad verification: `typecheck:extensions` passes; compiled changed-source
+  regression **77/77 pass**; auto/orchestrator/subagent/Local↔Herdr parity
+  regression **413/413 pass**; Herdr integration/automation **19/19 pass**;
+  `build:core`, `validate-pack`, and `git diff --check` pass. Packaging reports
+  **`Package is installable. Safe to publish.`** No upstream fetch, merge to
+  `main`, push, publish, or global installation was performed.
+- Exact next task: review and commit this progress-log update together with the
+  pre-existing uncommitted Herdr presentation/notification work as appropriate,
+  then push/install only when explicitly requested. A future full generated
+  catalog re-vendor must use the downstream Pi vendoring procedure and reconcile
+  provider overlays rather than accepting an upstream generated file wholesale.
+
+### 2026-09-02 — Long-command status visibility in the Herdr-hosted TUI
+
+- Fixed the shared ANSI-aware `alignRight()` primitive used by compact command,
+  tool, and GSD status rows. It now reserves the right-hand status/meta column
+  first and truncates only the variable-width command/path label with an
+  ellipsis. Previously the combined row was truncated from the right, so a long
+  command could hide `running`, elapsed time, failure/success state, and the
+  `ctrl+o` expansion hint in a Herdr pane.
+- When the status itself is wider than an extremely narrow terminal, the status
+  prefix remains visible and the left command is omitted. ANSI styling and
+  wide Korean/CJK text continue to use terminal-cell-aware measurement.
+- Added utility-level regressions for long commands, styled status columns,
+  narrow rows, and wide text, plus a transcript-level regression proving a long
+  command still ends with `running · 42s · output hidden · ctrl+o expand`.
+- Verification: focused transcript/tool/width suite **59/59 pass**; `pi-tui`
+  and `agent-modes` package builds pass; canonical compiled workspace package
+  suite **1167 pass, 1 skipped**; `typecheck:extensions` and `git diff --check`
+  pass; `build:core` also passes. A direct ad-hoc source-mode run of every
+  `pi-tui` test is not a supported harness (one test uses TypeScript parameter
+  properties and concurrent terminal simulations interfere), so the canonical
+  compiled package runner is the authoritative broad result.
+- Repacked and installed the dirty development build globally. A normal
+  script-enabled npm 11.17.0 replacement ran postinstall successfully but then
+  hit an Arborist internal `null.package` error after the package tree had been
+  linked. Reinstalling the same tarball with the distribution's supported
+  `--ignore-scripts` path completed successfully, and the first `gsd` launch
+  self-repaired all seven internal package links. Installed `gsd --build-info`
+  reports the downstream package at commit `77c36469` with `dirty=true`, and
+  the installed `pi-tui` bundle contains the right-column reservation fix.
+- No architecture decision changed. Exact next operational check is to restart
+  the active Herdr-hosted GSD process and issue one command longer than the pane
+  width, confirming the command is ellipsized while the live status remains
+  pinned to the right edge.
+
+### 2026-09-02 — SSH-hosted Linux runtime deployment and live relay smoke
+
+- Prepared the existing `penglab` SSH target as the execution host without
+  DevSpace or Hermes. The writable runtime remains under
+  `/srv/penglab/gsd-runs`; existing project checkouts and lock records were
+  inspected before installation and were not replaced. Added the fixed
+  toolchain path to the remote interactive shell while preserving the previous
+  `.bashrc` as `.bashrc.pre-gsd-herdr-20260902`.
+- Installed official Herdr **v0.8.2** for Linux x86_64 after matching release
+  SHA-256 `976150a14d490c94b243ea2e1a7eb2dfb67f12e36b182db90936f6728e6aecf4`.
+  Installed the current downstream `1.16.2` development tarball built from
+  commit `77c36469` (`dirty=true`) into a versioned toolchain prefix; its
+  SHA-256 is `76df4c182cf218b67a3cb822b68bad0e86ac4f96184a399a71ea6f56c1d9ec18`.
+  The first launch repaired all seven managed internal package links.
+- The macOS-built tarball did not contain a usable Linux engine addon. Installed
+  Rust **1.98.0** in the server-owned toolchain, built only the current native
+  engine source for Linux x86_64, and installed the resulting ELF addon
+  (`72e5d00f1f15121bd8b33156a050c41588d0943d6dfe0194940e6d40a874f166`).
+  Runtime inspection reports `nativeLoaded=true` and the expected identity-lock
+  and directory-sync exports; the prior JS fallback warning is gone.
+- Installed OpenCodex **2.28.0** and Codex CLI **0.152.1** on the server. Copied
+  only the required model configuration and credential material over encrypted
+  SSH, set credential/config files to `0600`, and did not copy response spills,
+  conversation history, usage history, or routing databases. OpenCodex now runs
+  as an enabled systemd user service; user linger was already enabled, and both
+  `/readyz` and `/healthz` report success.
+- Enabled global remote preferences with `herdr.enabled: true` and
+  `herdr.required: true`. `gsd --list-models` loads the downstream OpenCodex
+  catalog, and a real no-session JSON-mode call from the remote
+  `pengbot_monorepo` checkout returned exact text `remote-gsd-ready`.
+- Created and detached from persistent Herdr session `gsd-penglab`. After the
+  Mac client exited, the remote server remained `running`, compatible at
+  protocol 20, and retained the live GSD TUI in
+  `/srv/penglab/gsd-runs/projects/pengbot_monorepo/757a5a1c2c35`. The root GSD
+  process contains the Herdr session/workspace/tab/pane/socket identity markers.
+- A real public `subagent` dispatch returned exact semantic output
+  `remote-herdr-worker-ready`. The live UI created the `GSD Workers` surface;
+  the private worker consumed and deleted `env.json`, published owner-only
+  `launch.json`, `stdout.jsonl` (17 records), `stderr.log`, heartbeat/state,
+  ownership, and immutable `exit.json` with `exitCode=0` and `aborted=false`.
+  Final state is `completed`, the parent rendered the child result, and no
+  `__herdr-worker` process remained.
+- Operational risk: this is a staging installation of a dirty development
+  build, not a clean release artifact. Linux single-dispatch relay is now live
+  proven, but the full Linux `>4` queue, cancellation/process-group escalation,
+  and deliberate pane-loss matrix has not been repeated on this host. Exact
+  next task is to attach from the Mac with
+  `herdr --remote penglab --session gsd-penglab`, confirm the long-command
+  right-column presentation during ordinary work, then build a clean committed
+  release artifact before treating this server installation as the rollback
+  baseline.
+
+### 2026-09-02 — Provider-timeout retry and late blocker projection hardening
+
+- Reproduced the production `W-15f36d1b` sequence: a provider emitted `The
+  operation timed out.` before `gsd_task_complete`; the supervisor settled the
+  canonical Attempt as `failed/transient-execution` and recorded a retry, then
+  a surviving `blockerDiscovered: true` submission bypassed Attempt authority
+  through the legacy writer and left `S02-T04-SUMMARY.md` beside a pending DB
+  Task. Reconciliation correctly refused to import the file and opened an
+  `artifact-db-status-divergence` wedge.
+- Removed that canonical-to-legacy downgrade. A blocker report still stages a
+  failed canonical Result when a held running Attempt exists, and truly legacy
+  Tasks without a lifecycle remain compatible. Once a canonical Attempt has
+  settled or lost its lease, late blocker submissions fail closed with the
+  Attempt/recovery identity and `/gsd auto` instruction. They cannot mark the
+  Task complete, populate `full_summary_md`, register a SUMMARY artifact, or
+  write a disk projection (ADR-H023).
+- Classified both provider `Request timed out` and `operation timed out`
+  phrasings as transient network failures. Core retry remains authoritative
+  when it advertises retry intent; after an explicit exhausted
+  `willRetry: false`, agent-end recovery schedules the existing bounded
+  same-model policy (two retries, starting at three seconds) before configured
+  fallback and bounded transient pause behavior. Timeout retries do not relax
+  Task Attempt or Herdr execution authority.
+- Added an executor-level regression reproducing the settled-Attempt + retry
+  action + late blocker sequence and proving zero SUMMARY residue, plus
+  resolver, classifier, and agent-end retry tests using the exact production
+  timeout wording. Focused provider/completion suite: **169/169 pass**. Extended
+  auto/Task lifecycle/reconciliation suite: **196/196 pass**.
+- Verification after the fix: `typecheck:extensions` passes; the focused
+  provider/completion suite passes **169/169**; the extended
+  auto/Task-lifecycle/reconciliation suite passes **196/196**;
+  `test:changed:src` passes **246/246**; `build:core` and `git diff --check`
+  pass. `validate-pack` reached the tarball guard but did not complete because
+  the pre-existing local test addon `native/addon/gsd_engine.dev.node` made the
+  unpacked payload **383.9 MB**, above the **350 MB** release limit. That local
+  debug binary is unrelated to this runtime change and was not deleted or
+  silently excluded.
+- Exact next operational task: install/restart this build only when explicitly
+  requested. The already-open project wedge still requires `/gsd rebuild
+  markdown` followed by `/gsd auto --resume-wedge W-15f36d1b`; running
+  processes cannot acquire this code change in place. Before producing a clean
+  release tarball, keep the platform release addon and remove or explicitly
+  exclude the local `gsd_engine.dev.node` test artifact, then rerun
+  `validate-pack`.
+
+### 2026-09-02 — Remote-first deployment of timeout/lifecycle hardening
+
+- Packaged the verified dirty development tree without the local macOS/test
+  native binaries and transferred it to the existing `penglab` execution host.
+  The deployment artifact is
+  `/srv/penglab/gsd-runs/artifacts/gsd-pi-herdr-1.16.2-77c36469-2ddad4d4.tgz`
+  with SHA-256
+  `2ddad4d4cd5f7f25a85aca02a8a4108be487f2065ecacd550d8d4e2a2e23ef7c`.
+- Installed it into the immutable prefix
+  `/srv/penglab/gsd-runs/toolchains/gsd-pi-herdr-1.16.2-77c36469-2ddad4d4`,
+  repaired all seven internal package links, and installed the previously
+  source-built Linux x86_64 engine addon. Direct inspection confirms
+  `nativeLoaded=true`, the installed timeout classifier contains the
+  request/operation timeout rule, and canonical blocker completion contains
+  the no-legacy-fallback guard.
+- A real no-session JSON-mode call from the remote project checkout returned
+  exact text `remote-timeout-fix-ready`. The shared `toolchains/bin/gsd` and
+  `gsd-mcp-server` links now resolve to the new prefix; the prior immutable
+  prefix remains available for rollback.
+- Operator deployment policy: future development installations should target
+  `penglab:/srv/penglab` only. Do not replace the Mac's global GSD installation
+  unless the user explicitly asks for a local install. Local builds and tests
+  remain valid preparation steps, but the runtime installation target is the
+  remote versioned toolchain.
+- The already-running `gsd-penglab` root pane predates the link switch and
+  therefore still has the former bundle loaded. It was not killed from an
+  external SSH shell. Exact next task: from the attached Herdr root pane, exit
+  the current GSD process and launch `gsd` again; then run `/gsd rebuild
+  markdown` and `/gsd auto --resume-wedge W-15f36d1b` to recover the existing
+  project wedge under the updated runtime.
+
+### 2026-09-02 — Read-only Pi upstream audit
+
+- Relaxed the downstream repository policy so read-only upstream research,
+  fetches, and source comparisons are permitted. Upstream mutation remains an
+  explicit user-authorized action; reviewed imports and compatibility choices
+  must be recorded.
+- Compared the vendored Pi baseline `v0.75.5` with the current upstream release
+  `v0.84.4` across the four vendored packages. The raw delta is 971 files
+  (`+117,628/-39,805`), so a wholesale vendor replacement is not safe against
+  the current GSD overlay.
+- Prioritized focused imports that directly benefit the downstream runtime:
+  `ui_prompt_start`/`ui_prompt_end` for authoritative Herdr blocked-state
+  reporting, extension-message ordering, resumed-JSONL repair, compaction
+  retry/failure events, pre-prompt compaction, large-session streaming reads,
+  timeout/shutdown hardening, and GLM-5.3 reasoning metadata.
+- Recorded the full compatibility assessment and migration ladder in
+  `docs/dev/pi-upstream-audit-2026-09-02.md`. No upstream source was imported
+  and `scripts/pi-upstream.json` remains pinned to `v0.75.5`.
+- Verified that the pre-existing long-command status-column work survived the
+  audit: the focused Pi TUI suite passes **15/15**, `@gsd/pi-tui` builds, and
+  `git diff --check` passes.
+- Exact next task: create a focused Pi-uplift branch and backport the `v0.84.4`
+  UI prompt lifecycle events first, then replace Herdr's heuristic question
+  detection only after prompt/cancel/nested-UI parity tests pass. Follow with
+  extension message ordering and JSONL repair as separate changes.
 
 ## 11. Working-session protocol
 
