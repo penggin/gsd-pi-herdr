@@ -459,6 +459,68 @@ describe("agentLoop with AgentMessage", () => {
 		}
 	});
 
+	it("preserves added tool provenance through afterToolCall and transcript messages", async () => {
+		const toolSchema = Type.Object({});
+		const tool: AgentTool<typeof toolSchema, Record<string, never>> = {
+			name: "load-tools",
+			label: "Load tools",
+			description: "Makes additional tools available",
+			parameters: toolSchema,
+			async execute() {
+				return {
+					content: [{ type: "text", text: "loaded" }],
+					details: {},
+					addedToolNames: ["read", "write"],
+				};
+			},
+		};
+
+		const context: AgentContext = { systemPrompt: "", messages: [], tools: [tool] };
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+			afterToolCall: async () => ({ details: { audited: true } }),
+		};
+		let callIndex = 0;
+		const streamFn = () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				stream.push(
+					callIndex++ === 0
+						? {
+								type: "done",
+								reason: "toolUse",
+								message: createAssistantMessage(
+									[{ type: "toolCall", id: "tool-1", name: "load-tools", arguments: {} }],
+									"toolUse",
+								),
+							}
+						: { type: "done", reason: "stop", message: createAssistantMessage([{ type: "text", text: "done" }]) },
+				);
+			});
+			return stream;
+		};
+
+		const events: AgentEvent[] = [];
+		for await (const event of agentLoop([createUserMessage("load tools")], context, config, undefined, streamFn)) {
+			events.push(event);
+		}
+
+		const toolEnd = events.find(
+			(event): event is Extract<AgentEvent, { type: "tool_execution_end" }> => event.type === "tool_execution_end",
+		);
+		expect(toolEnd?.result.addedToolNames).toEqual(["read", "write"]);
+		expect(toolEnd?.result.details).toEqual({ audited: true });
+
+		const transcriptResult = events.find(
+			(event) => event.type === "message_end" && event.message.role === "toolResult",
+		);
+		expect(transcriptResult).toBeDefined();
+		if (transcriptResult?.type === "message_end" && transcriptResult.message.role === "toolResult") {
+			expect(transcriptResult.message.addedToolNames).toEqual(["read", "write"]);
+		}
+	});
+
 	it("should execute mutated beforeToolCall args without revalidation", async () => {
 		const toolSchema = Type.Object({ value: Type.String() });
 		const executed: Array<string | number> = [];

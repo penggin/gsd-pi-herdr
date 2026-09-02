@@ -361,6 +361,11 @@ export interface ToolResultMessage<TDetails = any> {
 	toolName: string;
 	content: (TextContent | ImageContent)[]; // Supports text and images
 	details?: TDetails;
+	/**
+	 * Names of tools that became available at this tool-result boundary.
+	 * Providers without native deferred-tool support ignore this metadata.
+	 */
+	addedToolNames?: string[];
 	isError: boolean;
 	timestamp: number; // Unix timestamp in milliseconds
 }

@@ -76,6 +76,12 @@ export interface AfterToolCallResult {
 	details?: unknown;
 	isError?: boolean;
 	/**
+	 * Names of tools that became available while this tool call executed.
+	 * Providers with native deferred-tool support may use this as a cache-friendly
+	 * boundary marker. Other providers safely ignore it.
+	 */
+	addedToolNames?: string[];
+	/**
 	 * Hint that the agent should stop after the current tool batch.
 	 * Early termination only happens when every finalized tool result in the batch sets this to true.
 	 */
@@ -356,6 +362,12 @@ export interface AgentToolResult<T> {
 	content: (TextContent | ImageContent)[];
 	/** Arbitrary structured details for logs or UI rendering. */
 	details: T;
+	/**
+	 * Names of tools that became available while this tool call executed.
+	 * This metadata is optional and has no effect for providers that do not support
+	 * deferred tool loading.
+	 */
+	addedToolNames?: string[];
 	/**
 	 * Hint that the agent should stop after the current tool batch.
 	 * Early termination only happens when every finalized tool result in the batch sets this to true.

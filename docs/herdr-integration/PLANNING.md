@@ -1257,6 +1257,21 @@ this session does not merge, push, tag, or publish.
   dynamic tool loading (`addedToolNames` / deferred provider tools) against the
   downstream `adjust_tool_set` registry before deciding whether its performance
   benefit justifies the broader message/protocol change.
+- Added the provider-neutral `addedToolNames` provenance marker to extension
+  tool results and preserved it through `afterToolCall`, agent events, and the
+  canonical `ToolResultMessage` transcript. The extension wrapper snapshots the
+  host-owned active tool registry around execution and records only pure
+  additions; mixed removal/addition transitions remain unmarked so a provider
+  cannot mistake a changed tool universe for an append-only deferred boundary.
+- Marker-focused verification passes **32/32** across agent-loop propagation and
+  extension wrapper behavior. `pi-ai`, `pi-agent-core`, and `pi-coding-agent`
+  builds pass in dependency order. Existing tools that return no marker retain
+  byte-for-byte result shape, and providers without deferred-tool support safely
+  ignore the optional transcript field.
+- Exact next task: implement and test a pure `splitDeferredTools` planner, then
+  integrate it only into provider payloads that can represent deferred tools
+  natively. Preserve complete-tool fallback for contractions, old transcripts,
+  and models without an explicit deferred-tool capability.
 
 ## 11. Working-session protocol
 
