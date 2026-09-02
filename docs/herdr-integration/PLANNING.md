@@ -1328,6 +1328,27 @@ this session does not merge, push, tag, or publish.
   audit and import the bounded v0.80 `toolChoice` request surface for OpenAI
   Responses and Codex Responses without changing provider selection or GSD
   orchestration semantics.
+- Added the bounded Responses `toolChoice` surface. Provider-neutral simple
+  options now expose only `auto | none`; OpenAI Responses, Codex Responses, and
+  Azure Responses forward those choices, while their provider-specific raw
+  options can also request `required`. Codex retains `auto` as its wire default
+  when no choice is supplied. Tool definitions remain present when `none` is
+  selected, so this changes request selection policy without mutating the
+  registered tool universe or deferred-tool bookkeeping.
+- Focused OpenAI Responses/Codex/Azure/completions verification passes
+  **101/101**, including raw `required`, simple `none`, default Codex `auto`,
+  tool-definition preservation, and the prior completions tool-choice contract.
+  `build:pi-ai` passes. No provider-selection, credential, GSD orchestration,
+  dependency, or lockfile behavior changed.
+- Exact next task: run the full downstream type/build/package regression matrix,
+  commit and push this tool-choice slice, then audit retry classification for
+  transient provider failures (Cloudflare 524, resource exhaustion, and closed
+  sockets) as the next isolated correctness unit.
+- Final gate passes: `typecheck:extensions`, `build:core`, `git diff --check`,
+  and all ten compiled workspace package suites. Counts remain agent-core
+  **135/135**, agent-modes **287/287**, native **223 pass / 1 platform skip**,
+  pi-agent-core **3/3**, pi-ai **49/49**, coding-agent **66/66**, pi-tui
+  **8/8**, contracts **9/9**, MCP **377/377**, and RPC client **30/30**.
 
 ## 11. Working-session protocol
 

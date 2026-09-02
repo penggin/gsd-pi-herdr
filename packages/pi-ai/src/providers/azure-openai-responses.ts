@@ -67,6 +67,7 @@ export interface AzureOpenAIResponsesOptions extends StreamOptions {
 	azureResourceName?: string;
 	azureBaseUrl?: string;
 	azureDeploymentName?: string;
+	toolChoice?: ResponseCreateParamsStreaming["tool_choice"];
 }
 
 /**
@@ -164,6 +165,7 @@ export const streamSimpleAzureOpenAIResponses: StreamFunction<"azure-openai-resp
 	return streamAzureOpenAIResponses(model, context, {
 		...base,
 		reasoningEffort,
+		toolChoice: options?.toolChoice,
 	} satisfies AzureOpenAIResponsesOptions);
 };
 
@@ -277,6 +279,10 @@ function buildParams(
 
 	if (context.tools && context.tools.length > 0) {
 		params.tools = convertResponsesTools(context.tools);
+	}
+
+	if (options?.toolChoice !== undefined) {
+		params.tool_choice = options.toolChoice;
 	}
 
 	if (model.reasoning) {

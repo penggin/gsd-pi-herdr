@@ -1,3 +1,4 @@
+import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getModel } from "../src/models.ts";
 import {
@@ -17,6 +18,8 @@ interface CapturedAzureClientOptions {
 interface CapturedAzureResponsesPayload {
 	prompt_cache_key?: string;
 	max_output_tokens?: number;
+	tool_choice?: unknown;
+	tools?: unknown[];
 }
 
 const azureMock = vi.hoisted(() => ({
@@ -157,6 +160,38 @@ describe("azure-openai-responses base URL normalization", () => {
 		}).result();
 
 		expect(azureMock.lastParams?.max_output_tokens).toBe(16);
+	});
+
+	it("forwards provider-specific required tool choice", async () => {
+		process.env.AZURE_OPENAI_BASE_URL = "https://my-resource.openai.azure.com";
+		const model = getModel("azure-openai-responses", "gpt-4o-mini");
+		await streamAzureOpenAIResponses(
+			model,
+			{
+				messages: [{ role: "user", content: "Call read.", timestamp: Date.now() }],
+				tools: [{ name: "read", description: "Read", parameters: Type.Object({ path: Type.String() }) }],
+			},
+			{ apiKey: "test-api-key", toolChoice: "required" },
+		).result();
+
+		expect(azureMock.lastParams).toMatchObject({ tool_choice: "required" });
+		expect(azureMock.lastParams?.tools).toHaveLength(1);
+	});
+
+	it("forwards provider-neutral none tool choice from simple options", async () => {
+		process.env.AZURE_OPENAI_BASE_URL = "https://my-resource.openai.azure.com";
+		const model = getModel("azure-openai-responses", "gpt-4o-mini");
+		await streamSimpleAzureOpenAIResponses(
+			model,
+			{
+				messages: [{ role: "user", content: "Answer without tools.", timestamp: Date.now() }],
+				tools: [{ name: "read", description: "Read", parameters: Type.Object({ path: Type.String() }) }],
+			},
+			{ apiKey: "test-api-key", toolChoice: "none" },
+		).result();
+
+		expect(azureMock.lastParams).toMatchObject({ tool_choice: "none" });
+		expect(azureMock.lastParams?.tools).toHaveLength(1);
 	});
 
 	it("builds correct default URL from AZURE_OPENAI_RESOURCE_NAME", async () => {

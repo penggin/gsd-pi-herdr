@@ -80,6 +80,9 @@ export type CacheRetention = "none" | "short" | "long";
 
 export type Transport = "sse" | "websocket" | "websocket-cached" | "auto";
 
+/** Provider-neutral tool selection supported by simple streaming calls. */
+export type ToolChoice = "auto" | "none";
+
 /** Request headers; null suppresses a provider/API default with the same name. */
 export type ProviderHeaders = Record<string, string | null>;
 
@@ -207,6 +210,8 @@ export type ProviderImagesOptions = ImagesOptions & Record<string, unknown>;
 export interface SimpleStreamOptions extends StreamOptions {
 	/** Workspace root for providers that spawn local processes. */
 	cwd?: string;
+	/** Provider-neutral tool selection. Omit to retain provider-specific defaults. */
+	toolChoice?: ToolChoice;
 	reasoning?: ThinkingLevel;
 	/** Custom token budgets for thinking levels (token-based providers only) */
 	thinkingBudgets?: ThinkingBudgets;

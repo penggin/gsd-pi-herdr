@@ -1,3 +1,4 @@
+import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getModel } from "../src/models.ts";
 import { streamOpenAIResponses, streamSimpleOpenAIResponses } from "../src/providers/openai-responses.ts";
@@ -122,6 +123,74 @@ describe("openai-responses provider defaults", () => {
 		}
 
 		expect(capturedPayload).toMatchObject({ max_output_tokens: 16 });
+	});
+
+	it("forwards provider-specific required tool choice", async () => {
+		let capturedPayload: unknown;
+		vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			new Response("data: [DONE]\n\n", {
+				status: 200,
+				headers: { "content-type": "text/event-stream" },
+			}),
+		);
+
+		const stream = streamOpenAIResponses(
+			getModel("openai", "gpt-5.4"),
+			{
+				messages: [{ role: "user", content: "Call ping.", timestamp: Date.now() }],
+				tools: [{ name: "ping", description: "Ping", parameters: Type.Object({}) }],
+			},
+			{
+				apiKey: "test-key",
+				toolChoice: "required",
+				onPayload: (payload) => {
+					capturedPayload = payload;
+				},
+			},
+		);
+
+		for await (const event of stream) {
+			if (event.type === "done" || event.type === "error") break;
+		}
+
+		expect(capturedPayload).toMatchObject({
+			tool_choice: "required",
+			tools: [expect.objectContaining({ name: "ping" })],
+		});
+	});
+
+	it("forwards provider-neutral none tool choice from simple options", async () => {
+		let capturedPayload: unknown;
+		vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			new Response("data: [DONE]\n\n", {
+				status: 200,
+				headers: { "content-type": "text/event-stream" },
+			}),
+		);
+
+		const stream = streamSimpleOpenAIResponses(
+			getModel("openai", "gpt-5.4"),
+			{
+				messages: [{ role: "user", content: "Answer without tools.", timestamp: Date.now() }],
+				tools: [{ name: "ping", description: "Ping", parameters: Type.Object({}) }],
+			},
+			{
+				apiKey: "test-key",
+				toolChoice: "none",
+				onPayload: (payload) => {
+					capturedPayload = payload;
+				},
+			},
+		);
+
+		for await (const event of stream) {
+			if (event.type === "done" || event.type === "error") break;
+		}
+
+		expect(capturedPayload).toMatchObject({
+			tool_choice: "none",
+			tools: [expect.objectContaining({ name: "ping" })],
+		});
 	});
 
 	it.each(["gpt-5.1", "gpt-5.2", "gpt-5.3-codex", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] as const)(

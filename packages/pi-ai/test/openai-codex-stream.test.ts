@@ -1,6 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	getOpenAICodexWebSocketDebugStats,
@@ -745,6 +746,99 @@ describe("openai-codex streaming", () => {
 		}).result();
 
 		expect(capturedPayload?.prompt_cache_key).toBe("x".repeat(64));
+	});
+
+	it("forwards provider-specific required tool choice", async () => {
+		const token = mockToken();
+		const encoder = new TextEncoder();
+		const sse = buildSSEPayload({ status: "completed" });
+		let requestedToolChoice: unknown;
+
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (_input: string | URL, init?: RequestInit) => {
+				const body = typeof init?.body === "string" ? (JSON.parse(init.body) as Record<string, unknown>) : {};
+				requestedToolChoice = body.tool_choice;
+				return new Response(
+					new ReadableStream<Uint8Array>({
+						start(controller) {
+							controller.enqueue(encoder.encode(sse));
+							controller.close();
+						},
+					}),
+					{ status: 200, headers: { "content-type": "text/event-stream" } },
+				);
+			}),
+		);
+
+		const model: Model<"openai-codex-responses"> = {
+			id: "gpt-5.5",
+			name: "GPT-5.5",
+			api: "openai-codex-responses",
+			provider: "openai-codex",
+			baseUrl: "https://chatgpt.com/backend-api",
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 400000,
+			maxTokens: 128000,
+		};
+
+		await streamOpenAICodexResponses(
+			model,
+			{
+				messages: [{ role: "user", content: "Call ping.", timestamp: Date.now() }],
+				tools: [{ name: "ping", description: "Ping", parameters: Type.Object({}) }],
+			},
+			{ apiKey: token, transport: "sse", toolChoice: "required" },
+		).result();
+
+		expect(requestedToolChoice).toBe("required");
+	});
+
+	it("forwards provider-neutral none tool choice from simple options", async () => {
+		const token = mockToken();
+		const encoder = new TextEncoder();
+		const sse = buildSSEPayload({ status: "completed" });
+		let requestedToolChoice: unknown;
+
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (_input: string | URL, init?: RequestInit) => {
+				const body = typeof init?.body === "string" ? (JSON.parse(init.body) as Record<string, unknown>) : {};
+				requestedToolChoice = body.tool_choice;
+				return new Response(
+					new ReadableStream<Uint8Array>({
+						start(controller) {
+							controller.enqueue(encoder.encode(sse));
+							controller.close();
+						},
+					}),
+					{ status: 200, headers: { "content-type": "text/event-stream" } },
+				);
+			}),
+		);
+
+		const model: Model<"openai-codex-responses"> = {
+			id: "gpt-5.5",
+			name: "GPT-5.5",
+			api: "openai-codex-responses",
+			provider: "openai-codex",
+			baseUrl: "https://chatgpt.com/backend-api",
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 400000,
+			maxTokens: 128000,
+		};
+
+		await streamSimpleOpenAICodexResponses(
+			model,
+			{ messages: [{ role: "user", content: "Answer without tools.", timestamp: Date.now() }] },
+			{ apiKey: token, transport: "sse", toolChoice: "none" },
+		).result();
+
+		expect(requestedToolChoice).toBe("none");
 	});
 
 	it("preserves gpt-5.5 xhigh reasoning effort from simple options", async () => {
