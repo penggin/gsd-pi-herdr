@@ -190,6 +190,16 @@ function isGoogleThinkingApi(model: Model<any>): boolean {
 	return model.api === "google-generative-ai" || model.api === "google-vertex";
 }
 
+const VERIFIED_ANTHROPIC_MID_CONVO_EFFORT_PROVIDERS = new Set(["anthropic", "openrouter"]);
+
+function supportsAnthropicMidConvoEffort(modelId: string): boolean {
+	const id = modelId.toLowerCase().replace(/^~?anthropic\//, "");
+	return (
+		/^claude-opus-5(?:-\d{8})?$/.test(id) ||
+		/^claude-(?:fable|mythos)-5(?:[.-]1)(?:-\d{8})?$/.test(id)
+	);
+}
+
 function isAnthropicAdaptiveThinkingModel(modelId: string): boolean {
 	return (
 		modelId.includes("opus-4-6") ||
@@ -274,6 +284,14 @@ function applyThinkingLevelMetadata(model: Model<any>): void {
 		isAnthropicAdaptiveThinkingModel(model.id)
 	) {
 		mergeAnthropicMessagesCompat(model, { forceAdaptiveThinking: true });
+	}
+	if (
+		model.api === "anthropic-messages" &&
+		VERIFIED_ANTHROPIC_MID_CONVO_EFFORT_PROVIDERS.has(model.provider) &&
+		supportsAnthropicMidConvoEffort(model.id)
+	) {
+		mergeThinkingLevelMap(model, { off: null });
+		mergeAnthropicMessagesCompat(model, { supportsMidConvoEffort: true });
 	}
 	if (
 		(model.provider === "minimax" || model.provider === "minimax-cn") &&

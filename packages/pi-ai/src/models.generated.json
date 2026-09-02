@@ -2560,11 +2560,13 @@
       "provider": "anthropic",
       "baseUrl": "https://api.anthropic.com",
       "compat": {
-        "forceAdaptiveThinking": true
+        "forceAdaptiveThinking": true,
+        "supportsMidConvoEffort": true
       },
       "reasoning": true,
       "thinkingLevelMap": {
-        "xhigh": "xhigh"
+        "xhigh": "xhigh",
+        "off": null
       },
       "input": [
         "text",

@@ -33,6 +33,7 @@ import type {
 	WebSearchResult,
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
+import { appendAssistantMessageDiagnostic } from "../utils/diagnostics.js";
 import { splitDeferredTools } from "../utils/deferred-tools.js";
 import { headersToRecord } from "../utils/headers.js";
 import { parseJsonWithRepair, parseStreamingJson } from "../utils/json-parse.js";
@@ -176,10 +177,12 @@ export type AnthropicThinkingDisplay = "summarized" | "omitted";
 
 const FINE_GRAINED_TOOL_STREAMING_BETA = "fine-grained-tool-streaming-2025-05-14";
 const INTERLEAVED_THINKING_BETA = "interleaved-thinking-2025-05-14";
+const MID_CONVERSATION_OUTPUT_CONFIG_BETA = "mid-conversation-output-config-2026-07-01";
+const THINKING_BINDING_CONTROLS_BETA = "thinking-binding-controls-2026-08-01";
 
 function getAnthropicCompat(
 	model: Model<"anthropic-messages">,
-): Required<Omit<AnthropicMessagesCompat, "forceAdaptiveThinking">> {
+): Required<Omit<AnthropicMessagesCompat, "forceAdaptiveThinking" | "supportsMidConvoEffort">> {
 	// Auto-detect session affinity and cache control support from provider
 	const isFireworks = model.provider === "fireworks";
 	const isCloudflareAiGatewayAnthropic =
@@ -476,12 +479,14 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 	const stream = new AssistantMessageEventStream();
 
 	(async () => {
+		const providerThinkingLevel = model.compat?.supportsMidConvoEffort ? (options?.effort ?? "high") : undefined;
 		const output: AssistantMessage = {
 			role: "assistant",
 			content: [],
 			api: model.api as Api,
 			provider: model.provider,
 			model: model.id,
+			...(providerThinkingLevel === undefined ? {} : { providerThinkingLevel }),
 			usage: {
 				input: 0,
 				output: 0,
@@ -497,6 +502,9 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 		try {
 			let client: Anthropic;
 			let isOAuth: boolean;
+			let inputTransformations:
+				| Array<{ type?: unknown; path?: unknown; reason?: unknown }>
+				| undefined;
 
 			if (options?.client) {
 				client = options.client;
@@ -558,6 +566,8 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 			for await (const event of iterateAnthropicEvents(response, options?.signal)) {
 				if (event.type === "message_start") {
 					output.responseId = event.message.id;
+					const transformations = (event.message as { input_transformations?: unknown }).input_transformations;
+					if (Array.isArray(transformations)) inputTransformations = transformations;
 					// Capture initial token usage from message_start event
 					// This ensures we have input token counts even if the stream is aborted early
 					output.usage.input = event.message.usage.input_tokens || 0;
@@ -706,6 +716,8 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 						}
 					}
 				} else if (event.type === "message_delta") {
+					const transformations = (event as { input_transformations?: unknown }).input_transformations;
+					if (Array.isArray(transformations)) inputTransformations = transformations;
 					if (event.delta.stop_reason) {
 						const mapped = mapStopReason(event.delta.stop_reason);
 						output.stopReason = mapped.stopReason;
@@ -747,6 +759,19 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 				// Preserve the specific reason mapped by mapStopReason; the catch
 				// below copies this message into output.errorMessage.
 				throw new Error(output.errorMessage ?? "An unknown error occurred");
+			}
+			if (inputTransformations && inputTransformations.length > 0) {
+				appendAssistantMessageDiagnostic(output, {
+					type: "anthropic_input_transformations",
+					timestamp: Date.now(),
+					details: {
+						transformations: inputTransformations.map((transformation) => ({
+							type: typeof transformation.type === "string" ? transformation.type : undefined,
+							path: typeof transformation.path === "string" ? transformation.path : undefined,
+							reason: typeof transformation.reason === "string" ? transformation.reason : undefined,
+						})),
+					},
+				});
 			}
 
 			stream.push({ type: "done", reason: output.stopReason, message: output });
@@ -858,6 +883,9 @@ function createClient(
 	}
 	if (needsInterleavedBeta) {
 		betaFeatures.push(INTERLEAVED_THINKING_BETA);
+	}
+	if (model.compat?.supportsMidConvoEffort === true) {
+		betaFeatures.push(MID_CONVERSATION_OUTPUT_CONFIG_BETA, THINKING_BINDING_CONTROLS_BETA);
 	}
 
 	if (model.provider === "cloudflare-ai-gateway") {
@@ -973,16 +1001,22 @@ function buildParams(
 		deferredTools = [];
 	}
 	const deferredToolNames = new Set(deferredTools.map((tool) => normalizeToolName(tool.name)));
+	const converted = convertMessages(
+		context.messages,
+		model,
+		isOAuthToken,
+		cacheControl,
+		deferredToolNames,
+		normalizeToolName,
+		model.compat?.supportsMidConvoEffort === true ? model.provider : undefined,
+	);
+	const activeEffort = options?.effort ?? "high";
 	const params: MessageCreateParamsStreaming = {
 		model: model.id,
-		messages: convertMessages(
-			context.messages,
-			model,
-			isOAuthToken,
-			cacheControl,
-			deferredToolNames,
-			normalizeToolName,
-		),
+		messages:
+			model.compat?.supportsMidConvoEffort === true
+				? (insertThinkingLevelMessages(converted, activeEffort) as MessageParam[])
+				: converted.messages,
 		max_tokens: options?.maxTokens ?? model.maxTokens,
 		stream: true,
 	};
@@ -1044,8 +1078,18 @@ function buildParams(
 		];
 	}
 
-	// Configure thinking mode: adaptive, budget-based, or explicitly disabled.
-	if (model.reasoning) {
+	// Managed effort models always use adaptive thinking so signed blocks remain
+	// replayable when the user changes effort between turns.
+	if (model.compat?.supportsMidConvoEffort === true) {
+		params.thinking = {
+			type: "adaptive",
+			display: options?.thinkingDisplay ?? "summarized",
+			block_binding: { prefix_mismatch_behavior: "drop_block" },
+		} as NonNullable<MessageCreateParamsStreaming["thinking"]>;
+		// Per-turn effort lives in the synthetic system messages above. Anthropic's
+		// beta transport still requires a stable top-level output_config.
+		params.output_config = { effort: "high" };
+	} else if (model.reasoning) {
 		if (options?.thinkingEnabled) {
 			// Default to "summarized" so Opus 4.7 and Mythos Preview behave like
 			// older Claude 4 models (whose API default is also "summarized").
@@ -1098,6 +1142,11 @@ function normalizeToolCallId(id: string): string {
 	return id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
 }
 
+interface ConvertedAnthropicMessages {
+	messages: MessageParam[];
+	assistantLevels: Map<number, AnthropicEffort>;
+}
+
 function convertMessages(
 	messages: Message[],
 	model: Model<"anthropic-messages">,
@@ -1105,8 +1154,10 @@ function convertMessages(
 	cacheControl?: CacheControlEphemeral,
 	deferredToolNames: ReadonlySet<string> = new Set(),
 	normalizeToolName: (name: string) => string = (name) => name,
-): MessageParam[] {
+	managedProvider?: string,
+): ConvertedAnthropicMessages {
 	const params: MessageParam[] = [];
+	const assistantLevels = new Map<number, AnthropicEffort>();
 	const loadedToolNames = new Set<string>();
 
 	// Transform messages for cross-provider compatibility
@@ -1230,10 +1281,19 @@ function convertMessages(
 				}
 			}
 			if (blocks.length === 0) continue;
+			const messageIndex = params.length;
 			params.push({
 				role: "assistant",
 				content: blocks,
 			});
+			if (
+				managedProvider !== undefined &&
+				msg.api === "anthropic-messages" &&
+				msg.provider === managedProvider &&
+				isAnthropicEffort(msg.providerThinkingLevel)
+			) {
+				assistantLevels.set(messageIndex, msg.providerThinkingLevel);
+			}
 		} else if (msg.role === "toolResult") {
 			// Collect all consecutive toolResult messages, needed for z.ai Anthropic endpoint
 			const toolResults: ContentBlockParam[] = [];
@@ -1304,7 +1364,33 @@ function convertMessages(
 		}
 	}
 
-	return params;
+	return { messages: params, assistantLevels };
+}
+
+function isAnthropicEffort(value: unknown): value is AnthropicEffort {
+	return value === "low" || value === "medium" || value === "high" || value === "xhigh" || value === "max";
+}
+
+type ThinkingLevelMessage = {
+	role: "system";
+	content: [];
+	output_config: { effort: AnthropicEffort };
+};
+
+function insertThinkingLevelMessages(
+	converted: ConvertedAnthropicMessages,
+	activeEffort: AnthropicEffort,
+): Array<MessageParam | ThinkingLevelMessage> {
+	const messages: Array<MessageParam | ThinkingLevelMessage> = [];
+	for (let index = 0; index < converted.messages.length; index++) {
+		const historicalEffort = converted.assistantLevels.get(index);
+		if (historicalEffort !== undefined) {
+			messages.push({ role: "system", content: [], output_config: { effort: historicalEffort } });
+		}
+		messages.push(converted.messages[index]);
+	}
+	messages.push({ role: "system", content: [], output_config: { effort: activeEffort } });
+	return messages;
 }
 
 function shouldUseFineGrainedToolStreamingBeta(model: Model<"anthropic-messages">, context: Context): boolean {

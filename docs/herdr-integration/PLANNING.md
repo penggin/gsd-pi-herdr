@@ -1989,6 +1989,35 @@ this session does not merge, push, tag, or publish.
 - Exact next task: commit and push the post-tool compaction slice, then audit
   current upstream Anthropic per-turn thinking preservation (`4e69b0c28`)
   without changing session-format selection.
+- Audited and ported the transport-safe subset of upstream `4e69b0c28`.
+  Verified Anthropic Messages models now persist the exact native effort on
+  each assistant response and reconstruct effort-only system markers before
+  replaying signed thinking, so changing low/medium/high between turns no
+  longer invalidates the signed prefix. The binding beta uses `drop_block` for
+  a stale prefix and records only redacted transformation type/path/reason
+  diagnostics; raw thinking signatures and content are not logged.
+- Activation is deliberately narrow: the committed catalog enables the feature
+  for direct Anthropic `claude-opus-5`; the generator also recognizes only the
+  upstream-verified Opus 5 and Fable/Mythos 5.1 patterns on Anthropic Messages
+  transports. Existing Fable 5, Sonnet, Vertex, Bedrock, OpenAI/OpenCodex, and
+  OpenRouter completions behavior is unchanged. This adds no GSD workflow or
+  Herdr authority and does not alter session-format selection.
+- Focused evidence passes **24/24** across mid-conversation effort replay,
+  beta headers, transformation diagnostics, legacy adaptive behavior, and the
+  generated catalog. `@gsd/pi-ai` TypeScript build also passes. The unfiltered
+  source `pnpm test` command was interrupted after entering credential-gated
+  live-provider smoke coverage; canonical offline package gates remain the
+  required final evidence for this slice.
+- Final gates pass: `verify:pi-patches`, extension typecheck,
+  `test:changed:src` (no root-source tests for this package-only slice),
+  `build:core`, `test:packages`, and `git diff --check`. Compiled package totals
+  are GSD agent-core **139/139**, agent-modes **287/287**, native **223 pass / 1
+  skip**, pi-agent-core **3/3**, pi-ai **49/49**, pi-coding-agent **72/72**,
+  pi-tui **8/8**, contracts **9/9**, MCP server **377/377**, and RPC client
+  **30/30**.
+- Exact next task: review, commit, and push this Anthropic effort slice; then
+  audit upstream `b8b873b98` (`supportsMaxOutputTokens`) as the next isolated
+  compatibility improvement.
 
 ## 11. Working-session protocol
 

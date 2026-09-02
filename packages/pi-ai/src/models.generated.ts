@@ -2157,9 +2157,9 @@ export const MODELS = {
 			api: "anthropic-messages",
 			provider: "anthropic",
 			baseUrl: "https://api.anthropic.com",
-			compat: {"forceAdaptiveThinking":true},
+			compat: {"forceAdaptiveThinking":true,"supportsMidConvoEffort":true},
 			reasoning: true,
-			thinkingLevelMap: {"xhigh":"xhigh"},
+			thinkingLevelMap: {"xhigh":"xhigh","off":null},
 			input: ["text", "image"],
 			cost: {
 				input: 5,

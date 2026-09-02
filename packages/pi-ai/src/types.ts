@@ -349,6 +349,8 @@ export interface AssistantMessage {
 	model: string;
 	responseModel?: string; // Concrete `chunk.model` when different from the requested `model` (e.g. OpenRouter `auto` -> `anthropic/...`)
 	responseId?: string; // Provider-specific response/message identifier when the upstream API exposes one
+	/** Exact provider-native effort used for this response. Absent for unmanaged transports and legacy transcripts. */
+	providerThinkingLevel?: string;
 	diagnostics?: AssistantMessageDiagnostic[]; // Redacted provider/runtime diagnostics for failures and recoveries.
 	usage: Usage;
 	stopReason: StopReason;
@@ -569,6 +571,8 @@ export interface AnthropicMessagesCompat {
 	 * Default: false.
 	 */
 	forceAdaptiveThinking?: boolean;
+	/** Whether this exact transport/model pair supports effort-only messages and signed-thinking binding controls. */
+	supportsMidConvoEffort?: boolean;
 	/**
 	 * Whether the provider supports deferred tools loaded through `tool_reference`
 	 * blocks in tool results. Defaults to capable first-party Claude models only.

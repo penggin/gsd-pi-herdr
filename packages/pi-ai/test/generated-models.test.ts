@@ -56,7 +56,8 @@ describe("models.generated.ts", () => {
 		expect(anthropic.maxTokens).toBe(128_000);
 		expect(anthropic.cost).toMatchObject({ input: 5, output: 25 });
 		expect(anthropic.thinkingLevelMap).toMatchObject({ xhigh: "xhigh" });
-		expect(anthropic.compat).toMatchObject({ forceAdaptiveThinking: true });
+		expect(anthropic.thinkingLevelMap).toMatchObject({ off: null });
+		expect(anthropic.compat).toMatchObject({ forceAdaptiveThinking: true, supportsMidConvoEffort: true });
 
 		const vertex = MODELS["anthropic-vertex"]["claude-opus-5"];
 		expect(vertex).toBeDefined();
