@@ -129,6 +129,32 @@ test("openDispatchClaim records execute-task attempts and leaves activation to t
   }]);
 });
 
+test("verification retry dispatch scope follows unitId after active state advances", () => {
+  const claimInputs: unknown[] = [];
+  const outcome = openDispatchClaim(
+    makeSession(),
+    "retry-flow",
+    "retry-turn",
+    makeIterationData({
+      unitId: "M001/S001/T001",
+      state: {
+        activeSlice: { id: "S001" },
+        activeTask: { id: "T002" },
+      } as IterationData["state"],
+    }),
+    makeDeps({
+      recordDispatchClaim: input => {
+        claimInputs.push(input);
+        return { ok: true, dispatchId: 100 };
+      },
+    }),
+  );
+
+  assert.deepEqual(outcome, { kind: "opened", dispatchId: 100 });
+  assert.equal((claimInputs[0] as { sliceId: string }).sliceId, "S001");
+  assert.equal((claimInputs[0] as { taskId: string }).taskId, "T001");
+});
+
 test("openDispatchClaim keeps marking non-task claims running", () => {
   const running: number[] = [];
 

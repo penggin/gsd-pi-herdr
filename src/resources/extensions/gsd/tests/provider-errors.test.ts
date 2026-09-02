@@ -569,6 +569,60 @@ test("agent_end retries when empty errorMessage has stream failure in content (#
   }
 });
 
+test("agent_end automatically retries provider operation timeouts", async () => {
+  const originalSetTimeout = globalThis.setTimeout;
+  const notifications: Array<{ message: string; level?: string }> = [];
+  const sendMessageCalls: unknown[][] = [];
+  const timers: Array<{ fn: () => void; delay: number }> = [];
+
+  resetTransientRetryState();
+  autoSession.reset();
+  autoSession.active = true;
+  autoSession.currentUnit = { type: "execute-task", id: "M001/S01/T01", startedAt: Date.now() };
+
+  globalThis.setTimeout = ((fn: () => void, delay?: number) => {
+    timers.push({ fn, delay: delay ?? 0 });
+    return 0 as unknown as ReturnType<typeof setTimeout>;
+  }) as typeof setTimeout;
+
+  try {
+    await handleAgentEnd({
+      sendMessage: (...args: unknown[]) => {
+        sendMessageCalls.push(args);
+      },
+    } as any, {
+      willRetry: false,
+      messages: [{
+        role: "assistant",
+        stopReason: "error",
+        errorMessage: "The operation timed out.",
+      }],
+    } as any, {
+      model: { provider: "gsd-sonnet", id: "zai/glm-5.3-flash" },
+      ui: {
+        notify(message: string, level?: "info" | "warning" | "error" | "success") {
+          notifications.push({ message, level });
+        },
+      },
+    } as any);
+
+    assert.equal(timers.length, 1, "operation timeout should schedule one bounded same-model retry");
+    assert.equal(timers[0].delay, 3_000);
+    assert.deepEqual(notifications[0], {
+      message: "Network error on zai/glm-5.3-flash: The operation timed out. Retry 1/2 in 3s...",
+      level: "warning",
+    });
+
+    timers[0].fn();
+    assert.equal(sendMessageCalls.length, 1);
+    assert.deepEqual(sendMessageCalls[0][1], { triggerTurn: true });
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    resetTransientRetryState();
+    autoSession.reset();
+  }
+});
+
 test("rate-limit agent_end walks past unavailable fallback models before pausing (#716 follow-up)", async () => {
   const originalCwd = process.cwd();
   const originalSetTimeout = globalThis.setTimeout;

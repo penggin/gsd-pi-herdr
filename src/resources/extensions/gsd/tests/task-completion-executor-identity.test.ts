@@ -449,6 +449,47 @@ test("a canonical blocker submission records a failed Result and routes instead 
   });
 });
 
+test("a late blocker submission after provider settlement cannot create a legacy SUMMARY", async () => {
+  const basePath = createBase();
+  const attemptId = claimCanonicalAttempt(basePath);
+  const settled = settleTaskAttempt({
+    invocation: invocation("fixture/settle-provider-timeout"),
+    attemptId,
+    outcome: "failed",
+    failureClass: "transient-execution",
+    summary: "provider-pause",
+    output: {},
+  });
+  const recovery = recordFailureAndSelectRecovery({
+    invocation: invocation("fixture/route-provider-timeout"),
+    attemptId,
+    resultId: settled.resultId,
+    owner: "agent",
+    classification: { failureKind: "tool-unavailable" },
+    summary: "The operation timed out before canonical completion.",
+    evidence: { source: "agent-end-recovery" },
+    rationale: "Retry the bounded transient execution failure.",
+  });
+  assert.equal(recovery.action, "retry");
+
+  const result = await executeTaskComplete({
+    ...completionParams(),
+    blockerDiscovered: true,
+  } as never, basePath, invocation("pi:gsd_task_complete:late-blocker"));
+
+  assert.equal(result.isError, true);
+  assert.match(String(result.content[0]?.text), /blocker report/i);
+  assert.match(String(result.content[0]?.text), /re-enter `?\/gsd auto`?/i);
+  assert.equal(row("SELECT status FROM tasks WHERE id = 'T01'").status, "in_progress");
+  assert.equal(row("SELECT full_summary_md FROM tasks WHERE id = 'T01'").full_summary_md, "");
+  assert.equal(row("SELECT COUNT(*) AS count FROM artifacts WHERE artifact_type = 'SUMMARY'").count, 0);
+  assert.equal(
+    existsSync(join(basePath, ".gsd", "phases", "01-test", "01-01-T01-SUMMARY.md")),
+    false,
+    "late blocker reports must not leave a disk projection that wedges reconciliation",
+  );
+});
+
 test("canonical escalation fails closed until the durable adapter can persist it", async () => {
   const basePath = createBase();
   claimCanonicalAttempt(basePath);

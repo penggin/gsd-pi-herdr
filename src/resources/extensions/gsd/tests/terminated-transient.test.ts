@@ -146,3 +146,10 @@ test("#1944: provider 'Request timed out' turn failures should be classified as 
   assert.equal(isTransient(result), true, "'Request timed out' should be transient");
   assert.equal(result.kind, "network", "'Request timed out' matches NETWORK_RE");
 });
+
+test("provider 'operation timed out' turn failures should be classified as transient (network)", () => {
+  const result = classifyError("Provider error: : The operation timed out.");
+  assert.equal(isTransient(result), true, "'operation timed out' should be transient");
+  assert.equal(result.kind, "network", "'operation timed out' matches NETWORK_RE");
+  assert.equal("retryAfterMs" in result && result.retryAfterMs, 3_000, "operation timeouts use bounded network backoff");
+});

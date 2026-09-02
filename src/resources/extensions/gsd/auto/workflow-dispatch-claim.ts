@@ -3,6 +3,7 @@
 
 import type { AutoSession } from "./session.js";
 import type { IterationData } from "./types.js";
+import { parseUnitId } from "../unit-id.js";
 
 export type DispatchClaimOutcome =
   | { kind: "opened"; dispatchId: number }
@@ -143,6 +144,11 @@ export function openDispatchClaim(
 
   const recent = deps.getRecentDispatchesForUnit(iterData.unitId, 1);
   const attemptN = (recent[0]?.attempt_n ?? 0) + 1;
+  // A verification retry can target the just-completed task after derived
+  // state has already advanced activeTask to the next task. The dispatch
+  // scope must therefore come from its canonical unit identity, never from
+  // the mutable state snapshot carried for prompt construction.
+  const parsedUnit = parseUnitId(iterData.unitId);
 
   try {
     const claimInput = {
@@ -151,8 +157,8 @@ export function openDispatchClaim(
       workerId: s.workerId,
       milestoneLeaseToken: s.milestoneLeaseToken,
       milestoneId: mid,
-      sliceId: iterData.state.activeSlice?.id ?? null,
-      taskId: iterData.state.activeTask?.id ?? null,
+      sliceId: parsedUnit.slice ?? null,
+      taskId: parsedUnit.task ?? null,
       unitType: iterData.unitType,
       unitId: iterData.unitId,
       attemptN,

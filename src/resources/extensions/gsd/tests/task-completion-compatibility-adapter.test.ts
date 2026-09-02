@@ -1533,7 +1533,7 @@ test("auto publication replays a committed Task completion after PLAN projection
   }, beforeReplay);
 });
 
-test("#1973: attempt-gate rejection names the settled outcome and recovery lever; blocker reports bypass the gate", () => {
+test("late blocker reports cannot bypass canonical Attempt authority after settlement", () => {
   const { attemptId } = createFixture();
   const settlement = settleTaskAttempt({
     invocation: invocation("task-completion/settle-provider-failure"),
@@ -1570,9 +1570,17 @@ test("#1973: attempt-gate rejection names the settled outcome and recovery lever
     },
   );
 
-  assert.equal(
-    resolveTaskCompletionAuthority(TASK, undefined, { blockerReport: true }),
-    "legacy",
-    "blockerDiscovered reports must route to the legacy durable write instead of dead-ending on the gate",
+  assert.throws(
+    () => resolveTaskCompletionAuthority(TASK, undefined, { blockerReport: true }),
+    (err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      assert.match(message, /blocker report/i);
+      assert.match(message, /legacy completion/i);
+      assert.match(message, /re-enter `?\/gsd auto`?/i);
+      assert.ok(message.includes(attemptId));
+      assert.ok(message.includes(routed.recoveryActionId));
+      return true;
+    },
+    "a settled canonical Attempt must never fall through to legacy completion",
   );
 });

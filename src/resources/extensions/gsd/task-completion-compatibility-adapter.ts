@@ -140,11 +140,11 @@ function replayAttemptId(
 
 export interface TaskCompletionAuthorityOptions {
   /**
-   * gsd_task_complete(blockerDiscovered: true): a blocker report is an
-   * escalation channel, not a completion — it must always be recordable, even
-   * when the supervisor already settled the Attempt out from under a surviving
-   * session (#1973). When set, the running-attempt gate routes to the legacy
-   * write path (a durable DB write that needs no Attempt) instead of throwing.
+   * gsd_task_complete(blockerDiscovered: true): identify a blocker report so
+   * the running-attempt gate can explain why it was rejected after settlement.
+   * A canonical lifecycle must never fall through to legacy completion: that
+   * path marks the Task complete and projects a SUMMARY without Attempt
+   * authority, creating artifact/DB divergence after provider timeouts.
    */
   blockerReport?: boolean;
 }
@@ -231,12 +231,18 @@ export function resolveTaskCompletionAuthority(
     return "legacy";
   }
   if (Number(lifecycle["has_held_running_attempt"]) === 1) return "canonical";
-  if (options?.blockerReport) return "legacy";
   if (Number(lifecycle["has_running_attempt"]) === 1) {
     throw new Error(
       "Canonical Task completion found an orphaned running Attempt whose milestone lease is no " +
       "longer held. Dry-run gsd_task_settle and apply it only if the lease is reported " +
       "reclaimable; otherwise re-enter `/gsd auto` to recover under the current lease." +
+      latestAttemptRecoveryContext(task),
+    );
+  }
+  if (options?.blockerReport) {
+    throw new Error(
+      "Canonical Task blocker report has no held running Attempt and cannot fall back to legacy " +
+      "completion. Re-enter `/gsd auto` so the recorded recovery action can claim a fresh Attempt." +
       latestAttemptRecoveryContext(task),
     );
   }

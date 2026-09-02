@@ -867,7 +867,8 @@ export async function handleAgentEnd(
         retryState.consecutiveTransientCount += 1;
         const attempt = retryState.networkRetryCount;
         const delayMs = attempt * cls.retryAfterMs;
-        ctx.ui.notify(`Network error on ${currentModelId}${errorDetail}. Retry ${attempt}/${MAX_NETWORK_RETRIES} in ${delayMs / 1000}s...`, "warning");
+        const detailTerminator = /[.!?]$/.test(errorDetail) ? "" : ".";
+        ctx.ui.notify(`Network error on ${currentModelId}${errorDetail}${detailTerminator} Retry ${attempt}/${MAX_NETWORK_RETRIES} in ${delayMs / 1000}s...`, "warning");
         setTimeout(() => {
           pi.sendMessage(
             { customType: "gsd-auto-timeout-recovery", content: "Continue execution — retrying after transient network error.", display: false },

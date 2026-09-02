@@ -7,9 +7,10 @@ import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { openDatabase, closeDatabase, insertMilestone, insertSlice } from "../gsd-db.ts";
+import { openDatabase, closeDatabase, insertMilestone, insertSlice, insertTask } from "../gsd-db.ts";
 import { registerAutoWorker } from "../db/auto-workers.ts";
 import { claimMilestoneLease } from "../db/milestone-leases.ts";
+import { claimTaskAttempt } from "../task-execution-domain-operation.ts";
 import {
   recordDispatchClaim,
   getActiveForWorker,
@@ -178,6 +179,54 @@ test("claimUnitRun opens lease and claim in one transaction", (t) => {
   assert.ok(row);
   assert.equal(row.status, "claimed");
   assert.equal(row.unit_id, "M001/S01");
+});
+
+test("a retry UnitRun activates the target task after derived state advances to the next task", (t) => {
+  const base = makeBase();
+  t.after(() => cleanup(base));
+  const { workerId, leaseToken, session } = setup(base);
+  insertTask({ id: "T01", sliceId: "S01", milestoneId: "M001", title: "Retry target", status: "ready" });
+
+  const advancedState = {
+    ...state,
+    activeTask: { id: "T02" },
+  } as GSDState;
+  const result = claimUnitRun({
+    session,
+    flowId: "retry-flow",
+    turnId: "retry-turn",
+    iterData: iterationDataForClaim("execute-task", "M001/S01/T01", advancedState, session),
+    leaseDeps: {
+      claimMilestoneLease,
+      logLeaseRecovered() {},
+      logLeaseRecoveryFailed() {},
+    },
+    claimDeps: {
+      getRecentDispatchesForUnit: () => [],
+      recordDispatchClaim,
+      markDispatchRunning: () => {},
+      logClaimRejected() {},
+      logClaimFailed() {},
+    },
+  });
+
+  assert.equal(result.kind, "opened");
+  if (result.kind !== "opened") throw new Error("expected opened retry dispatch");
+  assert.equal(getDispatchById(result.dispatchId)?.task_id, "T01");
+  const attempt = claimTaskAttempt({
+    invocation: {
+      idempotencyKey: `test:retry-scope:${result.dispatchId}`,
+      sourceTransport: "internal",
+      actorType: "agent",
+      actorId: workerId,
+    },
+    task: { milestoneId: "M001", sliceId: "S01", taskId: "T01" },
+    workerId,
+    milestoneLeaseToken: leaseToken,
+    coordinationDispatchId: result.dispatchId,
+  });
+  assert.equal(attempt.attemptNumber, 1);
+  assert.equal(getDispatchById(result.dispatchId)?.status, "running");
 });
 
 test("claimUnitRun degrades with a reason when the worker is missing", () => {
