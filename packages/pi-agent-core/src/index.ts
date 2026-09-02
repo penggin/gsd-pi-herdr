@@ -29,6 +29,8 @@ export {
 export * from "./harness/messages.js";
 export * from "./harness/prompt-templates.js";
 export * from "./harness/session/jsonl-repo.js";
+export * from "./harness/session/jsonl-v4-codec.js";
+export * from "./harness/session/jsonl-v4-reader.js";
 export * from "./harness/session/jsonl-version.js";
 export * from "./harness/session/memory-repo.js";
 export * from "./harness/session/repo-utils.js";

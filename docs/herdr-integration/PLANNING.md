@@ -1682,6 +1682,34 @@ this session does not merge, push, tag, or publish.
   read-only state reducer. Keep all v4 write/CLI paths disabled until the
   corruption, bounds, parent-linkage, and upstream-fixture conformance gates
   pass.
+- Implemented P3.2 as an isolated read-only v4 codec and reducer adapted from
+  upstream Pi v0.84.4. It validates header and mutation families, positive
+  consecutive sequence numbers, unique IDs, lanes, parent chains, label
+  targets, header parent exclusivity, and typed operation records before
+  returning a deeply frozen snapshot. No encoder or append API was imported.
+- Added bounded read enforcement: 64 MiB files, 1 MiB physical lines, and
+  200,000 mutation records by default; error text is capped and never embeds
+  raw JSON payloads. Reads reject direct symlink files and canonical paths
+  outside the configured sessions root. A syntactically torn final append is
+  ignored in memory only; complete schema errors fail and both torn and valid
+  unterminated inputs remain byte-for-byte unchanged.
+- `SessionRepositoryAdapter.openReadOnly()` now selects the v4 reader, and
+  `listReadOnly()` returns validated v3/v4 metadata. Ordinary `open`, `create`,
+  `fork`, and `list` remain v3-only, preserving rollback and preventing an
+  accidental writer cutover. Immutable leaf-to-root v4 branch reads are
+  exposed over already validated snapshots.
+- P3.2 focused verification passes **26/26** across version detection, legacy
+  repository, codec, reader/security, and adapter suites. In addition,
+  `typecheck:extensions`, all compiled package suites via `test:packages`,
+  `build:core`, and `git diff --check` pass. The broad source harness invocation
+  still reports the pre-existing faux-provider registration failures
+  documented earlier; the changed focused suites are clean and the compiled
+  package gate remains the authoritative broad check.
+- Exact next task: run the full compiled package/typecheck/core-build gates,
+  review and push P3.2, then begin P3.3 by defining one shared read-state
+  conformance surface for legacy-v3 and harness-v4. Do not add v4 mutation or
+  default selection until memory/JSONL equivalence and downstream lifecycle
+  parity are proven.
 
 ## 11. Working-session protocol
 

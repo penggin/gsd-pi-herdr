@@ -78,7 +78,26 @@ describe("SessionRepositoryAdapter", () => {
 			version: 4,
 		});
 		expect((await adapter.list({ cwd: root })).map((entry) => entry.id)).toEqual(["listed-v3"]);
-		await expect(adapter.openReadOnly(v4Path)).rejects.toMatchObject({ code: "unsupported_version" });
+		expect(await adapter.listReadOnly({ cwd: root })).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ format: "legacy-v3", metadata: expect.objectContaining({ id: "listed-v3" }) }),
+				expect.objectContaining({ format: "harness-v4", metadata: expect.objectContaining({ id: "listed-v4" }) }),
+			]),
+		);
+		expect(await adapter.openReadOnly(v4Path)).toMatchObject({
+			format: "harness-v4",
+			metadata: { id: "listed-v4", sourceFormat: 4 },
+		});
+		const legacyShapedV4Metadata = {
+			id: "listed-v4",
+			createdAt: new Date(1).toISOString(),
+			cwd: root,
+			path: v4Path,
+		};
+		await expect(adapter.open(legacyShapedV4Metadata)).rejects.toMatchObject({ code: "unsupported_version" });
+		await expect(adapter.fork(legacyShapedV4Metadata, { cwd: root })).rejects.toMatchObject({
+			code: "unsupported_version",
+		});
 	});
 
 	it("reports symlink candidates without following them in the normal list", async () => {
@@ -99,18 +118,25 @@ describe("SessionRepositoryAdapter", () => {
 		expect((await adapter.list({ cwd: root })).map((entry) => entry.id)).toEqual(["symlink-target"]);
 	});
 
-	it("recognizes v4 and corrupt inputs without rewriting or falling back", async () => {
+	it("opens the upstream v4 fixture read-only and preserves corrupt inputs", async () => {
 		const env = new NodeExecutionEnv({ cwd: fixtures });
 		const adapter = new SessionRepositoryAdapter({ fs: env, sessionsRoot: fixtures });
-		for (const [name, code] of [
-			["session-v4-upstream.jsonl", "unsupported_version"],
-			["session-malformed.jsonl", "invalid_session"],
-		] as const) {
-			const path = join(fixtures, name);
-			const before = readFileSync(path, "utf8");
-			await expect(adapter.openReadOnly(path)).rejects.toMatchObject({ code });
-			expect(readFileSync(path, "utf8")).toBe(before);
-		}
+		const v4Path = join(fixtures, "session-v4-upstream.jsonl");
+		const v4Before = readFileSync(v4Path, "utf8");
+		const snapshot = await adapter.openReadOnly(v4Path);
+		expect(snapshot).toMatchObject({
+			format: "harness-v4",
+			sequence: 1,
+			metadata: { id: "fixture-v4", sourceFormat: 4 },
+			entries: [{ id: "user-1", parentId: null }],
+		});
+		expect(Object.isFrozen(snapshot)).toBe(true);
+		expect(readFileSync(v4Path, "utf8")).toBe(v4Before);
+
+		const malformedPath = join(fixtures, "session-malformed.jsonl");
+		const malformedBefore = readFileSync(malformedPath, "utf8");
+		await expect(adapter.openReadOnly(malformedPath)).rejects.toMatchObject({ code: "invalid_session" });
+		expect(readFileSync(malformedPath, "utf8")).toBe(malformedBefore);
 	});
 
 	it("preserves opaque downstream details in read-only legacy snapshots", async () => {

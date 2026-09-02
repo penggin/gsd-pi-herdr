@@ -12,6 +12,10 @@ import { SessionError } from "../types.js";
 import { JsonlSessionRepo } from "./jsonl-repo.js";
 import { JsonlSessionStorage, loadJsonlSessionMetadata } from "./jsonl-storage.js";
 import {
+	readJsonlV4Session,
+	type ReadOnlyJsonlV4SessionSnapshot,
+} from "./jsonl-v4-reader.js";
+import {
 	detectJsonlSessionFormat,
 	type JsonlSessionFormat,
 	type JsonlSessionFormatDetection,
@@ -27,18 +31,32 @@ export interface VersionedJsonlSessionCreateOptions extends JsonlSessionCreateOp
 	format?: JsonlSessionFormat;
 }
 
-export interface ReadOnlyJsonlSessionSnapshot {
+export interface ReadOnlyLegacyJsonlSessionSnapshot {
 	format: "legacy-v3";
 	metadata: Readonly<JsonlSessionMetadata>;
 	leafId: string | null;
 	entries: readonly SessionTreeEntry[];
 }
 
+export type ReadOnlyJsonlSessionSnapshot = ReadOnlyLegacyJsonlSessionSnapshot | ReadOnlyJsonlV4SessionSnapshot;
+
 export interface JsonlSessionCatalogDiagnostic {
 	path: string;
 	modifiedAt: number;
 	detection: JsonlSessionFormatDetection;
 }
+
+export type ReadOnlyJsonlSessionCatalogEntry =
+	| {
+			format: "legacy-v3";
+			modifiedAt: number;
+			metadata: Readonly<JsonlSessionMetadata>;
+	  }
+	| {
+			format: "harness-v4";
+			modifiedAt: number;
+			metadata: ReadOnlyJsonlV4SessionSnapshot["metadata"];
+	  };
 
 /** Canonical construction path for version-aware JSONL session repositories. */
 export function createSessionRepository(options: SessionRepositoryAdapterOptions): SessionRepositoryAdapter {
@@ -50,7 +68,7 @@ function detectionMessage(detection: JsonlSessionFormatDetection): string {
 	if (detection.status === "unsupported") {
 		return `${detection.family} session version ${detection.version} is not supported`;
 	}
-	return `${detection.format} is recognized but its reader is not enabled`;
+	return `${detection.format} is recognized but its mutable backend is not enabled`;
 }
 
 function deepFreeze<T>(value: T): Readonly<T> {
@@ -66,10 +84,12 @@ function deepFreeze<T>(value: T): Readonly<T> {
 export class SessionRepositoryAdapter implements JsonlSessionRepoApi {
 	private readonly fs: FileSystem;
 	private readonly legacy: JsonlSessionRepo;
+	private readonly sessionsRoot: string;
 
 	constructor(options: SessionRepositoryAdapterOptions) {
 		this.fs = options.fs;
 		this.legacy = new JsonlSessionRepo(options);
+		this.sessionsRoot = options.sessionsRoot;
 	}
 
 	detect(path: string): Promise<JsonlSessionFormatDetection> {
@@ -90,7 +110,16 @@ export class SessionRepositoryAdapter implements JsonlSessionRepoApi {
 	}
 
 	async openReadOnly(path: string): Promise<ReadOnlyJsonlSessionSnapshot> {
-		await this.requireLegacy(path);
+		const detection = await this.detect(path);
+		if (detection.status === "supported" && detection.format === "harness-v4") {
+			return readJsonlV4Session(this.fs, path, { sessionsRoot: this.sessionsRoot });
+		}
+		if (!(detection.status === "supported" && detection.format === "legacy-v3")) {
+			throw new SessionError(
+				detection.status === "invalid" ? "invalid_session" : "unsupported_version",
+				`Cannot open session ${path}: ${detectionMessage(detection)}`,
+			);
+		}
 		const metadata = await loadJsonlSessionMetadata(this.fs, path);
 		const storage = await JsonlSessionStorage.open(this.fs, path);
 		return deepFreeze({
@@ -114,6 +143,39 @@ export class SessionRepositoryAdapter implements JsonlSessionRepoApi {
 			})),
 		);
 		return diagnostics.sort((left, right) => right.modifiedAt - left.modifiedAt);
+	}
+
+	/** List readable v3 and v4 metadata without enabling v4 mutation paths. */
+	async listReadOnly(options?: JsonlSessionListOptions): Promise<ReadOnlyJsonlSessionCatalogEntry[]> {
+		const entries = await Promise.all(
+			(await this.legacy.listFiles(options)).map(async (file): Promise<ReadOnlyJsonlSessionCatalogEntry | undefined> => {
+				try {
+					const detection = await this.detect(file.path);
+					if (detection.status !== "supported") return undefined;
+					if (detection.format === "harness-v4") {
+						const snapshot = await readJsonlV4Session(this.fs, file.path, { sessionsRoot: this.sessionsRoot });
+						return { format: "harness-v4", modifiedAt: file.mtimeMs, metadata: snapshot.metadata };
+					}
+					if (file.kind !== "file") return undefined;
+					return {
+						format: "legacy-v3",
+						modifiedAt: file.mtimeMs,
+						metadata: deepFreeze(structuredClone(await loadJsonlSessionMetadata(this.fs, file.path))),
+					};
+				} catch (error) {
+					if (
+						error instanceof SessionError &&
+						(error.code === "invalid_session" || error.code === "invalid_entry")
+					) {
+						return undefined;
+					}
+					throw error;
+				}
+			}),
+		);
+		return entries
+			.filter((entry): entry is ReadOnlyJsonlSessionCatalogEntry => entry !== undefined)
+			.sort((left, right) => right.modifiedAt - left.modifiedAt);
 	}
 
 	async delete(metadata: JsonlSessionMetadata): Promise<void> {

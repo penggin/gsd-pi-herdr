@@ -33,9 +33,19 @@ reason.
 
 `JsonlSessionRepo` remains exported for compatibility and low-level storage
 tests, but it is the legacy backend rather than the application construction
-path. A recognized v4 file must fail with `unsupported_version` until the v4
-read-only codec passes its conformance gate. No open or list operation performs
-an implicit format migration.
+path. The adapter can now decode v4 through `openReadOnly()` and include valid
+v4 metadata through `listReadOnly()`. Its ordinary `open()`, `create()`,
+`fork()`, and `list()` surfaces remain v3-only, so no v4 writer or CLI cutover
+is implied.
+
+The v4 read path is adapted from upstream Pi v0.84.4. It validates headers,
+mutation discriminants, shared sequence, lanes, parent linkage, IDs, and label
+targets before exposing a deeply frozen snapshot. Reads are contained to the
+configured session root, reject symbolic-link files, and enforce file, line,
+and record-count limits. A final syntactically torn append may be excluded from
+the in-memory snapshot, but the source file is never repaired or rewritten by
+the read-only path. No open or list operation performs an implicit format
+migration.
 
 ## Session owns durable state
 
