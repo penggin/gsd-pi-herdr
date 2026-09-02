@@ -60,6 +60,7 @@ export type {
 	OAuthSelectPrompt,
 } from "./utils/oauth/types.js";
 export * from "./utils/overflow.js";
+export * from "./utils/retry.js";
 export * from "./utils/typebox-helpers.js";
 export * from "./utils/repair-tool-json.js";
 export * from "./utils/normalize-tool-arguments.js";

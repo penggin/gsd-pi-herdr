@@ -321,6 +321,33 @@ describe("AgentSessionPromptModule", () => {
 		assert.deepEqual(events, ["extension:agent_settled", "session:agent_settled"]);
 	});
 
+	test("uses shared provider retry classification without retrying account limits", () => {
+		const mod = new AgentSessionPromptModule({ model: { contextWindow: 128000 } } as any);
+
+		for (const message of [
+			"HTTP 524: upstream timed out",
+			"ResourceExhausted: concurrent request limit",
+			"The socket connection was closed unexpectedly",
+			"Please retry your request",
+		]) {
+			assert.equal(mod.isRetryableError(makeAssistantError(message) as any), true, message);
+		}
+
+		for (const message of [
+			"429 insufficient_quota: add billing details",
+			"Monthly usage limit reached; enable available balance",
+			"invalid_api_key",
+		]) {
+			assert.equal(mod.isRetryableError(makeAssistantError(message) as any), false, message);
+		}
+
+		assert.equal(
+			mod.isRetryableError(makeAssistantError("HTTP 500: maximum context length exceeded") as any),
+			false,
+			"context overflow must stay on the compaction path",
+		);
+	});
+
   test("refuses to expand Assessment Gates through ordinary /skill commands", () => {
     const errors: Array<{ error: string }> = [];
     const gate = {

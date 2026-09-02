@@ -1349,6 +1349,26 @@ this session does not merge, push, tag, or publish.
   **135/135**, agent-modes **287/287**, native **223 pass / 1 platform skip**,
   pi-agent-core **3/3**, pi-ai **49/49**, coding-agent **66/66**, pi-tui
   **8/8**, contracts **9/9**, MCP **377/377**, and RPC client **30/30**.
+- Replaced the session-local loose retry regex with a provider-neutral Pi AI
+  classifier. It recognizes Cloudflare 524, gRPC `ResourceExhausted`, DNS
+  resolution failures, closed sockets, premature terminal streams, and explicit
+  provider retry guidance. Account/subscription/quota/billing exhaustion wins
+  over embedded 429 text and fails immediately instead of consuming the retry
+  budget. GSD still owns retry count, backoff, cancellation, UI events, and
+  continuation; context overflow is still intercepted first for compaction.
+- Focused retry verification passes: classifier **12/12** and agent-core
+  **136/136**, including the context-overflow precedence guard. `build:pi-ai`
+  and `build:agent-core` pass. No retry count, delay, provider SDK, dependency,
+  or lockfile setting changed.
+- Exact next task: run the full downstream gates, commit and push this retry
+  classification slice, then audit OpenAI Responses terminal-event and
+  reasoning-replay fixes as the next bounded provider correctness unit.
+- Final retry-classification gate passes: `typecheck:extensions`, `build:core`,
+  `git diff --check`, and all ten compiled workspace suites. Agent-core grows to
+  **136/136**; the other counts remain agent-modes **287/287**, native **223 pass
+  / 1 platform skip**, pi-agent-core **3/3**, pi-ai **49/49**, coding-agent
+  **66/66**, pi-tui **8/8**, contracts **9/9**, MCP **377/377**, and RPC client
+  **30/30**.
 
 ## 11. Working-session protocol
 
