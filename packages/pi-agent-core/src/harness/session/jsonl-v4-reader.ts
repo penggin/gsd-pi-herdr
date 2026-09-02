@@ -23,6 +23,7 @@ export interface ReadJsonlV4Options {
 	maxFileBytes?: number;
 	maxLineBytes?: number;
 	maxRecords?: number;
+	abortSignal?: AbortSignal;
 }
 
 export interface JsonlV4SessionMetadata {
@@ -47,6 +48,14 @@ export interface ReadOnlyJsonlV4SessionSnapshot {
 	name?: string;
 	labels: Readonly<Record<string, string>>;
 	ignoredTornTail: boolean;
+}
+
+/** Parsed mutable state used by the isolated writer; loading itself never repairs the source. */
+export interface LoadedJsonlV4SessionState {
+	metadata: JsonlV4SessionMetadata;
+	state: V4SessionState;
+	ignoredTornTail: boolean;
+	repairContent?: string;
 }
 
 function boundedText(value: string, maxLength: number): string {
@@ -119,25 +128,36 @@ function deepFreeze<T>(value: T): Readonly<T> {
  * Decode and reduce a v4 session without acquiring a writer or repairing the
  * source. A final syntactically torn append is ignored in memory only.
  */
-export async function readJsonlV4Session(
+export async function loadJsonlV4SessionState(
 	fs: JsonlV4ReaderFileSystem,
 	path: string,
 	options: ReadJsonlV4Options,
-): Promise<ReadOnlyJsonlV4SessionSnapshot> {
+): Promise<LoadedJsonlV4SessionState> {
+	const abortSignal = options.abortSignal;
+	if (abortSignal?.aborted) throw new SessionError("storage", "Reading JSONL v4 session was aborted");
 	const maxFileBytes = positiveBound(options.maxFileBytes, DEFAULT_JSONL_V4_MAX_FILE_BYTES, "maxFileBytes");
 	const maxLineBytes = positiveBound(options.maxLineBytes, DEFAULT_JSONL_V4_MAX_LINE_BYTES, "maxLineBytes");
 	const maxRecords = positiveBound(options.maxRecords, DEFAULT_JSONL_V4_MAX_RECORDS, "maxRecords");
-	const info = unwrapFileResult(await fs.fileInfo(path), `Failed to inspect session ${path}`);
+	const info = unwrapFileResult(await fs.fileInfo(path, abortSignal), `Failed to inspect session ${path}`);
 	if (info.kind === "symlink") throw new SessionError("invalid_session", "Session path must not be a symbolic link");
 	if (info.kind !== "file") throw new SessionError("invalid_session", "Session path must be a regular file");
 	if (info.size > maxFileBytes) throw new SessionError("invalid_session", "JSONL v4 session exceeds the file size limit");
 
-	const rootPath = unwrapFileResult(await fs.absolutePath(options.sessionsRoot), "Failed to resolve sessions root");
-	const canonicalRoot = unwrapFileResult(await fs.canonicalPath(rootPath), "Failed to resolve sessions root");
-	const canonicalPath = unwrapFileResult(await fs.canonicalPath(path), `Failed to resolve session ${path}`);
+	const rootPath = unwrapFileResult(
+		await fs.absolutePath(options.sessionsRoot, abortSignal),
+		"Failed to resolve sessions root",
+	);
+	const canonicalRoot = unwrapFileResult(
+		await fs.canonicalPath(rootPath, abortSignal),
+		"Failed to resolve sessions root",
+	);
+	const canonicalPath = unwrapFileResult(
+		await fs.canonicalPath(path, abortSignal),
+		`Failed to resolve session ${path}`,
+	);
 	assertContained(canonicalRoot, canonicalPath);
 
-	const content = unwrapFileResult(await fs.readTextFile(path), `Failed to read session ${path}`);
+	const content = unwrapFileResult(await fs.readTextFile(path, abortSignal), `Failed to read session ${path}`);
 	if (byteLength(content) > maxFileBytes) {
 		throw new SessionError("invalid_session", "JSONL v4 session exceeds the file size limit");
 	}
@@ -158,6 +178,7 @@ export async function readJsonlV4Session(
 	const state = new V4SessionState();
 	let ignoredTornTail = false;
 	for (let index = 1; index < lines.length; index++) {
+		if (abortSignal?.aborted) throw new SessionError("storage", "Reading JSONL v4 session was aborted");
 		const line = lines[index]!;
 		if (byteLength(line) > maxLineBytes) {
 			throw invalidLine(path, index + 1, new JsonlV4DecodeError("schema", "exceeds the line length limit"));
@@ -192,11 +213,30 @@ export async function readJsonlV4Session(
 			: { legacyParentSessionPath: header.legacyParentSessionPath }),
 		...(header.metadata === undefined ? {} : { metadata: structuredClone(header.metadata) }),
 	};
+	const repairContent = ignoredTornTail
+		? `${lines.slice(0, stateSnapshot.sequence + 1).join("\n")}\n`
+		: content.endsWith("\n")
+			? undefined
+			: `${content}\n`;
+	return {
+		metadata,
+		state,
+		ignoredTornTail,
+		...(repairContent === undefined ? {} : { repairContent }),
+	};
+}
+
+export async function readJsonlV4Session(
+	fs: JsonlV4ReaderFileSystem,
+	path: string,
+	options: ReadJsonlV4Options,
+): Promise<ReadOnlyJsonlV4SessionSnapshot> {
+	const loaded = await loadJsonlV4SessionState(fs, path, options);
 	return deepFreeze({
 		format: "harness-v4" as const,
-		metadata,
-		...stateSnapshot,
-		ignoredTornTail,
+		metadata: loaded.metadata,
+		...loaded.state.snapshot(),
+		ignoredTornTail: loaded.ignoredTornTail,
 	});
 }
 

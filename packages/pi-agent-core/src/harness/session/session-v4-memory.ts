@@ -6,15 +6,19 @@ import {
 	parseJsonlV4Mutation,
 	serializeJsonlV4Mutation,
 } from "./jsonl-v4-codec.js";
+import { assertV4JsonSerializable } from "./session-v4-json.js";
 import {
 	type V4EntryQuery,
 	type V4ForkOptions,
+	type V4SessionLogItem,
 	type V4RecordQuery,
 	V4SessionState,
 	V4SessionStateError,
 	type V4SessionStateSnapshot,
 } from "./session-v4-state.js";
 import { uuidv7 } from "./uuid.js";
+
+export { assertV4JsonSerializable } from "./session-v4-json.js";
 
 export interface V4MemorySessionMetadata {
 	id: string;
@@ -34,67 +38,8 @@ export type V4ProvisionedRecord = {
 	[key: string]: unknown;
 };
 
-type JsonValidationFrame = { value: unknown } | { exit: object };
-
-function invalidPayload(reason: string): never {
-	throw new SessionError("invalid_payload", `Durable v4 payload ${reason}`);
-}
-
-/** Validate without invoking getters, toJSON hooks, or other user code. */
-export function assertV4JsonSerializable(value: unknown): void {
-	const active = new WeakSet<object>();
-	const stack: JsonValidationFrame[] = [{ value }];
-	while (stack.length > 0) {
-		const frame = stack.pop()!;
-		if ("exit" in frame) {
-			active.delete(frame.exit);
-			continue;
-		}
-		const candidate = frame.value;
-		if (candidate === null || typeof candidate === "string" || typeof candidate === "boolean") continue;
-		if (typeof candidate === "number") {
-			if (!Number.isFinite(candidate)) invalidPayload("contains a non-finite number");
-			continue;
-		}
-		if (typeof candidate !== "object") invalidPayload(`contains ${typeof candidate}`);
-		if (active.has(candidate)) invalidPayload("contains a cycle");
-		active.add(candidate);
-		stack.push({ exit: candidate });
-
-		if (Array.isArray(candidate)) {
-			if (Object.getPrototypeOf(candidate) !== Array.prototype) invalidPayload("contains a non-standard array");
-			if (
-				Object.getOwnPropertySymbols(candidate).length > 0 ||
-				Object.getOwnPropertyNames(candidate).length !== candidate.length + 1
-			) {
-				invalidPayload("contains an array with unsupported properties");
-			}
-			for (let index = candidate.length - 1; index >= 0; index--) {
-				if (!Object.hasOwn(candidate, index)) invalidPayload("contains a sparse array");
-				const descriptor = Object.getOwnPropertyDescriptor(candidate, index)!;
-				if (!("value" in descriptor)) invalidPayload("contains an array accessor");
-				stack.push({ value: descriptor.value });
-			}
-			continue;
-		}
-
-		const prototype = Object.getPrototypeOf(candidate);
-		if (prototype !== Object.prototype && prototype !== null) invalidPayload("contains a non-plain object");
-		if (Object.getOwnPropertySymbols(candidate).length > 0) invalidPayload("contains a symbol-keyed property");
-		const keys = Object.keys(candidate);
-		if (Object.getOwnPropertyNames(candidate).length !== keys.length) {
-			invalidPayload("contains a non-enumerable property");
-		}
-		for (let index = keys.length - 1; index >= 0; index--) {
-			const descriptor = Object.getOwnPropertyDescriptor(candidate, keys[index]!)!;
-			if (!("value" in descriptor)) invalidPayload("contains an accessor");
-			stack.push({ value: descriptor.value });
-		}
-	}
-}
-
 function stateError(error: unknown): never {
-	if (error instanceof V4SessionStateError) throw new SessionError("invalid_entry", error.message, error);
+	if (error instanceof V4SessionStateError) throw new SessionError(error.code, error.message, error);
 	throw error;
 }
 
@@ -137,8 +82,12 @@ export class V4MemorySessionStorage {
 		return this.state.getLabel(targetId);
 	}
 
-	getLog(options?: { afterSeq?: number; limit?: number }) {
-		return this.state.getLog(options);
+	getLog(options?: { afterSeq?: number; limit?: number }): V4SessionLogItem[] {
+		try {
+			return this.state.getLog(options);
+		} catch (error) {
+			stateError(error);
+		}
 	}
 
 	findOpenOperations(lane: string): JsonlV4Record[] {
@@ -228,11 +177,19 @@ export class V4MemorySessionStorage {
 	}
 
 	findEntries(query?: V4EntryQuery): JsonlV4Entry[] {
-		return this.state.findEntries(query);
+		try {
+			return this.state.findEntries(query);
+		} catch (error) {
+			stateError(error);
+		}
 	}
 
 	findRecords(query?: V4RecordQuery): JsonlV4Record[] {
-		return this.state.findRecords(query);
+		try {
+			return this.state.findRecords(query);
+		} catch (error) {
+			stateError(error);
+		}
 	}
 
 	readBranch(start: string): JsonlV4Entry[] {
@@ -287,11 +244,16 @@ export class V4MemorySessionRepository {
 		const sourceStorage = this.open(source);
 		const id = options.id ?? uuidv7();
 		if (this.sessions.has(id)) throw new SessionError("already_exists", `Session already exists: ${id}`);
-		const target = V4MemorySessionStorage.fromFork(
-			{ id, createdAt: Date.now(), parentSessionId: options.parentSessionId ?? source.id },
-			sourceStorage,
-			options,
-		);
+		let target: V4MemorySessionStorage;
+		try {
+			target = V4MemorySessionStorage.fromFork(
+				{ id, createdAt: Date.now(), parentSessionId: options.parentSessionId ?? source.id },
+				sourceStorage,
+				options,
+			);
+		} catch (error) {
+			stateError(error);
+		}
 		this.sessions.set(id, target);
 		return target;
 	}

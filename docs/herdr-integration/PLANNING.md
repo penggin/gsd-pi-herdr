@@ -1748,6 +1748,34 @@ this session does not merge, push, tag, or publish.
   repository/storage with serialized mutation commits, atomic create/fork,
   explicit torn-tail repair on writable open, and a shared conformance suite
   against memory. Do not select harness-v4 in the application adapter yet.
+- Added the isolated P3.3 v4 JSONL repository and storage. Per-storage writes
+  share a promise tail, validate the exact flat wire record, make one append,
+  and apply the reducer only after filesystem acceptance. Failed and
+  pre-aborted writes leave sequence/facts unchanged; subsequent queued writes
+  continue from the last committed sequence.
+- Create and fork build complete sibling temporary files and publish with an
+  atomic rename, cleaning temporary files on failure. Writable open reuses the
+  bounded, containment-checking reader and atomically publishes only its
+  validated prefix when repairing a syntactically torn final append or missing
+  newline. Read-only open remains byte-for-byte non-mutating. Session
+  directories and files are symlink/containment checked before writable use.
+- Added `FileSystem.renameFile()` and abort-aware append preflight to the Node
+  execution environment. A shared backend conformance suite now exercises the
+  same entry/lane/record/fact sequence, deterministic errors, branch/tree fork,
+  and detached payload rules against memory and JSONL. Focused v4 storage,
+  reader, codec, repository-adapter, conformance, and Node filesystem tests
+  pass **58/58**. The full `typecheck:extensions`, compiled `test:packages`,
+  `build:core`, and `git diff --check` gates pass with the established package
+  counts unchanged.
+- Risk/limitation: this is still an opt-in internal backend. The version-neutral
+  application adapter deliberately remains legacy-v3 for all mutable paths,
+  and no CLI, GSD DB/projection, or Herdr behavior has changed. Same-process
+  create/fork identity races are rejected; cross-process writer ownership and
+  a public v4 selection remain later cutover gates.
+- Exact next task: review and push this JSONL foundation, then finish P3.3
+  semantic parity by porting
+  filtered branch queries, operation-kind/open-operation bounds, usage stats,
+  and the remaining upstream conformance cases before any adapter selection.
 
 ## 11. Working-session protocol
 

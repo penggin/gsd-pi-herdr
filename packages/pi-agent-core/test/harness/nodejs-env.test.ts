@@ -26,23 +26,24 @@ describe("NodeExecutionEnv", () => {
 		getOrThrow(await env.createDir("nested/child"));
 		getOrThrow(await env.writeFile("nested/child/file.txt", "hel"));
 		getOrThrow(await env.appendFile("nested/child/file.txt", "lo"));
-		expect(getOrThrow(await env.readTextFile("nested/child/file.txt"))).toBe("hello");
-		expect(getOrThrow(await env.readTextLines("nested/child/file.txt", { maxLines: 1 }))).toEqual(["hello"]);
-		expect(Buffer.from(getOrThrow(await env.readBinaryFile("nested/child/file.txt"))).toString("utf8")).toBe("hello");
+		getOrThrow(await env.renameFile("nested/child/file.txt", "nested/child/renamed.txt"));
+		expect(getOrThrow(await env.readTextFile("nested/child/renamed.txt"))).toBe("hello");
+		expect(getOrThrow(await env.readTextLines("nested/child/renamed.txt", { maxLines: 1 }))).toEqual(["hello"]);
+		expect(Buffer.from(getOrThrow(await env.readBinaryFile("nested/child/renamed.txt"))).toString("utf8")).toBe("hello");
 
 		const entries = getOrThrow(await env.listDir("nested/child"));
 		expect(entries).toHaveLength(1);
 		expect(entries[0]).toMatchObject({
-			name: "file.txt",
-			path: join(root, "nested/child/file.txt"),
+			name: "renamed.txt",
+			path: join(root, "nested/child/renamed.txt"),
 			kind: "file",
 			size: 5,
 		});
 		expect(typeof entries[0]!.mtimeMs).toBe("number");
 
-		expect(getOrThrow(await env.exists("nested/child/file.txt"))).toBe(true);
-		getOrThrow(await env.remove("nested/child/file.txt"));
-		expect(getOrThrow(await env.exists("nested/child/file.txt"))).toBe(false);
+		expect(getOrThrow(await env.exists("nested/child/renamed.txt"))).toBe(true);
+		getOrThrow(await env.remove("nested/child/renamed.txt"));
+		expect(getOrThrow(await env.exists("nested/child/renamed.txt"))).toBe(false);
 	});
 
 	it("returns fileInfo for files, directories, and symlinks without following symlinks", async () => {
@@ -176,6 +177,8 @@ describe("NodeExecutionEnv", () => {
 			env.readTextLines("file.txt", { abortSignal: signal }),
 			env.readBinaryFile("file.txt", signal),
 			env.writeFile("other.txt", "hello", signal),
+			env.appendFile("file.txt", "other", signal),
+			env.renameFile("file.txt", "renamed.txt", signal),
 			env.listDir(".", signal),
 		]);
 		for (const result of results) {

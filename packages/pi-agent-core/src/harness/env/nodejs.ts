@@ -10,6 +10,7 @@ import {
 	readdir,
 	readFile,
 	realpath,
+	rename,
 	rm,
 	writeFile,
 } from "node:fs/promises";
@@ -453,14 +454,39 @@ export class NodeExecutionEnv implements ExecutionEnv {
 		}
 	}
 
-	async appendFile(path: string, content: string | Uint8Array): Promise<Result<void, FileError>> {
+	async appendFile(
+		path: string,
+		content: string | Uint8Array,
+		abortSignal?: AbortSignal,
+	): Promise<Result<void, FileError>> {
 		const resolved = resolvePath(this.cwd, path);
+		const aborted = abortResult<void>(abortSignal, resolved);
+		if (aborted) return aborted;
 		try {
 			await mkdir(resolve(resolved, ".."), { recursive: true });
+			const afterMkdirAbort = abortResult<void>(abortSignal, resolved);
+			if (afterMkdirAbort) return afterMkdirAbort;
 			await appendFile(resolved, content);
 			return ok(undefined);
 		} catch (error) {
 			return err(toFileError(error, resolved));
+		}
+	}
+
+	async renameFile(
+		sourcePath: string,
+		destinationPath: string,
+		abortSignal?: AbortSignal,
+	): Promise<Result<void, FileError>> {
+		const source = resolvePath(this.cwd, sourcePath);
+		const destination = resolvePath(this.cwd, destinationPath);
+		const aborted = abortResult<void>(abortSignal, destination);
+		if (aborted) return aborted;
+		try {
+			await rename(source, destination);
+			return ok(undefined);
+		} catch (error) {
+			return err(toFileError(error, source));
 		}
 	}
 

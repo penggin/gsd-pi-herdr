@@ -1,4 +1,5 @@
 import type { JsonlV4Entry, JsonlV4Mutation, JsonlV4Record } from "./jsonl-v4-codec.js";
+import type { SessionErrorCode } from "../types.js";
 
 export interface V4SessionStateSnapshot {
 	sequence: number;
@@ -39,10 +40,10 @@ export type V4ForkOptions =
 
 function assertQueryBounds(limit: number | undefined, afterSeq: number | undefined): void {
 	if (limit !== undefined && (!Number.isSafeInteger(limit) || limit <= 0)) {
-		throw new V4SessionStateError("limit must be a positive safe integer");
+		throw new V4SessionStateError("invalid_query", "limit must be a positive safe integer");
 	}
 	if (afterSeq !== undefined && (!Number.isSafeInteger(afterSeq) || afterSeq < 0)) {
-		throw new V4SessionStateError("afterSeq must be a non-negative safe integer");
+		throw new V4SessionStateError("invalid_query", "afterSeq must be a non-negative safe integer");
 	}
 }
 
@@ -51,9 +52,12 @@ function ordered<T>(values: readonly T[], order: "newestFirst" | "oldestFirst" |
 }
 
 export class V4SessionStateError extends Error {
-	constructor(message: string) {
+	readonly code: SessionErrorCode;
+
+	constructor(code: SessionErrorCode, message: string) {
 		super(message);
 		this.name = "V4SessionStateError";
+		this.code = code;
 	}
 }
 
@@ -74,22 +78,22 @@ export class V4SessionState {
 	}
 
 	requireLane(lane: string): string | null {
-		if (!this.lanes.has(lane)) throw new V4SessionStateError(`references missing lane ${lane}`);
+		if (!this.lanes.has(lane)) throw new V4SessionStateError("invalid_lane", `references missing lane ${lane}`);
 		return this.lanes.get(lane)!;
 	}
 
 	validateNewLane(lane: string): void {
-		if (this.lanes.has(lane)) throw new V4SessionStateError(`contains duplicate lane ${lane}`);
+		if (this.lanes.has(lane)) throw new V4SessionStateError("already_exists", `contains duplicate lane ${lane}`);
 	}
 
 	validateTarget(targetId: string | null): void {
 		if (targetId !== null && !this.entriesById.has(targetId)) {
-			throw new V4SessionStateError(`references missing target ${targetId}`);
+			throw new V4SessionStateError("not_found", `references missing target ${targetId}`);
 		}
 	}
 
 	validateUnusedId(id: string): void {
-		if (this.usedIds.has(id)) throw new V4SessionStateError(`contains duplicate id ${id}`);
+		if (this.usedIds.has(id)) throw new V4SessionStateError("already_exists", `contains duplicate id ${id}`);
 	}
 
 	apply(mutation: JsonlV4Mutation): void {
@@ -99,7 +103,9 @@ export class V4SessionState {
 				: mutation.kind === "record"
 					? mutation.record.seq
 					: mutation.seq;
-		if (seq !== this.sequence + 1) throw new V4SessionStateError(`has non-consecutive seq ${seq}`);
+		if (seq !== this.sequence + 1) {
+			throw new V4SessionStateError("invalid_entry", `has non-consecutive seq ${seq}`);
+		}
 
 		switch (mutation.kind) {
 			case "entry": {
@@ -107,11 +113,11 @@ export class V4SessionState {
 				if (mutation.lane !== undefined) {
 					const leafId = this.requireLane(mutation.lane);
 					if (mutation.entry.parentId !== leafId) {
-						throw new V4SessionStateError("does not chain to the lane leaf");
+						throw new V4SessionStateError("invalid_entry", "does not chain to the lane leaf");
 					}
 				}
 				if (mutation.entry.parentId !== null && !this.entriesById.has(mutation.entry.parentId)) {
-					throw new V4SessionStateError(`references missing parent ${mutation.entry.parentId}`);
+					throw new V4SessionStateError("invalid_entry", `references missing parent ${mutation.entry.parentId}`);
 				}
 				this.usedIds.add(mutation.entry.id);
 				this.entries.push(mutation.entry);
@@ -138,7 +144,7 @@ export class V4SessionState {
 					this.log.push({ kind: "fact", seq, fact: "name", name: mutation.name });
 				} else {
 					if (!this.entriesById.has(mutation.targetId)) {
-						throw new V4SessionStateError(`references missing label target ${mutation.targetId}`);
+						throw new V4SessionStateError("invalid_entry", `references missing label target ${mutation.targetId}`);
 					}
 					if (mutation.label === undefined) this.labels.delete(mutation.targetId);
 					else this.labels.set(mutation.targetId, mutation.label);
@@ -225,12 +231,12 @@ export class V4SessionState {
 	readBranch(start: string): JsonlV4Entry[] {
 		const branch: JsonlV4Entry[] = [];
 		let current = this.entriesById.get(start);
-		if (!current) throw new V4SessionStateError(`references missing target ${start}`);
+		if (!current) throw new V4SessionStateError("not_found", `references missing target ${start}`);
 		while (current) {
 			branch.push(structuredClone(current));
 			if (current.parentId === null) break;
 			current = this.entriesById.get(current.parentId);
-			if (!current) throw new V4SessionStateError("contains a broken parent chain");
+			if (!current) throw new V4SessionStateError("invalid_entry", "contains a broken parent chain");
 		}
 		return branch;
 	}
@@ -247,7 +253,7 @@ export class V4SessionState {
 			if (selectedId !== null) {
 				const selected = this.entriesById.get(selectedId);
 				if (!selected || selected.type !== "message") {
-					throw new V4SessionStateError(`fork target is not a message entry: ${selectedId}`);
+					throw new V4SessionStateError("invalid_fork_target", `fork target is not a message entry: ${selectedId}`);
 				}
 				const position = options.position ?? (options.entryId === undefined ? "at" : "before");
 				targetId = position === "at" ? selected.id : selected.parentId;

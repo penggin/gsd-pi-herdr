@@ -183,6 +183,10 @@ export function parseJsonlV4Header(line: string): Result<JsonlV4Header, JsonlV4D
 	}
 }
 
+export function serializeJsonlV4Header(header: JsonlV4Header): string {
+	return JSON.stringify(header);
+}
+
 function parseEntryMutation(
 	value: Record<string, unknown>,
 	seq: number,

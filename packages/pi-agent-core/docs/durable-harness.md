@@ -61,6 +61,20 @@ and rejects values that JSON cannot preserve without executing getters or
 Its purpose is to provide the no-I/O half of the shared conformance suite before
 the durable JSONL writer is exposed.
 
+`JsonlV4SessionRepository` and `JsonlV4SessionStorage` provide the isolated
+durable half of that contract. Mutations are serialized through one per-storage
+tail, validated against the wire codec, appended as one JSONL record, and only
+then applied to `V4SessionState`. Failed or pre-aborted appends therefore do not
+advance the in-memory reducer. Create, fork, and writable-open repair publish a
+complete sibling temporary file with an atomic rename; failed publications
+remove their temporary file. Read-only opens remain non-mutating, while an
+explicit writable open drops a final syntactically torn append or supplies a
+missing final newline from the already validated prefix.
+
+These v4 classes are exported for conformance and integration work but are not
+yet selected by `SessionRepositoryAdapter`; application creation, ordinary
+open, and fork remain legacy-v3 until downstream lifecycle parity is complete.
+
 ## Session owns durable state
 
 Treat session as all durable agent state, not just transcript history.
