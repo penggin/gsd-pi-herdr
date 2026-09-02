@@ -255,6 +255,42 @@ describe("AgentSessionPromptModule", () => {
     assert.equal(host._retryAttempt, 2);
     assert.equal(events.filter((event) => event.type === "auto_retry_start").length, 2);
   });
+
+  test("defers context-only extension messages until a replay-safe boundary", async () => {
+    const persisted: string[] = [];
+    const emitted: string[] = [];
+    const host = {
+      isStreaming: true,
+      _pendingNextTurnMessages: [],
+      _pendingCustomMessages: [],
+      agent: {
+        state: {
+          messages: [{ role: "toolResult", toolCallId: "tool-1", content: [] }],
+        },
+        steer: () => assert.fail("context-only message must not steer"),
+        followUp: () => assert.fail("context-only message must not follow up"),
+      },
+      sessionManager: {
+        appendCustomMessageEntry: (customType: string) => persisted.push(customType),
+      },
+      emit: (event: { type: string }) => emitted.push(event.type),
+    };
+    const mod = new AgentSessionPromptModule(host as any);
+
+    await mod.sendCustomMessage(
+      { customType: "context-only", content: "after tools", display: false },
+      { triggerTurn: false },
+    );
+
+    assert.equal(host._pendingCustomMessages.length, 1);
+    assert.deepEqual(host.agent.state.messages.map((message) => message.role), ["toolResult"]);
+    assert.deepEqual(persisted, []);
+
+    mod.flushPendingCustomMessages();
+    assert.deepEqual(host.agent.state.messages.map((message) => message.role), ["toolResult", "custom"]);
+    assert.deepEqual(persisted, ["context-only"]);
+    assert.deepEqual(emitted, ["message_start", "message_end"]);
+  });
 });
 
 function makeSkill(name: string) {

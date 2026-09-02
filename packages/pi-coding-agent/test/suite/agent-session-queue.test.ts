@@ -325,6 +325,31 @@ describe("AgentSession queue characterization", () => {
 		).toBe(true);
 	});
 
+	it("defers triggerTurn:false custom messages until tool results are persisted", async () => {
+		const waiting = await createWaitingHarness();
+		const { harness, waitForToolStart, promptPromise, releaseToolExecution } = waiting;
+		harnesses.push(harness);
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("wait", {}), { stopReason: "toolUse" }),
+			fauxAssistantMessage("done"),
+		]);
+
+		await waitForToolStart;
+		await harness.session.sendCustomMessage(
+			{ customType: "context-only", content: "safe after result", display: false, details: {} },
+			{ triggerTurn: false },
+		);
+		expect(harness.session.messages.some((message) => message.role === "custom")).toBe(false);
+
+		releaseToolExecution();
+		await promptPromise;
+		const roles = harness.session.messages.map((message) => message.role);
+		const customIndex = roles.indexOf("custom");
+		const toolResultIndex = roles.indexOf("toolResult");
+		expect(toolResultIndex).toBeGreaterThan(-1);
+		expect(customIndex).toBeGreaterThan(toolResultIndex);
+	});
+
 	it("injects nextTurn custom messages into the next prompt", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);

@@ -104,6 +104,7 @@ export class AgentSession implements AgentSessionHost {
 	_steeringMessages: string[] = [];
 	_followUpMessages: string[] = [];
 	_pendingNextTurnMessages: CustomMessage[] = [];
+	_pendingCustomMessages: CustomMessage[] = [];
 
 	_compactionAbortController: AbortController | undefined = undefined;
 	_autoCompactionAbortController: AbortController | undefined = undefined;
@@ -332,6 +333,10 @@ export class AgentSession implements AgentSessionHost {
 
 	flushPendingBashMessages(): void {
 		this._bash.flushPendingBashMessages();
+	}
+
+	flushPendingCustomMessages(): void {
+		this._prompt.flushPendingCustomMessages();
 	}
 
 	checkCompaction(assistantMessage: AssistantMessage, skipAbortedCheck?: boolean): Promise<boolean> {

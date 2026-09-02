@@ -64,6 +64,7 @@ export interface AgentSessionHost {
 	_steeringMessages: string[];
 	_followUpMessages: string[];
 	_pendingNextTurnMessages: CustomMessage[];
+	_pendingCustomMessages: CustomMessage[];
 	_compactionAbortController: AbortController | undefined;
 	_autoCompactionAbortController: AbortController | undefined;
 	_overflowRecoveryAttempted: boolean;
@@ -130,6 +131,7 @@ export interface AgentSessionHost {
 	runAgentPrompt(messages: AgentMessage | AgentMessage[]): Promise<void>;
 	handlePostAgentRun(): Promise<boolean>;
 	flushPendingBashMessages(): void;
+	flushPendingCustomMessages(): void;
 	checkCompaction(assistantMessage: AssistantMessage, skipAbortedCheck?: boolean): Promise<boolean>;
 	getCompactionRequestAuth(model: Model<any>): Promise<{ apiKey?: string; headers?: Record<string, string> }>;
 	getRequiredRequestAuth(model: Model<any>): Promise<{ apiKey: string; headers?: Record<string, string> }>;

@@ -39,6 +39,7 @@ export class AgentSessionPromptModule {
 		} finally {
 			this.host.agent.latencyMark = previousLatencyMark;
 			this.host.flushPendingBashMessages();
+			this.host.flushPendingCustomMessages();
 		}
 	}
 
@@ -147,8 +148,9 @@ export class AgentSessionPromptModule {
 				return;
 			}
 
-			// Flush any pending bash messages before the new prompt
+			// Flush messages retained from a previously interrupted/settled run.
 			this.host.flushPendingBashMessages();
+			this.host.flushPendingCustomMessages();
 			this.host.markTurnLatency("session.pending_bash_flushed");
 
 			// Validate model
@@ -412,7 +414,7 @@ export class AgentSessionPromptModule {
 		} satisfies CustomMessage<T>;
 		if (options?.deliverAs === "nextTurn") {
 			this.host._pendingNextTurnMessages.push(appMessage);
-		} else if (this.host.isStreaming) {
+		} else if (this.host.isStreaming && options?.triggerTurn !== false) {
 			if (options?.deliverAs === "followUp") {
 				this.host.agent.followUp(appMessage);
 			} else {
@@ -420,17 +422,33 @@ export class AgentSessionPromptModule {
 			}
 		} else if (options?.triggerTurn) {
 			await this.runAgentPrompt(appMessage);
+		} else if (this.host.isStreaming) {
+			// Appending immediately could put this message between an assistant
+			// tool call and its result. Strict providers reject that history on
+			// replay, so wait until the current turn has fully settled.
+			this.host._pendingCustomMessages.push(appMessage);
 		} else {
-			this.host.agent.state.messages.push(appMessage);
-			this.host.sessionManager.appendCustomMessageEntry(
-				message.customType,
-				message.content,
-				message.display,
-				message.details,
-			);
-			this.host.emit({ type: "message_start", message: appMessage });
-			this.host.emit({ type: "message_end", message: appMessage });
+			this.appendCustomMessage(appMessage);
 		}
+	}
+
+	private appendCustomMessage(appMessage: CustomMessage): void {
+		this.host.agent.state.messages.push(appMessage);
+		this.host.sessionManager.appendCustomMessageEntry(
+			appMessage.customType,
+			appMessage.content,
+			appMessage.display,
+			appMessage.details,
+		);
+		this.host.emit({ type: "message_start", message: appMessage });
+		this.host.emit({ type: "message_end", message: appMessage });
+	}
+
+	flushPendingCustomMessages(): void {
+		if (this.host._pendingCustomMessages.length === 0) return;
+		const pending = this.host._pendingCustomMessages;
+		this.host._pendingCustomMessages = [];
+		for (const appMessage of pending) this.appendCustomMessage(appMessage);
 	}
 
 	async sendUserMessage(

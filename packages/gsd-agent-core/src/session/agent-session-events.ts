@@ -105,6 +105,12 @@ export class AgentSessionEventsModule {
 				}
 			}
 		}
+
+		// turn_end follows persistence of the assistant message and every tool
+		// result, making this the first replay-safe insertion point.
+		if (event.type === "turn_end") {
+			this.host.flushPendingCustomMessages();
+		}
 	};
 
 	willRetryAfterAgentEnd(event: Extract<AgentEvent, { type: "agent_end" }>): boolean {
