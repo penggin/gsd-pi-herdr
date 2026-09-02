@@ -2121,6 +2121,22 @@ this session does not merge, push, tag, or publish.
   **9/9**, MCP server **377/377**, and RPC client **30/30**.
 - Exact next task: review, commit, and push this proxy-resolution slice; then
   apply the isolated write-result wording correction from `e583b290a`.
+- Ported the applicable coding-agent half of upstream `e583b290a`. Successful
+  writes now report the destination without calling JavaScript string length a
+  byte count. This fork has no pi-agent-core harness write tool, so there is no
+  second runtime surface to change.
+- The inherited broad `packages/pi-coding-agent/test/tools.test.ts` cannot be
+  collected because it still imports the removed pre-seam `bash-executor.ts`.
+  Rather than coupling this correction to that unrelated migration, a focused
+  write-only regression exercises the current tool directly and passes **1/1**
+  with multibyte content and exact operation arguments.
+- Canonical validation is green: Pi patch inventory, extension typecheck,
+  core build, and every package suite passed — agent-core **139/139**,
+  agent-modes **287/287**, native **223 passed / 1 skipped**, pi-agent-core
+  **3/3**, pi-ai **49/49**, pi-coding-agent **72/72**, pi-tui **8/8**,
+  contracts **9/9**, MCP server **377/377**, and RPC client **30/30**.
+- Exact next task: review, commit, and push the wording correction; then close
+  the current upstream candidate audit with explicit defer/no-port decisions.
 
 ## 11. Working-session protocol
 
