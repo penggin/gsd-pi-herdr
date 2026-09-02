@@ -38,6 +38,7 @@ describe("provider retry classification", () => {
 	it.each([
 		"429 insufficient_quota: add billing details",
 		"429 GoUsageLimitError",
+		"429 Provider error 429: Usage limit reached for 5 hour. Your limit will reset soon",
 		"Monthly usage limit reached; enable available balance",
 		"quota exceeded for this account",
 		"invalid_api_key",

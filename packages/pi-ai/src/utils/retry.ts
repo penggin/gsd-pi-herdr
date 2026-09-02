@@ -7,6 +7,7 @@ function buildProviderErrorPattern(patterns: readonly string[]): RegExp {
 const NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN = buildProviderErrorPattern([
 	"GoUsageLimitError",
 	"FreeUsageLimitError",
+	"Usage limit reached",
 	"Monthly usage limit reached",
 	"available balance",
 	"insufficient_quota",

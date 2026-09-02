@@ -2199,6 +2199,30 @@ this session does not merge, push, tag, or publish.
   one clean remote development artifact from the committed branch and deploy it
   to a new immutable `penglab:/srv/penglab/gsd-runs/toolchains` prefix without
   changing the Mac's global installation.
+- Built clean release-candidate artifact commit `68a8e280` (51 MB, SHA-256
+  `c10d1dd084a68602a4e64df07907c6f71b818522763244da0746731d6dbeb3cc`),
+  installed it at remote immutable prefix
+  `/srv/penglab/gsd-runs/toolchains/gsd-pi-herdr-1.16.2-68a8e280-c10d1dd0`,
+  copied the verified Linux x86_64 engine, repaired seven internal links, and
+  switched only the shared remote `gsd`/`gsd-mcp-server` links. Build metadata
+  is clean and native identity-lock/directory-sync support loads successfully;
+  the prior prefix remains the rollback target.
+- Remote model discovery succeeds. The live no-session JSON smoke reached the
+  configured provider but the account returned `429 ... Usage limit reached for
+  5 hour`; no model response can be proven until that external limit resets.
+  The smoke exposed an independent classification gap: this exact terminal
+  account-limit phrase was retried three times because the generic `429` rule
+  won. Added it to the non-retryable limit vocabulary with both shared-provider
+  and agent-session regressions. The focused suites pass **17/17** and **18/18**;
+  Pi patch inventory, extension typecheck, core build, and all compiled package
+  suites pass — agent-core **139/139**, agent-modes **292/292**, native **223
+  passed / 1 skipped**, pi-agent-core **3/3**, pi-ai **49/49**,
+  pi-coding-agent **72/72**, pi-tui **8/8**, contracts **9/9**, MCP server
+  **377/377**, and RPC client **30/30**.
+- Exact next task: review, commit, and push the account-limit classification,
+  then repack that clean commit and switch the remote shared links to its new
+  immutable prefix. A successful live model response remains externally blocked
+  until the provider's displayed account-limit reset.
 
 ## 11. Working-session protocol
 

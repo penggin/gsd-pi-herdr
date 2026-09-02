@@ -377,6 +377,7 @@ describe("AgentSessionPromptModule", () => {
 
 		for (const message of [
 			"429 insufficient_quota: add billing details",
+			"429 Provider error 429: Usage limit reached for 5 hour. Your limit will reset soon",
 			"Monthly usage limit reached; enable available balance",
 			"invalid_api_key",
 		]) {
