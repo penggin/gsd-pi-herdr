@@ -176,6 +176,7 @@ const OpenAIResponsesCompatSchema = Type.Object({
 	supportsLongCacheRetention: Type.Optional(Type.Boolean()),
 	supportsAdditionalTools: Type.Optional(Type.Boolean()),
 	supportsToolSearch: Type.Optional(Type.Boolean()),
+	supportsMaxOutputTokens: Type.Optional(Type.Boolean()),
 });
 
 const OpenAICodexResponsesCompatSchema = Type.Object({
@@ -191,6 +192,7 @@ const AnthropicMessagesCompatSchema = Type.Object({
 	sendSessionAffinityHeaders: Type.Optional(Type.Boolean()),
 	supportsCacheControlOnTools: Type.Optional(Type.Boolean()),
 	forceAdaptiveThinking: Type.Optional(Type.Boolean()),
+	supportsMidConvoEffort: Type.Optional(Type.Boolean()),
 	supportsToolReferences: Type.Optional(Type.Boolean()),
 });
 

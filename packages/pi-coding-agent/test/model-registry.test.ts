@@ -8,6 +8,7 @@ import type {
 	Model,
 	OpenAICodexResponsesCompat,
 	OpenAICompletionsCompat,
+	OpenAIResponsesCompat,
 } from "@earendil-works/pi-ai";
 import { getApiProvider, streamSimple } from "@earendil-works/pi-ai";
 import { getOAuthProvider } from "@earendil-works/pi-ai/oauth";
@@ -477,6 +478,42 @@ describe("ModelRegistry", () => {
 				supportsAdditionalTools: true,
 				supportsToolSearch: false,
 			});
+		});
+
+		test("Responses-compatible proxies can disable max_output_tokens", () => {
+			writeRawModelsJson({
+				proxy: {
+					baseUrl: "http://127.0.0.1:10100/v1",
+					apiKey: "LOCAL_ADMISSION_KEY",
+					api: "openai-responses",
+					compat: { supportsMaxOutputTokens: false },
+					models: [{ id: "routed/model" }],
+				},
+			});
+
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			const compat = registry.find("proxy", "routed/model")?.compat as OpenAIResponsesCompat | undefined;
+
+			expect(registry.getError()).toBeUndefined();
+			expect(compat?.supportsMaxOutputTokens).toBe(false);
+		});
+
+		test("Anthropic-compatible models can opt into mid-conversation effort binding", () => {
+			writeRawModelsJson({
+				proxy: {
+					baseUrl: "https://anthropic-proxy.example.com",
+					apiKey: "PROXY_KEY",
+					api: "anthropic-messages",
+					compat: { forceAdaptiveThinking: true, supportsMidConvoEffort: true },
+					models: [{ id: "managed-claude" }],
+				},
+			});
+
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			const compat = registry.find("proxy", "managed-claude")?.compat as AnthropicMessagesCompat | undefined;
+
+			expect(registry.getError()).toBeUndefined();
+			expect(compat).toMatchObject({ forceAdaptiveThinking: true, supportsMidConvoEffort: true });
 		});
 
 		test("model-level compat overrides provider-level compat for custom models", () => {

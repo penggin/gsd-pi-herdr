@@ -80,6 +80,7 @@ const CompatSchema = Type.Object({
 		Type.Union([Type.Literal("openai"), Type.Literal("openai-nosession"), Type.Literal("openrouter")]),
 	),
 	supportsLongCacheRetention: Type.Optional(Type.Boolean()),
+	supportsMaxOutputTokens: Type.Optional(Type.Boolean()),
 	supportsEagerToolInputStreaming: Type.Optional(Type.Boolean()),
 	supportsCacheControlOnTools: Type.Optional(Type.Boolean()),
 	forceAdaptiveThinking: Type.Optional(Type.Boolean()),

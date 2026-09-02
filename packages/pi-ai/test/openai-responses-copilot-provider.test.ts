@@ -150,6 +150,61 @@ describe("openai-responses provider defaults", () => {
 		expect(capturedPayload).toMatchObject({ max_output_tokens: 16 });
 	});
 
+	it("sends max_output_tokens by default", async () => {
+		let capturedPayload: { max_output_tokens?: number } | undefined;
+		vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			new Response("data: [DONE]\n\n", {
+				status: 200,
+				headers: { "content-type": "text/event-stream" },
+			}),
+		);
+
+		const stream = streamOpenAIResponses(
+			getModel("openai", "gpt-5.4"),
+			{ messages: [{ role: "user", content: "hi", timestamp: Date.now() }] },
+			{
+				apiKey: "test-key",
+				maxTokens: 1024,
+				onPayload: (payload) => {
+					capturedPayload = payload as { max_output_tokens?: number };
+				},
+			},
+		);
+		await stream.result();
+
+		expect(capturedPayload?.max_output_tokens).toBe(1024);
+	});
+
+	it("omits max_output_tokens when a compatible proxy rejects it", async () => {
+		const baseModel = getModel("openai", "gpt-5.4");
+		const model: Model<"openai-responses"> = {
+			...baseModel,
+			compat: { ...baseModel.compat, supportsMaxOutputTokens: false },
+		};
+		let capturedPayload: { max_output_tokens?: number } | undefined;
+		vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			new Response("data: [DONE]\n\n", {
+				status: 200,
+				headers: { "content-type": "text/event-stream" },
+			}),
+		);
+
+		const stream = streamOpenAIResponses(
+			model,
+			{ messages: [{ role: "user", content: "hi", timestamp: Date.now() }] },
+			{
+				apiKey: "test-key",
+				maxTokens: 1024,
+				onPayload: (payload) => {
+					capturedPayload = payload as { max_output_tokens?: number };
+				},
+			},
+		);
+		await stream.result();
+
+		expect(capturedPayload?.max_output_tokens).toBeUndefined();
+	});
+
 	it("forwards provider-specific required tool choice", async () => {
 		let capturedPayload: unknown;
 		vi.spyOn(globalThis, "fetch").mockResolvedValue(

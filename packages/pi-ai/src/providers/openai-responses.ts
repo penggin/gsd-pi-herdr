@@ -56,6 +56,7 @@ function getCompat(model: Model<"openai-responses">): Required<OpenAIResponsesCo
 		supportsLongCacheRetention: model.compat?.supportsLongCacheRetention ?? true,
 		supportsAdditionalTools: model.compat?.supportsAdditionalTools ?? false,
 		supportsToolSearch: model.compat?.supportsToolSearch ?? false,
+		supportsMaxOutputTokens: model.compat?.supportsMaxOutputTokens ?? true,
 	};
 }
 
@@ -275,7 +276,7 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 		store: false,
 	};
 
-	if (options?.maxTokens) {
+	if (options?.maxTokens && compat.supportsMaxOutputTokens) {
 		params.max_output_tokens = Math.max(options.maxTokens, OPENAI_RESPONSES_MIN_OUTPUT_TOKENS);
 	}
 

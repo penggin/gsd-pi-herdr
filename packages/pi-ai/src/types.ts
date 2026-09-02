@@ -511,6 +511,8 @@ export interface OpenAIResponsesCompat {
 	supportsAdditionalTools?: boolean;
 	/** Whether the model supports client-executed tool search for deferred tools. Default: false. */
 	supportsToolSearch?: boolean;
+	/** Whether the provider accepts `max_output_tokens`. Some Responses-compatible proxies reject it. Default: true. */
+	supportsMaxOutputTokens?: boolean;
 }
 
 /** Compatibility settings for Codex Responses transports. */

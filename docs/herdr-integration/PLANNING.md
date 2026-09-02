@@ -2018,6 +2018,31 @@ this session does not merge, push, tag, or publish.
 - Exact next task: review, commit, and push this Anthropic effort slice; then
   audit upstream `b8b873b98` (`supportsMaxOutputTokens`) as the next isolated
   compatibility improvement.
+- Ported upstream `b8b873b98` as a default-preserving OpenAI Responses
+  compatibility switch. `max_output_tokens` remains present for every existing
+  model, but a custom Responses-compatible gateway can declare
+  `compat.supportsMaxOutputTokens: false` when that gateway rejects the field.
+  The flag is enforced by the provider and accepted by both catalog and
+  `models.json` validation; it does not affect `openai-codex-responses`, Remote
+  V2 compaction, or GSD/Herdr lifecycle semantics.
+- Also closed the custom-model schema half of the preceding Anthropic slice:
+  explicitly configured Anthropic-compatible providers can now declare
+  `supportsMidConvoEffort` instead of relying only on generated catalog data.
+  Both features remain opt-in outside their verified generated defaults.
+- Focused evidence passes: OpenAI Responses payload/default coverage **37/37**
+  and the two new custom model-registry cases **2/2**. The unfiltered
+  model-registry source test still contains 11 pre-existing expectations for
+  arbitrary shell credential commands that the current security policy blocks;
+  the new cases were therefore run by exact test name and pass independently.
+- Final compatibility-slice gates pass: `verify:pi-patches`, extension
+  typecheck, `test:changed:src` (no root-source tests for this package-only
+  slice), `build:core`, `test:packages`, JSON allowlist parsing, and
+  `git diff --check`. Compiled package totals remain GSD agent-core **139/139**,
+  agent-modes **287/287**, native **223 pass / 1 skip**, pi-agent-core **3/3**,
+  pi-ai **49/49**, pi-coding-agent **72/72**, pi-tui **8/8**, contracts
+  **9/9**, MCP server **377/377**, and RPC client **30/30**.
+- Exact next task: review, commit, and push this compatibility slice; then audit
+  upstream `e266507b6` for duplicate automatic retry lifecycle events.
 
 ## 11. Working-session protocol
 
