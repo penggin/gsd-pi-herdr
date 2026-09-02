@@ -2237,6 +2237,31 @@ this session does not merge, push, tag, or publish.
   unavailable until the account's displayed five-hour limit resets; rerun the
   no-session exact-response smoke after reset, and restart any already-running
   GSD TUI from inside its Herdr pane to load the newly linked bundle.
+- Began the deferred session-v4 P3.5 cutover as a bounded P3.5a construction
+  slice. A new typed, awaitable session-manager factory now owns create, open,
+  continue-recent, and memory preparation. Print/JSON-worker and interactive
+  startup use it, and the replacement-oriented `AgentSessionRuntime` uses the
+  same injected factory for new/resume/fork/import preparation. The factory
+  deliberately exposes only `legacy-v3`; recognized v4 files still fail closed
+  and no non-functional v4 preference was added.
+- Focused evidence passes **4/4**, including all construction targets, CLI
+  startup routing, v4 fail-closed behavior, and the guarantee that replacement
+  preparation fails before the active session is aborted or disposed. The
+  current agent-core suite passes **142/142** and the canonical compiled package
+  matrix passes:
+  agent-core **142/142**, agent-modes **292/292**, native **223 passed / 1
+  skipped**, pi-agent-core **3/3**, pi-ai **49/49**, pi-coding-agent **72/72**,
+  pi-tui **8/8**, contracts **9/9**, MCP server **377/377**, and RPC client
+  **30/30**. Three inherited source-tree Vitest files under
+  `packages/pi-coding-agent/test/` still import the removed pre-split
+  `src/core/agent-session-runtime.ts`; they cannot be collected and were not
+  counted as evidence. The canonical compiled package suite remains green.
+- Exact next task: complete P3.5b by composing interactive mode around
+  `AgentSessionRuntime`, adding an explicit TUI/session rebind contract, and
+  proving new/resume/fork replacement preserves extension/UI state before
+  implementing a functional `harness-v4` manager adapter. Existing v3 remains
+  the default and no remote deployment is warranted until that runtime path is
+  complete.
 
 ## 11. Working-session protocol
 

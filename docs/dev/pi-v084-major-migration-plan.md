@@ -2,7 +2,7 @@
 
 Date: 2026-09-03
 
-Status: P3.0–P3.4 complete; P3.5 requires an async composition seam; no runtime cutover
+Status: P3.0–P3.4 and P3.5a complete; P3.5b requires interactive runtime rebinding; no v4 cutover
 
 Upstream reference: `refs/pi-upstream/v0.84.4`
 
@@ -170,6 +170,24 @@ an opt-in backend.
 
 Exit: the same CLI/headless characterization matrix passes for both backends,
 and legacy v3 remains the default.
+
+#### P3.5a — Awaitable production construction seam (complete 2026-09-03)
+
+- Added one typed, awaitable session-manager factory for create, open,
+  continue-recent, and memory targets.
+- Routed print/JSON-worker and interactive startup through that factory.
+- Routed the replacement-oriented `AgentSessionRuntime` `/new`, `/resume`,
+  `/fork`, and import construction through the same injected factory.
+- Kept the only selectable backend as `legacy-v3`; recognized v4 files still
+  fail closed instead of becoming empty legacy sessions.
+- Proved replacement preparation fails before the active session is aborted or
+  disposed.
+
+This establishes the I/O completion boundary required by ADR-H028 but does not
+make the legacy `AgentSession` navigation module asynchronous. P3.5b must move
+the interactive composition root onto `AgentSessionRuntime` and rebind the TUI
+and extension contexts when a replacement session is applied. Only after that
+may a functional `harness-v4` manager adapter be connected.
 
 ### P3.6 — Integrate GSD, web, and Assessment Gates
 

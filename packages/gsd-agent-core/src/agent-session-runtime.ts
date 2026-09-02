@@ -7,7 +7,11 @@ import type { ReplacedSessionContext, SessionShutdownEvent, SessionStartEvent } 
 import { emitSessionShutdownEvent } from "@gsd/pi-coding-agent/core/extensions/runner.js";
 import type { CreateAgentSessionResult } from "./sdk.js";
 import { assertSessionCwdExists } from "@gsd/pi-coding-agent/core/session-cwd.js";
-import { SessionManager } from "@gsd/pi-coding-agent/core/session-manager.js";
+import type { SessionManager } from "@gsd/pi-coding-agent/core/session-manager.js";
+import {
+	legacySessionManagerRuntimeFactory,
+	type SessionManagerRuntimeFactory,
+} from "./session-manager-runtime.js";
 
 /**
  * Result returned by runtime creation.
@@ -71,6 +75,7 @@ export class AgentSessionRuntime {
 	private _session: AgentSession;
 	private _services: AgentSessionServices;
 	private readonly createRuntime: CreateAgentSessionRuntimeFactory;
+	private readonly sessionManagers: SessionManagerRuntimeFactory;
 	private _diagnostics: AgentSessionRuntimeDiagnostic[];
 	private _modelFallbackMessage?: string;
 
@@ -80,10 +85,12 @@ export class AgentSessionRuntime {
 		createRuntime: CreateAgentSessionRuntimeFactory,
 		_diagnostics: AgentSessionRuntimeDiagnostic[] = [],
 		_modelFallbackMessage?: string,
+		sessionManagers: SessionManagerRuntimeFactory = legacySessionManagerRuntimeFactory,
 	) {
 		this._session = _session;
 		this._services = _services;
 		this.createRuntime = createRuntime;
+		this.sessionManagers = sessionManagers;
 		this._diagnostics = _diagnostics;
 		this._modelFallbackMessage = _modelFallbackMessage;
 	}
@@ -197,7 +204,11 @@ export class AgentSessionRuntime {
 		}
 
 		const previousSessionFile = this.session.sessionFile;
-		const sessionManager = SessionManager.open(sessionPath, undefined, options?.cwdOverride);
+		const sessionManager = await this.sessionManagers.prepare({
+			kind: "open",
+			path: sessionPath,
+			cwdOverride: options?.cwdOverride,
+		});
 		assertSessionCwdExists(sessionManager, this.cwd);
 		await this.teardownCurrent("resume", sessionManager.getSessionFile());
 		this.apply(
@@ -224,7 +235,7 @@ export class AgentSessionRuntime {
 
 		const previousSessionFile = this.session.sessionFile;
 		const sessionDir = this.session.sessionManager.getSessionDir();
-		const sessionManager = SessionManager.create(this.cwd, sessionDir);
+		const sessionManager = await this.sessionManagers.prepare({ kind: "create", cwd: this.cwd, sessionDir });
 		if (options?.parentSession) {
 			sessionManager.newSession({ parentSession: options.parentSession });
 		}
@@ -281,7 +292,7 @@ export class AgentSessionRuntime {
 			}
 			const sessionDir = this.session.sessionManager.getSessionDir();
 			if (!targetLeafId) {
-				const sessionManager = SessionManager.create(this.cwd, sessionDir);
+				const sessionManager = await this.sessionManagers.prepare({ kind: "create", cwd: this.cwd, sessionDir });
 				sessionManager.newSession({ parentSession: currentSessionFile });
 				await this.teardownCurrent("fork", sessionManager.getSessionFile());
 				this.apply(
@@ -296,7 +307,11 @@ export class AgentSessionRuntime {
 				return { cancelled: false, selectedText };
 			}
 
-			const sessionManager = SessionManager.open(currentSessionFile, sessionDir);
+			const sessionManager = await this.sessionManagers.prepare({
+				kind: "open",
+				path: currentSessionFile,
+				sessionDir,
+			});
 			const forkedSessionPath = sessionManager.createBranchedSession(targetLeafId);
 			if (!forkedSessionPath) {
 				throw new Error("Failed to create forked session");
@@ -362,7 +377,12 @@ export class AgentSessionRuntime {
 			copyFileSync(resolvedPath, destinationPath);
 		}
 
-		const sessionManager = SessionManager.open(destinationPath, sessionDir, cwdOverride);
+		const sessionManager = await this.sessionManagers.prepare({
+			kind: "open",
+			path: destinationPath,
+			sessionDir,
+			cwdOverride,
+		});
 		assertSessionCwdExists(sessionManager, this.cwd);
 		await this.teardownCurrent("resume", sessionManager.getSessionFile());
 		this.apply(
@@ -400,6 +420,7 @@ export async function createAgentSessionRuntime(
 		agentDir: string;
 		sessionManager: SessionManager;
 		sessionStartEvent?: SessionStartEvent;
+		sessionManagers?: SessionManagerRuntimeFactory;
 	},
 ): Promise<AgentSessionRuntime> {
 	assertSessionCwdExists(options.sessionManager, options.cwd);
@@ -410,6 +431,7 @@ export async function createAgentSessionRuntime(
 		createRuntime,
 		result.diagnostics,
 		result.modelFallbackMessage,
+		options.sessionManagers,
 	);
 }
 

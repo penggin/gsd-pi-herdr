@@ -69,6 +69,13 @@ export {
 	type CreateAgentSessionResult,
 	createAgentSession,
 } from "./sdk.js";
+export {
+	createLegacySessionManagerRuntimeFactory,
+	legacySessionManagerRuntimeFactory,
+	type ProductionSessionBackend,
+	type SessionManagerRuntimeFactory,
+	type SessionManagerTarget,
+} from "./session-manager-runtime.js";
 export { ContextualTips } from "./contextual-tips.js";
 export * from "./agent-session-runtime.js";
 export {

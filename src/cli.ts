@@ -658,9 +658,8 @@ const {
   DefaultResourceLoader,
   ModelRegistry,
   SettingsManager,
-  SessionManager,
 } = await loadPiCodingAgentModule()
-const { createAgentSession } = await loadAgentCoreModule()
+const { createAgentSession, legacySessionManagerRuntimeFactory } = await loadAgentCoreModule()
 markStartup('loadPiCodingAgent')
 
 // Pi's tool bootstrap can mis-detect already-installed fd/rg on some systems
@@ -760,10 +759,18 @@ markStartup('startupSettings')
 if (isPrintMode) {
   await ensureRtkBootstrap()
   const sessionManager = cliFlags.noSession
-    ? SessionManager.inMemory()
+    ? await legacySessionManagerRuntimeFactory.prepare({ kind: 'memory', cwd: process.cwd() })
     : cliFlags.session
-      ? SessionManager.open(cliFlags.session, cliFlags.sessionDir)
-      : SessionManager.create(process.cwd(), cliFlags.sessionDir)
+      ? await legacySessionManagerRuntimeFactory.prepare({
+          kind: 'open',
+          path: cliFlags.session,
+          sessionDir: cliFlags.sessionDir,
+        })
+      : await legacySessionManagerRuntimeFactory.prepare({
+          kind: 'create',
+          cwd: process.cwd(),
+          sessionDir: cliFlags.sessionDir,
+        })
 
   // Read --append-system-prompt file content (subagent writes agent system prompts to temp files)
   let appendSystemPrompt: string | undefined
@@ -904,12 +911,28 @@ const projectSessionsDir = getProjectSessionsDir(cwd)
 migrateLegacyFlatSessions(sessionsDir, projectSessionsDir)
 
 const sessionManager = cliFlags._selectedSessionPath
-  ? SessionManager.open(cliFlags._selectedSessionPath, projectSessionsDir)
+  ? await legacySessionManagerRuntimeFactory.prepare({
+      kind: 'open',
+      path: cliFlags._selectedSessionPath,
+      sessionDir: projectSessionsDir,
+    })
   : cliFlags.session
-    ? SessionManager.open(cliFlags.session, cliFlags.sessionDir)
+    ? await legacySessionManagerRuntimeFactory.prepare({
+        kind: 'open',
+        path: cliFlags.session,
+        sessionDir: cliFlags.sessionDir,
+      })
     : cliFlags.continue
-      ? SessionManager.continueRecent(cwd, projectSessionsDir)
-      : SessionManager.create(cwd, cliFlags.sessionDir ?? projectSessionsDir)
+      ? await legacySessionManagerRuntimeFactory.prepare({
+          kind: 'continue-recent',
+          cwd,
+          sessionDir: projectSessionsDir,
+        })
+      : await legacySessionManagerRuntimeFactory.prepare({
+          kind: 'create',
+          cwd,
+          sessionDir: cliFlags.sessionDir ?? projectSessionsDir,
+        })
 
 exitIfManagedResourcesAreNewer(agentDir)
 initResources(agentDir)
