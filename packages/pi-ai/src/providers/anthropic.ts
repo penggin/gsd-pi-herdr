@@ -723,6 +723,11 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 					if (event.usage.cache_creation_input_tokens != null) {
 						output.usage.cacheWrite = event.usage.cache_creation_input_tokens;
 					}
+					const thinkingTokens = (event.usage as { output_tokens_details?: { thinking_tokens?: number } })
+						.output_tokens_details?.thinking_tokens;
+					if (thinkingTokens != null) {
+						output.usage.reasoning = thinkingTokens;
+					}
 					// Anthropic doesn't provide total_tokens, compute from components
 					output.usage.totalTokens =
 						output.usage.input + output.usage.output + output.usage.cacheRead + output.usage.cacheWrite;

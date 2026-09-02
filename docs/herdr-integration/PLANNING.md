@@ -1394,6 +1394,26 @@ this session does not merge, push, tag, or publish.
   agent-core **136/136**, agent-modes **287/287**, native **223 pass / 1 platform
   skip**, pi-agent-core **3/3**, pi-ai **49/49**, coding-agent **66/66**, pi-tui
   **8/8**, contracts **9/9**, MCP **377/377**, and RPC client **30/30**.
+- Added optional reasoning-token usage metadata without changing billing totals.
+  OpenAI Responses reads `output_tokens_details.reasoning_tokens`, OpenAI
+  completions reads `completion_tokens_details.reasoning_tokens`, and Anthropic
+  reads its current `output_tokens_details.thinking_tokens` extension field.
+  The value is explicitly documented as a subset of output tokens, so context,
+  total-token, and cost calculations do not double-count it. Providers that do
+  not report a breakdown leave the field absent.
+- Focused reasoning usage verification passes **37/37** across Responses,
+  completions, and Anthropic SSE parsing; `build:pi-ai` passes. No serialized
+  transcript migration, dependency, or lockfile change is required because the
+  field is optional.
+- Exact next task: run full downstream gates, commit and push this observability
+  slice, then evaluate the upstream concurrent Responses output-slot parser
+  against real downstream interleaving risks before importing that larger
+  refactor.
+- Final reasoning-usage gate passes: `typecheck:extensions`, `build:core`,
+  `git diff --check`, and all ten compiled workspace suites. Counts remain
+  agent-core **136/136**, agent-modes **287/287**, native **223 pass / 1 platform
+  skip**, pi-agent-core **3/3**, pi-ai **49/49**, coding-agent **66/66**, pi-tui
+  **8/8**, contracts **9/9**, MCP **377/377**, and RPC client **30/30**.
 
 ## 11. Working-session protocol
 

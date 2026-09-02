@@ -1111,6 +1111,7 @@ describe("openai-completions tool_choice", () => {
 
 		expect(response.usage.input).toBe(10);
 		expect(response.usage.output).toBe(33);
+		expect(response.usage.reasoning).toBe(21);
 		expect(response.usage.totalTokens).toBe(43);
 	});
 

@@ -55,6 +55,7 @@ async function* terminalEvent(
 				output_tokens: 12,
 				total_tokens: 42,
 				input_tokens_details: { cached_tokens: 5 },
+				output_tokens_details: { reasoning_tokens: 7 },
 			},
 		},
 	} as ResponseStreamEvent;
@@ -88,7 +89,7 @@ describe("OpenAI Responses terminal and reasoning replay", () => {
 		expect(completed).toMatchObject({
 			responseId: "resp_completed",
 			stopReason: "stop",
-			usage: { input: 25, output: 12, cacheRead: 5, totalTokens: 42 },
+			usage: { input: 25, output: 12, cacheRead: 5, reasoning: 7, totalTokens: 42 },
 		});
 
 		const incomplete = output(target);

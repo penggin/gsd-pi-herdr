@@ -59,6 +59,7 @@ const minimalAnthropicEvents = [
 				output_tokens: 5,
 				cache_read_input_tokens: 0,
 				cache_creation_input_tokens: 0,
+				output_tokens_details: { thinking_tokens: 3 },
 			},
 		}),
 	},
@@ -198,6 +199,7 @@ describe("Anthropic raw SSE parsing", () => {
 		expect(result.stopReason).toBe("stop");
 		expect(result.errorMessage).toBeUndefined();
 		expect(result.content).toEqual([{ type: "text", text: "Hello" }]);
+		expect(result.usage.reasoning).toBe(3);
 	});
 
 	it("preserves native web search blocks from Anthropic streams", async () => {
