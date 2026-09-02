@@ -28,9 +28,10 @@ main                       # downstream integration/release line
   └── feature/*            # focused work branches
 ```
 
-The recorded source-base SHA is historical provenance. Normal development,
-canary, package, and release workflows compare only refs already present in this
-repository and must not fetch or mutate the original project.
+The recorded source-base SHA is historical provenance. Development may perform
+read-only upstream fetches, release research, and source comparisons. Runtime,
+canary, package, and release automation must not contact the original project,
+and upstream mutation remains prohibited unless the user explicitly requests it.
 
 Current GSD upstream base for this planning cycle:
 
@@ -1086,6 +1087,64 @@ this session does not merge, push, tag, or publish.
   UI prompt lifecycle events first, then replace Herdr's heuristic question
   detection only after prompt/cancel/nested-UI parity tests pass. Follow with
   extension message ordering and JSONL repair as separate changes.
+
+### 2026-09-02 — Pi v0.84 focused compatibility backports
+
+- Imported the audited priority-1 changes as isolated commits without moving
+  the vendored baseline or replacing downstream provider/runtime seams:
+  authoritative `ui_prompt_start`/`ui_prompt_end` events with nested prompt
+  coalescing (`4bd93dc8`), replay-safe extension-message ordering
+  (`c6810777`), and resumed JSONL record-boundary repair (`b378594f`). Herdr now
+  prefers the UI prompt lifecycle while retaining the bounded tool heuristic as
+  a compatibility fallback for extensions that do not use the host UI.
+- Added compaction trigger/retry metadata to success hooks and a structured
+  `session_compact_failed` event for manual, threshold, overflow, failure, and
+  cancellation paths (`f29d8378`). Pre-prompt behavior now matches upstream:
+  compact the prior context before submitting the new user prompt, without
+  replaying the old turn and risking duplicate work. The audit's earlier wording
+  about interrupting an in-flight tool loop was broader than upstream v0.84.4;
+  this backport does not insert a new orchestration boundary inside tool batches.
+- Compaction and branch summarization now share the configured bounded
+  exponential-backoff policy for transient provider failures and publish retry
+  lifecycle events (`f34df54b`). Abort signals stop retry waits. Deterministic
+  errors and exhausted retries remain explicit failures.
+- Session open and session-list discovery now stream JSONL instead of loading
+  whole files, with a regression crossing both the 1 MiB buffer and a multibyte
+  UTF-8 boundary (`77e2210f`). This reduces peak duplication during long-session
+  resume and phase-transition listing while preserving malformed-line skipping
+  and newline repair.
+- Session disposal now aborts retry, compaction, branch summary, bash, and active
+  agent work before invalidating extension contexts (`9d86e298`). Existing
+  request-timeout classification and Herdr `session_shutdown` behavior were
+  already stronger than the selected upstream deltas and were not duplicated.
+- Model generation now derives Z.AI effort levels from verified models.dev
+  `reasoning_options`; the shipped catalog adds `glm-5.3` and
+  `glm-5.3-flash` with only `low`, `high`, and `max` enabled (`f4b5bf8e`). The
+  broad live catalog regeneration was deliberately rejected after it removed
+  models required by downstream regressions; only the two audited entries and
+  generator rule were retained.
+- Focused verification passes: extension runner **30/30**, Herdr
+  prompt/state **16/16**, session file operations **19/19**, Pi AI reasoning and
+  completions **27/27**, and agent-core **132/132**. Final gates also pass
+  `typecheck:extensions`, `build:core`, and all ten compiled workspace package
+  suites (`agent-core`, `agent-modes`, `native`, `pi-agent-core`, `pi-ai`,
+  `pi-coding-agent`, `pi-tui`, `contracts`, `mcp-server`, and `rpc-client`).
+  `test:changed:src` correctly reports no focused `src/` tests for this
+  package-only change set, and `git diff --check` passes.
+- `validate-pack` completed dependency checks and tarball creation, then failed
+  only its 350 MB unpacked-size guard: the local macOS ARM release addon
+  (75 MB) and development addon (112 MB) were both present, yielding 383.8 MB.
+  These workstation build artifacts were preserved. A clean packaging checkout
+  or the release workflow remains the authoritative publishability gate.
+- Risk/limitation: the v0.80 provider-store and v0.84 session-v4/harness changes
+  remain a major migration, not safe cherry-picks. `scripts/pi-upstream.json`
+  intentionally remains at `v0.75.5`; the imported compatibility surfaces are
+  recorded by commit rather than claiming a baseline version bump.
+- Dependency review found no root manifest or lockfile change and no new
+  GStack/provider-specific runtime dependency. Exact next task after pushing
+  this compatibility batch: prepare the v0.79→v0.80 provider-store migration
+  as a separate focused branch rather than mixing it into the validated Herdr
+  runtime line.
 
 ## 11. Working-session protocol
 

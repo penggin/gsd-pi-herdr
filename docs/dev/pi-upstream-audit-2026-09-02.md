@@ -92,11 +92,30 @@ should not be mixed with Herdr live-E2E fixes or Assessment Gate delivery.
 ## Verification and limitations
 
 - The official repository and release tags were accessed read-only.
-- No upstream code was imported and `scripts/pi-upstream.json` remains pinned
-  to `v0.75.5`.
-- The current tree contains no `ui_prompt_start`, `ui_prompt_end`, or
-  `session_compact_failed` symbol, so those candidates are not already present
-  under their upstream API names.
-- Existing downstream implementations may already cover portions of shutdown,
-  timeout, and compaction behavior. Each import must begin with a semantic
-  comparison and characterization test to avoid regressing GSD authority.
+- Priority-1 imports are complete as focused compatibility backports:
+  `ui_prompt_start`/`ui_prompt_end`, deferred extension messages, JSONL newline
+  repair, structured compaction failures, retryable compaction/branch summaries,
+  safe pre-prompt compaction semantics, streaming session reads, disposal aborts,
+  and verified GLM-5.3 reasoning effort metadata.
+- `scripts/pi-upstream.json` remains pinned to `v0.75.5`: these changes do not
+  claim the v0.84 provider store, session-v4 format, or harness architecture.
+- Semantic comparison found downstream timeout classification and Herdr
+  shutdown already covered the selected upstream fixes. Only the missing
+  disposal abort was imported, avoiding duplicate ownership paths.
+- Correction to the initial recommendation: upstream v0.84.4 performs its
+  pre-prompt check before a newly submitted user prompt. It does not add a
+  compaction boundary between a tool result and the next model call inside the
+  same agent loop; this fork matches the actual behavior.
+- A live full-catalog generation was tested but not retained because the mutable
+  external inventories removed models used by existing downstream regressions.
+  The generator rule and audited Z.AI GLM-5.3 entries were retained instead.
+- Final verification passed `typecheck:extensions`, `build:core`, and all ten
+  compiled workspace package suites. `test:changed:src` found no changed
+  `src/`-surface tests because this import only changes vendored packages.
+- `validate-pack` reached tarball validation but the current workstation's two
+  local native outputs (`gsd_engine.darwin-arm64.node` and the untracked-by-Git
+  development build `gsd_engine.dev.node`) produced a 383.8 MB unpacked package,
+  above the 350 MB guard. This is a packaging-environment limitation, not a
+  failed code or dependency test; neither local native artifact was deleted.
+- No root dependency or lockfile change was introduced, and no GStack- or
+  provider-specific runtime dependency was added.
