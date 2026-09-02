@@ -370,3 +370,24 @@ remain under `ModelRegistry` until the next migration slice establishes and
 tests one explicit precedence pipeline. Network refresh stays opt-in through
 the existing discovery command paths; normal startup does not gain an upstream
 or provider network dependency.
+
+---
+
+## ADR-H025 — Compose providers deterministically and adapt credentials incrementally
+
+**Status:** Accepted
+**Date:** 2026-09-03
+
+Provider models are reconstructed from stable layers in this order:
+`built-in < downstream catalog overlay < models.json < extension provider`.
+Repeated extension registrations merge defined fields and trigger a rebuild
+from those inputs; they do not mutate an already-mutated catalog. Unregistering
+an extension restores the lower layers exactly. `models.json` request settings
+remain separate from extension registration state.
+
+The v0.80 `CredentialStore` contract is introduced through an adapter over the
+existing locked `AuthStorage`, not through a second credential file. Its
+metadata listing cannot expose secret values, and `modify` performs the OAuth-
+safe read/modify/write inside the storage lock. Existing login, runtime override,
+command-backed key, and provider request resolution remain authoritative until
+their consumers migrate to the adapter.

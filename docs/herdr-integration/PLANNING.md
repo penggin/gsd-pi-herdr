@@ -1182,6 +1182,34 @@ this session does not merge, push, tag, or publish.
   `built-in < downstream catalog overlay < models.json < extension provider`,
   then move auth/header resolution behind a credential adapter without changing
   the public extension registration contract.
+- Completed that composition slice in `34487301`: repeated partial extension
+  registrations now merge and rebuild from stable inputs, extension model lists
+  remain the final replacement layer, and unregister restores `models.json`
+  values. Request auth/header resolution moved to a dedicated resolver in
+  `15b8c201` without changing Kimi OAuth or command-backed configuration.
+- Added conditional catalog revalidation in `671ddf6f`. Discovery adapters
+  propagate cancellation, normalize an endpoint already ending in `/v1`, send
+  `If-None-Match`/`If-Modified-Since`, retain the stored body on 304, and update
+  only its freshness timestamp. Forced refresh ignores freshness but preserves
+  validators. A 304 without a cached body is an explicit provider error.
+- Retired promoted legacy entries in `a0c176aa`: the old cache is resolved next
+  to its corresponding `models.json`, copied once into `ModelsStore`, then the
+  provider entry is removed so two durable sources cannot diverge.
+- Added the v0.80 provider-neutral `CredentialStore` contract and an
+  `AuthStorageCredentialAdapter` in `9dde4f9c`. Secret-free metadata listing and
+  provider read/modify/delete are available from `ModelRegistry`; modify is an
+  atomic locked operation and honors cancellation. No second credential file or
+  startup network path was introduced.
+- Expanded focused regressions cover exact precedence, repeated registration,
+  unregister restoration, local conditional HTTP requests, 304 persistence,
+  legacy promotion/removal, secret-free credential listing, atomic mutation,
+  cancellation, and Kimi OAuth. Final `typecheck:extensions`, `build:core`, and
+  all ten workspace package suites pass; coding-agent is now **66/66** and MCP
+  workflow remains **377/377**.
+- ADR-H025 records the stable composition order and single-store credential
+  adapter decision. Exact next task: audit v0.80 extension event/tool-registry
+  changes against the downstream dynamic registry, then import only missing
+  lifecycle guarantees before evaluating lazy startup loading.
 
 ## 11. Working-session protocol
 
