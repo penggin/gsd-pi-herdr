@@ -1,6 +1,6 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
-import { normalizeTerminalOutput, truncateToWidth, visibleWidth } from "../src/utils.ts";
+import { alignRight, normalizeTerminalOutput, truncateToWidth, visibleWidth } from "../src/utils.ts";
 
 describe("truncateToWidth", () => {
 	it("keeps output within width for very large unicode input", () => {
@@ -72,5 +72,35 @@ describe("visibleWidth", () => {
 		assert.strictEqual(normalizeTerminalOutput("ຳ"), "ໍາ");
 		assert.strictEqual(visibleWidth(normalizeTerminalOutput("ำabc")), visibleWidth("ำabc"));
 		assert.strictEqual(visibleWidth(normalizeTerminalOutput("ຳabc")), visibleWidth("ຳabc"));
+	});
+});
+
+describe("alignRight", () => {
+	it("keeps a long command's execution status visible at the right edge", () => {
+		const status = "running · 42s · output hidden · ctrl+o expand";
+		const row = alignRight(`$ ${"very-long-command ".repeat(20)}`, status, 72);
+
+		assert.strictEqual(visibleWidth(row), 72);
+		assert.strictEqual(row.endsWith(status), true);
+		assert.strictEqual(row.includes("…"), true);
+	});
+
+	it("preserves ANSI styling in the reserved status column", () => {
+		const status = "\x1b[32mrunning · 42s\x1b[0m";
+		const row = alignRight("$ a-command-that-will-be-truncated", status, 30);
+
+		assert.strictEqual(visibleWidth(row), 30);
+		assert.strictEqual(row.endsWith(status), true);
+	});
+
+	it("shows the status prefix when the terminal is narrower than the status", () => {
+		assert.strictEqual(alignRight("$ hidden", "running", 4), "runn");
+	});
+
+	it("accounts for wide text while reserving the right column", () => {
+		const row = alignRight("명령어가 매우 긴 경우의 표시", "진행 중", 24);
+
+		assert.strictEqual(visibleWidth(row), 24);
+		assert.strictEqual(row.endsWith("진행 중"), true);
 	});
 });

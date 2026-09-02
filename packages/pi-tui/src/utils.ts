@@ -1349,6 +1349,19 @@ export function alignRight(left: string, right: string, width: number): string {
 	const targetWidth = Math.max(0, Math.floor(width));
 	if (targetWidth <= 0) return "";
 	if (!right) return truncateToWidth(left, targetWidth, "");
-	const gap = Math.max(1, targetWidth - visibleWidth(left) - visibleWidth(right));
-	return truncateToWidth(left + " ".repeat(gap) + right, targetWidth, "");
+
+	// Status/meta text belongs to the stable right-hand column. Truncating the
+	// combined row from the right makes that column disappear whenever the left
+	// label is a long command or path, leaving a running tool indistinguishable
+	// from a stalled one. Reserve the right column first and truncate only the
+	// variable-width left content.
+	const rightWidth = visibleWidth(right);
+	if (rightWidth >= targetWidth) {
+		return truncateToWidth(right, targetWidth, "");
+	}
+
+	const leftBudget = targetWidth - rightWidth - 1;
+	const clippedLeft = truncateToWidth(left, leftBudget, "…");
+	const gap = Math.max(1, targetWidth - visibleWidth(clippedLeft) - rightWidth);
+	return clippedLeft + " ".repeat(gap) + right;
 }

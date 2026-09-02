@@ -2,8 +2,10 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import stripAnsi from "strip-ansi";
+import { visibleWidth } from "@gsd/pi-tui";
 import {
 	renderChatFrame,
+	renderCommandCard,
 	renderCompactToolStrip,
 	renderPlainSpeakerMessage,
 	TRANSCRIPT_SYSTEM_MARKER,
@@ -39,6 +41,20 @@ describe("transcript role separation", () => {
 		assert.ok(plain.includes(TRANSCRIPT_TOOL_MARKER));
 		assert.ok(plain.includes("READ"));
 		assert.ok(plain.includes("src/foo.ts"));
+	});
+
+	test("long command cards retain their right-hand execution status", () => {
+		const width = 80;
+		const lines = renderCommandCard(
+			`pnpm test ${"--filter a-very-long-workspace ".repeat(6)}`,
+			width,
+			{ status: "running · 42s", tone: "running" },
+		);
+		const plain = stripAnsi(lines[0] ?? "");
+
+		assert.equal(visibleWidth(lines[0] ?? ""), width);
+		assert.match(plain, /…/);
+		assert.ok(plain.endsWith("running · 42s · output hidden · ctrl+o expand"), JSON.stringify(plain));
 	});
 
 	test("system frame uses ◇ marker with copy-clean body", () => {
