@@ -30,8 +30,8 @@ function normalize(content) {
   c = c.replaceAll('@mariozechner/pi-tui', '@gsd/pi-tui')
   c = c.replaceAll('@mariozechner/pi-coding-agent', '@gsd/pi-coding-agent')
   // Upstream v0.75.5 uses the unscoped `typebox` package; keep as-is.
-  c = c.replace(/from "jiti\/static"/g, 'from "@mariozechner/jiti"')
-  c = c.replace(/from 'jiti\/static'/g, "from '@mariozechner/jiti'")
+  c = c.replace(/from "jiti\/static"/g, 'from "jiti"')
+  c = c.replace(/from 'jiti\/static'/g, "from 'jiti'")
   // Node16: relative imports use .js, not .ts
   c = c.replace(/from "(\.{1,2}\/[^"]+)\.ts"/g, 'from "$1.js"')
   c = c.replace(/from '(\.{1,2}\/[^']+)\.ts'/g, "from '$1.js'")

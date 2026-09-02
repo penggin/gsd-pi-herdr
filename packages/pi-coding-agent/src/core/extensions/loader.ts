@@ -12,7 +12,6 @@ import * as _bundledPiAi from "@gsd/pi-ai";
 import * as _bundledPiAiOauth from "@gsd/pi-ai/oauth";
 import type { KeyId } from "@gsd/pi-tui";
 import * as _bundledPiTui from "@gsd/pi-tui";
-import { createJiti } from "@mariozechner/jiti";
 // Static imports of packages that extensions may use.
 // These MUST be static so Bun bundles them into the compiled binary.
 // The virtualModules option then makes them available to extensions.
@@ -60,6 +59,20 @@ const VIRTUAL_MODULES: Record<string, unknown> = {
 };
 
 const require = createRequire(import.meta.url);
+
+type CreateJiti = typeof import("@mariozechner/jiti").createJiti;
+type JitiImporter = ReturnType<CreateJiti>;
+
+let createJitiPromise: Promise<CreateJiti> | undefined;
+
+function getCreateJiti(): Promise<CreateJiti> {
+	if (!createJitiPromise) {
+		createJitiPromise = (
+			isBunBinary ? import("@mariozechner/jiti") : import("jiti")
+		).then((module) => module.createJiti as CreateJiti);
+	}
+	return createJitiPromise;
+}
 
 /**
  * Get aliases for jiti (used in Node.js/development mode).
@@ -131,11 +144,12 @@ export function getAliases(): Record<string, string> {
 	return _aliases;
 }
 
-const _moduleImporters = new Map<string, ReturnType<typeof createJiti>>();
+const _moduleImporters = new Map<string, JitiImporter>();
 
-function getModuleImporter(parentModuleUrl: string) {
+async function getModuleImporter(parentModuleUrl: string): Promise<JitiImporter> {
 	let importer = _moduleImporters.get(parentModuleUrl);
 	if (!importer) {
+		const createJiti = await getCreateJiti();
 		importer = createJiti(parentModuleUrl, {
 			moduleCache: true,
 			...(isBunBinary ? { virtualModules: VIRTUAL_MODULES, tryNative: false } : { alias: getAliases() }),
@@ -146,7 +160,7 @@ function getModuleImporter(parentModuleUrl: string) {
 }
 
 export async function importExtensionModule<T = unknown>(parentModuleUrl: string, specifier: string): Promise<T> {
-	const importer = getModuleImporter(parentModuleUrl);
+	const importer = await getModuleImporter(parentModuleUrl);
 	const resolvedPath = fileURLToPath(new URL(specifier, parentModuleUrl));
 	return importer.import(resolvedPath) as Promise<T>;
 }
@@ -432,6 +446,7 @@ function createExtensionAPI(
 }
 
 async function loadExtensionModule(extensionPath: string) {
+	const createJiti = await getCreateJiti();
 	const jiti = createJiti(import.meta.url, {
 		moduleCache: false,
 		// In Bun binary: use virtualModules for bundled packages (no filesystem resolution)

@@ -1529,6 +1529,38 @@ this session does not merge, push, tag, or publish.
   transpilation and syntax-grammar load timing before importing any lazy-load
   behavior. Keep the provider-store branch history as the compatibility base.
 
+### 2026-09-03 — Pi v0.84 startup-performance compatibility slice
+
+- Started `feature/pi-v084-startup-performance` from the fully pushed v0.80
+  provider-store branch and compared the downstream startup graph with upstream
+  commits `cec3a91c0` (deferred uncommon grammars) and `faecac2ca` (reduced
+  bundled startup work). The grammar change is not applicable here: downstream
+  TUI highlighting already uses the native/lightweight implementation, and the
+  legacy `highlight.js` utility is not imported by the runtime barrel.
+- Removed the eager Jiti/Babel transform from the extension-loader module
+  graph. The loader now imports a transpiler only on the first real extension
+  load: Node uses upstream `jiti` 2.7's lazy transform, while Bun binary mode
+  retains `@mariozechner/jiti` and its embedded virtual-module support. The
+  upstream-normalization script now maps future `jiti/static` imports to the
+  production `jiti` dependency rather than restoring the eager fork on Node.
+- Added two process/behavior contracts: importing the loader must not populate
+  the Jiti `babel.cjs` module, and the deferred importer must still transform a
+  typed `.ts` extension and register its command. Focused startup/extension and
+  lightweight-highlight verification passes **8/8**. `typecheck:extensions`,
+  `build:core`, `git diff --check`, and all ten compiled package suites pass;
+  counts are agent-core **136/136**, agent-modes **287/287**, native **223 pass
+  / 1 platform skip**, pi-agent-core **3/3**, pi-ai **49/49**, coding-agent
+  **68/68**, pi-tui **8/8**, contracts **9/9**, MCP **377/377**, and RPC client
+  **30/30**.
+- Dependency audit: `jiti` 2.7 was already locked as a development dependency;
+  it is now a root and coding-agent production dependency so global installs can
+  resolve the deferred Node import. No package version changed, and the legacy
+  fork remains because current Bun binary compatibility still depends on it.
+- Exact next task: commit and push this startup slice, then audit upstream
+  v0.84.3 nested `.agents/skills/` discovery and health diagnostics against the
+  downstream Assessment Gate metadata/parser. Add compatibility tests before
+  changing discovery precedence or diagnostics.
+
 ## 11. Working-session protocol
 
 For every Herdr session:

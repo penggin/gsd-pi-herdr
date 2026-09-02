@@ -189,6 +189,7 @@
     "http-proxy-agent": "^7.0.2",
     "https-proxy-agent": "^7.0.6",
     "ignore": "^7.0.5",
+    "jiti": "^2.7.0",
     "marked": "^15.0.12",
     "minimatch": "^10.2.3",
     "openai": "^6.26.0",
@@ -211,7 +212,6 @@
     "c8": "^11.0.0",
     "cross-env": "^7.0.3",
     "esbuild": "^0.28.1",
-    "jiti": "^2.7.0",
     "typescript": "^5.9.3"
   },
   "optionalDependencies": {
