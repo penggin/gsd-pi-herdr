@@ -744,6 +744,18 @@ async function executeToolCallsParallel(
 		}
 
 		finalizedCalls.push(async () => {
+			// A later preflight can abort the whole batch after this call was
+			// prepared but before parallel execution begins. Do not start a
+			// side-effecting tool once that batch-level decision is known.
+			if (signal?.aborted) {
+				const finalized = {
+					toolCall,
+					result: createErrorToolResult("Operation aborted"),
+					isError: true,
+				} satisfies FinalizedToolCallOutcome;
+				await emitToolExecutionEnd(finalized, emit);
+				return finalized;
+			}
 			const executed = await executePreparedToolCall(preparation, signal, emit);
 			const finalized = await finalizeExecutedToolCall(
 				currentContext,

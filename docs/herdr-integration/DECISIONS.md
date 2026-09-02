@@ -439,3 +439,29 @@ Provider behavior may be imported when a tested semantic gap exists, but file
 moves or API renames are not a migration goal and may not share a cutover commit
 with session persistence changes. GSD databases and AssessmentRun records remain
 canonical for workflow state; Herdr remains authoritative for terminal runtime.
+
+---
+
+## ADR-H028 — Require an asynchronous production seam before session-v4 opt-in
+
+**Status:** Accepted
+**Date:** 2026-09-03
+
+The validated version-4 memory and JSONL stores remain asynchronous and are not
+adapted behind a duplicate synchronous writer. The deployed coding-agent
+`SessionManager` surface is synchronous, and current GSD session callers depend
+on those immediate append, branch, and query results. Pretending that the v4
+backend fits that surface would either weaken durability or create two
+independent persistence implementations.
+
+P3.5 therefore requires an asynchronous production composition seam using the
+working downstream `AgentHarness` contract before `harness-v4` can be exposed as
+an opt-in runtime. The latest primary upstream at `4e69b0c28` is not a shortcut:
+its new `AgentHarness` still reports `HarnessNotImplemented` for production
+prompt, compaction, and navigation operations. Legacy v3 remains the runtime
+default and existing v3 files remain untouched while this seam is designed and
+characterized.
+
+Independent upstream correctness fixes may continue to land when they preserve
+the current session authority boundary and have focused regressions. They do not
+constitute or imply a session-format cutover.

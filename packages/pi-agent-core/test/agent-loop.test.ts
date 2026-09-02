@@ -417,6 +417,78 @@ describe("agentLoop with AgentMessage", () => {
 		expect(toolResult?.role === "toolResult" ? toolResult.usage : undefined).toEqual(patchedToolUsage);
 	});
 
+	it("does not start prepared parallel tools after a later preflight aborts", async () => {
+		const toolSchema = Type.Object({ value: Type.String() });
+		const executions: string[] = [];
+		const preflights: string[] = [];
+		const afterCalls: string[] = [];
+		const tool: AgentTool<typeof toolSchema, { value: string }> = {
+			name: "external-write",
+			label: "External write",
+			description: "Record a side effect",
+			parameters: toolSchema,
+			async execute(_toolCallId, params) {
+				executions.push(params.value);
+				return { content: [{ type: "text", text: params.value }], details: {} };
+			},
+		};
+		const context: AgentContext = { systemPrompt: "", messages: [], tools: [tool] };
+		const controller = new AbortController();
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+			toolExecution: "parallel",
+			beforeToolCall: async ({ args }) => {
+				const value = String((args as { value: string }).value);
+				preflights.push(value);
+				if (value === "second") controller.abort();
+			},
+			afterToolCall: async ({ toolCall }) => {
+				afterCalls.push(toolCall.id);
+			},
+		};
+		let callIndex = 0;
+		const streamFn = () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				if (callIndex++ === 0) {
+					stream.push({
+						type: "done",
+						reason: "toolUse",
+						message: createAssistantMessage(
+							[
+								{ type: "toolCall", id: "first", name: tool.name, arguments: { value: "first" } },
+								{ type: "toolCall", id: "second", name: tool.name, arguments: { value: "second" } },
+							],
+							"toolUse",
+						),
+					});
+				} else {
+					stream.push({
+						type: "done",
+						reason: "stop",
+						message: createAssistantMessage([{ type: "text", text: "stopped" }]),
+					});
+				}
+			});
+			return stream;
+		};
+		const events: AgentEvent[] = [];
+		const stream = agentLoop([createUserMessage("run")], context, config, controller.signal, streamFn);
+		for await (const event of stream) events.push(event);
+
+		expect(preflights).toEqual(["first", "second"]);
+		expect(executions).toEqual([]);
+		expect(afterCalls).toEqual([]);
+		expect(events.filter(({ type }) => type === "tool_execution_start")).toHaveLength(2);
+		const ends = events.filter(({ type }) => type === "tool_execution_end");
+		expect(ends).toHaveLength(2);
+		expect(ends.every((event) => event.type === "tool_execution_end" && event.isError)).toBe(true);
+		const toolResults = (await stream.result()).filter((message) => message.role === "toolResult");
+		expect(toolResults).toHaveLength(2);
+		expect(toolResults.every((message) => message.role === "toolResult" && message.isError)).toBe(true);
+	});
+
 	it("normalizes missing tool result content before appending transcript messages", async () => {
 		const toolSchema = Type.Object({});
 		const tool: AgentTool<typeof toolSchema, Record<string, never>> = {

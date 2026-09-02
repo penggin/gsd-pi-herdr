@@ -1935,6 +1935,34 @@ this session does not merge, push, tag, or publish.
 - Exact next task: commit and push P3.4. Begin P3.5 only afterward by adding an
   explicit opt-in coding-agent construction setting; `legacy-v3` must remain
   the default and format mismatch must fail without empty-session fallback.
+- Audited primary upstream through `4e69b0c28`. P3.5 cannot safely be a thin
+  setting switch: the deployed coding-agent manager is synchronous, the
+  validated v4 stores are asynchronous, and upstream's new harness still throws
+  `HarnessNotImplemented` for production prompt/compaction/navigation. Recorded
+  ADR-H028: no duplicate synchronous v4 writer and no non-functional opt-in;
+  legacy v3 remains the application default until an asynchronous production
+  composition seam is characterized.
+- Ported three independent upstream correctness fixes without changing GSD or
+  Herdr authority. A proxy response that reaches EOF without a terminal SSE
+  event now becomes a canonical error instead of hanging; an unterminated final
+  terminal line is flushed. Parallel tool batches no longer start prepared
+  side-effecting tools after a later preflight aborts the batch. In-memory fork
+  now aborts and settles the active turn before mutating the shared manager, so
+  late tool results cannot enter the replacement session.
+- Focused regression evidence passes: proxy and agent-loop **32/32**, including
+  paired aborted-tool events/results and no side effects; active-tool in-memory
+  fork **1/1**, including a clean replacement transcript and next-provider
+  context containing only the new user turn.
+- Final settlement-slice gates pass: `verify:pi-patches`, extension typecheck,
+  `build:core`, `test:packages`, `test:changed:src` (no root-source tests for
+  this package-only slice), and `git diff --check`. Compiled package totals are
+  GSD agent-core **139/139**, agent-modes **287/287**, native **223 pass / 1
+  skip**, pi-agent-core **3/3**, pi-ai **49/49**, pi-coding-agent **72/72**,
+  pi-tui **8/8**, contracts **9/9**, MCP server **377/377**, and RPC client
+  **30/30**.
+- Exact next task: commit and push this settlement slice, then evaluate upstream
+  `56700d42e` (compact before post-tool model requests) against downstream
+  compaction semantics before importing it.
 
 ## 11. Working-session protocol
 

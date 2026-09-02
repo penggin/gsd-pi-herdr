@@ -2,7 +2,7 @@
 
 Date: 2026-09-03
 
-Status: P3.0–P3.4 complete; P3.5 opt-in adapter is next; no runtime cutover
+Status: P3.0–P3.4 complete; P3.5 requires an async composition seam; no runtime cutover
 
 Upstream reference: `refs/pi-upstream/v0.84.4`
 
@@ -152,6 +152,15 @@ Exit: prompt, tool loop, steer/follow-up, retry, compact, branch summary,
 abort, and shutdown parity pass on memory plus v4 JSONL.
 
 ### P3.5 — Add an opt-in coding-agent adapter
+
+Design gate (2026-09-03): the deployed coding-agent `SessionManager` contract is
+synchronous, while the validated v4 repositories and storage adapters are
+asynchronous. The latest upstream harness at `4e69b0c28` still throws
+`HarnessNotImplemented` for production prompt, compaction, and navigation
+operations. P3.5 must therefore first move the production composition root onto
+the working downstream asynchronous harness contract. It must not introduce a
+second synchronous v4 writer or advertise a non-functional upstream scaffold as
+an opt-in backend.
 
 - Add an internal construction option selecting `legacy-v3` or `harness-v4`.
 - Default to `legacy-v3`; do not add a global user migration prompt yet.
