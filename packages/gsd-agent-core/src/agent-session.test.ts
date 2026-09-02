@@ -8,6 +8,7 @@ import { AgentSessionModelModule } from "./session/agent-session-model.ts";
 import { AgentSessionNavigationModule } from "./session/agent-session-navigation.ts";
 import { AgentSessionPromptModule } from "./session/agent-session-prompt.ts";
 import { AgentSessionCompactionModule } from "./session/agent-session-compaction.ts";
+import { AgentSessionEventsModule } from "./session/agent-session-events.ts";
 
 describe("parseSkillBlock", () => {
   test("parses a valid skill block with trailing user message", () => {
@@ -58,6 +59,28 @@ describe("AgentSessionCompactionModule", () => {
       willRetry: false,
       fromExtension: false,
     }]);
+  });
+});
+
+describe("AgentSessionEventsModule", () => {
+  test("dispose aborts all active work before disconnecting listeners", () => {
+    const calls: string[] = [];
+    const host = {
+      abortRetry: () => calls.push("retry"),
+      abortCompaction: () => calls.push("compaction"),
+      abortBranchSummary: () => calls.push("branch"),
+      abortBash: () => calls.push("bash"),
+      agent: { abort: () => calls.push("agent") },
+      _extensionRunner: { invalidate: () => calls.push("invalidate") },
+      _unsubscribeAgent: () => calls.push("disconnect"),
+      _eventListeners: [() => {}],
+      sessionId: "session-test",
+    };
+
+    new AgentSessionEventsModule(host as any).dispose();
+
+    assert.deepEqual(calls, ["retry", "compaction", "branch", "bash", "agent", "invalidate", "disconnect"]);
+    assert.deepEqual(host._eventListeners, []);
   });
 });
 

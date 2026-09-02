@@ -265,6 +265,16 @@ export class AgentSessionEventsModule {
 	}
 
 	dispose(): void {
+		try {
+			this.host.abortRetry();
+			this.host.abortCompaction();
+			this.host.abortBranchSummary();
+			this.host.abortBash();
+			void this.host.agent.abort();
+		} catch {
+			// Disposal must still invalidate the extension runtime and release
+			// listeners when an abort hook is already torn down or throws.
+		}
 		this.host._extensionRunner.invalidate(
 			"This extension ctx is stale after session replacement or reload. Do not use a captured pi or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().",
 		);

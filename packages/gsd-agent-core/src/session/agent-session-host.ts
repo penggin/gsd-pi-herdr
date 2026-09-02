@@ -170,6 +170,9 @@ export interface AgentSessionHost {
 	compact(customInstructions?: string): Promise<CompactionResult>;
 	abort(): Promise<void>;
 	abortRetry(): void;
+	abortCompaction(): void;
+	abortBranchSummary(): void;
+	abortBash(): void;
 	setSessionName(name: string): void;
 	emitSessionStartWithLegacySwitch(event: SessionStartEvent & { reason: "new" | "resume" }): Promise<void>;
 	extendResourcesFromExtensions(reason: "startup" | "reload"): Promise<void>;
