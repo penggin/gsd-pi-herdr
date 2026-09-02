@@ -58,6 +58,7 @@ export type {
 	VerifyResultEvent,
 	AfterProviderResponseEvent,
 	AgentEndEvent,
+	AgentSettledEvent,
 	AgentStartEvent,
 	// Re-exports
 	AgentToolResult,

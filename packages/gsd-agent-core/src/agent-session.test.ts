@@ -270,6 +270,57 @@ describe("AgentSessionNavigationModule", () => {
 });
 
 describe("AgentSessionPromptModule", () => {
+	test("emits agent_settled once after automatic continuations finish", async () => {
+		const order: string[] = [];
+		let postRunChecks = 0;
+		const host = {
+			agent: {
+				latencyMark: undefined,
+				prompt: async () => order.push("prompt"),
+				continue: async () => order.push("continue"),
+			},
+			flushPendingBashMessages: () => order.push("flush-bash"),
+			flushPendingCustomMessages: () => order.push("flush-custom"),
+			_extensionRunner: {
+				emit: async (event: { type: string }) => order.push(`extension:${event.type}`),
+			},
+			emit: (event: { type: string }) => order.push(`session:${event.type}`),
+		};
+		const mod = new AgentSessionPromptModule(host as any);
+		mod.handlePostAgentRun = async () => postRunChecks++ === 0;
+
+		await mod.runAgentPrompt({ role: "user", content: "continue once", timestamp: 1 } as any);
+
+		assert.deepEqual(order, [
+			"prompt",
+			"continue",
+			"flush-bash",
+			"flush-custom",
+			"extension:agent_settled",
+			"session:agent_settled",
+		]);
+	});
+
+	test("emits agent_settled when the agent run fails", async () => {
+		const events: string[] = [];
+		const host = {
+			agent: {
+				latencyMark: undefined,
+				prompt: async () => {
+					throw new Error("provider failed");
+				},
+			},
+			flushPendingBashMessages: () => {},
+			flushPendingCustomMessages: () => {},
+			_extensionRunner: { emit: async (event: { type: string }) => events.push(`extension:${event.type}`) },
+			emit: (event: { type: string }) => events.push(`session:${event.type}`),
+		};
+		const mod = new AgentSessionPromptModule(host as any);
+
+		await assert.rejects(() => mod.runAgentPrompt({ role: "user", content: "fail", timestamp: 1 } as any));
+		assert.deepEqual(events, ["extension:agent_settled", "session:agent_settled"]);
+	});
+
   test("refuses to expand Assessment Gates through ordinary /skill commands", () => {
     const errors: Array<{ error: string }> = [];
     const gate = {

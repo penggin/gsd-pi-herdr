@@ -1210,6 +1210,18 @@ this session does not merge, push, tag, or publish.
   adapter decision. Exact next task: audit v0.80 extension event/tool-registry
   changes against the downstream dynamic registry, then import only missing
   lifecycle guarantees before evaluating lazy startup loading.
+- Audited the v0.80 extension lifecycle against the downstream dynamic tool
+  registry. The downstream registry already supports runtime refresh and
+  `adjust_tool_set`; the missing correctness boundary was `agent_settled`.
+  Added that event after every automatic retry/compaction continuation has
+  finished, including failed runs, and exposed it to extensions and session
+  subscribers. RPC v2 now emits `execution_complete` at this final boundary
+  instead of the intermediate `agent_end`; both RPC clients wait for the same
+  event, preventing false-idle reports while recovery work is still running.
+- Focused verification for this lifecycle slice passes: agent-session **16/16**,
+  RPC protocol/client **92/92**, and `typecheck:extensions`. Exact next task:
+  import the v0.80 `before_provider_headers` hook with final-header mutation and
+  deletion semantics, then run the full package/build regression matrix.
 
 ## 11. Working-session protocol
 

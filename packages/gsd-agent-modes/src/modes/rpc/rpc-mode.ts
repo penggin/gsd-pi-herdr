@@ -471,6 +471,8 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 
 	// Output all agent events as JSON
 	const unsubscribe = session.subscribe((event) => {
+		const eventRunId = protocolVersion === 2 ? currentRunId : null;
+
 		// v2: emit synthesized events before the regular event
 		if (protocolVersion === 2) {
 			// cost_update on assistant message_end
@@ -493,12 +495,13 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				}
 			}
 
-			// execution_complete on agent_end
-			if (event.type === "agent_end" && currentRunId) {
+			// agent_end may be followed by automatic retry or compaction. Only the
+			// final settled boundary completes the RPC execution.
+			if (event.type === "agent_settled" && eventRunId) {
 				const stats = session.getSessionStats();
 				const completionEvent = {
 					type: "execution_complete" as const,
-					runId: currentRunId,
+					runId: eventRunId,
 					status: "completed" as const,
 					stats,
 				};
@@ -515,8 +518,8 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 		}
 
 		// Emit the regular event, with runId injection in v2 mode
-		if (protocolVersion === 2 && currentRunId) {
-			output({ ...event, runId: currentRunId });
+		if (protocolVersion === 2 && eventRunId) {
+			output({ ...event, runId: eventRunId });
 		} else {
 			output(event);
 		}

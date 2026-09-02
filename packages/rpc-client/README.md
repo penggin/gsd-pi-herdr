@@ -90,7 +90,7 @@ cancel or provider failure.
 
 | Method                                | Description                              |
 |---------------------------------------|------------------------------------------|
-| `waitForIdle(timeout?)`               | Wait for `agent_end` event               |
+| `waitForIdle(timeout?)`               | Wait for final `agent_settled` event      |
 | `collectEvents(timeout?)`             | Collect events until idle                |
 | `promptAndWait(message, images?, t?)` | Send prompt and collect events           |
 

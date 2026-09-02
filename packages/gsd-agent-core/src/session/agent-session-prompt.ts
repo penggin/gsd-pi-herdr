@@ -40,6 +40,8 @@ export class AgentSessionPromptModule {
 			this.host.agent.latencyMark = previousLatencyMark;
 			this.host.flushPendingBashMessages();
 			this.host.flushPendingCustomMessages();
+			await this.host._extensionRunner.emit({ type: "agent_settled" });
+			this.host.emit({ type: "agent_settled" });
 		}
 	}
 

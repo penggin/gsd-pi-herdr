@@ -364,6 +364,24 @@ describe("RpcClient construction", () => {
 	});
 });
 
+describe("agent lifecycle helpers", () => {
+	it("waitForIdle ignores intermediate agent_end and resolves on agent_settled", async () => {
+		const client = new RpcClient();
+		let resolved = false;
+		const waiting = client.waitForIdle(1000).then(() => {
+			resolved = true;
+		});
+
+		(client as any).handleLine(serializeJsonLine({ type: "agent_end", willRetry: true }).trim());
+		await Promise.resolve();
+		assert.equal(resolved, false);
+
+		(client as any).handleLine(serializeJsonLine({ type: "agent_settled" }).trim());
+		await waiting;
+		assert.equal(resolved, true);
+	});
+});
+
 // ============================================================================
 // events() Generator Tests
 // ============================================================================

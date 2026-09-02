@@ -728,6 +728,11 @@ export interface AgentEndEvent {
 	willRetry?: boolean;
 }
 
+/** Fired after an agent run has fully settled and no automatic retry or compaction will run. */
+export interface AgentSettledEvent {
+	type: "agent_settled";
+}
+
 export type UIPromptKind = "select" | "confirm" | "input" | "editor" | "custom";
 
 /** Fired when Pi starts waiting on a blocking user-facing extension UI prompt. */
@@ -1058,6 +1063,7 @@ export type ExtensionEvent =
 	| BeforeAgentStartEvent
 	| AgentStartEvent
 	| AgentEndEvent
+	| AgentSettledEvent
 	| UIPromptStartEvent
 	| UIPromptEndEvent
 	| TurnStartEvent
@@ -1219,6 +1225,7 @@ export interface ExtensionAPI {
 	on(event: "before_agent_start", handler: ExtensionHandler<BeforeAgentStartEvent, BeforeAgentStartEventResult>): void;
 	on(event: "agent_start", handler: ExtensionHandler<AgentStartEvent>): void;
 	on(event: "agent_end", handler: ExtensionHandler<AgentEndEvent>): void;
+	on(event: "agent_settled", handler: ExtensionHandler<AgentSettledEvent>): void;
 	on(event: "ui_prompt_start", handler: ExtensionHandler<UIPromptStartEvent>): void;
 	on(event: "ui_prompt_end", handler: ExtensionHandler<UIPromptEndEvent>): void;
 	on(event: "turn_start", handler: ExtensionHandler<TurnStartEvent>): void;
