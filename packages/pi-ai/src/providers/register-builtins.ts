@@ -139,13 +139,20 @@ export function setBedrockProviderModule(module: BedrockProviderModule): void {
 	};
 }
 
-function forwardStream(target: AssistantMessageEventStream, source: AsyncIterable<AssistantMessageEvent>): void {
-	(async () => {
-		for await (const event of source) {
-			target.push(event);
-		}
-		target.end();
-	})();
+function hasResult(
+	source: AsyncIterable<AssistantMessageEvent>,
+): source is AsyncIterable<AssistantMessageEvent> & { result(): Promise<AssistantMessage> } {
+	return typeof (source as { result?: unknown }).result === "function";
+}
+
+async function forwardStream(
+	target: AssistantMessageEventStream,
+	source: AsyncIterable<AssistantMessageEvent>,
+): Promise<void> {
+	for await (const event of source) {
+		target.push(event);
+	}
+	target.end(hasResult(source) ? await source.result() : undefined);
 }
 
 function createLazyLoadErrorMessage<TApi extends Api>(model: Model<TApi>, error: unknown): AssistantMessage {
@@ -178,7 +185,7 @@ function createLazyStream<TApi extends Api, TOptions extends StreamOptions, TSim
 		loadModule()
 			.then((module) => {
 				const inner = module.stream(model, context, options);
-				forwardStream(outer, inner);
+				return forwardStream(outer, inner);
 			})
 			.catch((error) => {
 				const message = createLazyLoadErrorMessage(model, error);
@@ -201,7 +208,7 @@ function createLazySimpleStream<
 		loadModule()
 			.then((module) => {
 				const inner = module.streamSimple(model, context, options);
-				forwardStream(outer, inner);
+				return forwardStream(outer, inner);
 			})
 			.catch((error) => {
 				const message = createLazyLoadErrorMessage(model, error);

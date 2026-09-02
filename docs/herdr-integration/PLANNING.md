@@ -1239,6 +1239,24 @@ this session does not merge, push, tag, or publish.
   Exact next task: commit this header boundary, then evaluate v0.80 lazy provider
   startup against downstream opt-in discovery and extension registration
   semantics.
+- Confirmed that provider SDK modules were already lazily imported, so no new
+  startup discovery or credential activity was needed. The existing lazy
+  forwarding wrapper did drop an inner stream's final `AssistantMessage` when
+  a provider completed through `result()` without emitting a terminal event.
+  It now forwards the final result and returns the forwarding promise so setup
+  and iteration failures enter the existing bounded error stream instead of
+  becoming unhandled work.
+- Lazy module/result regressions pass **4/4** and `build:pi-ai` passes. The full
+  Pi AI run completed **71 files / 403 tests passing** but its credential-enabled
+  external Codex matrix had three tool-calling failures after three retries
+  each (`gpt-5.4`, `gpt-5.5`, and `gpt-5.5` WebSocket); focused deterministic
+  Codex/header tests remain **31/31** and the same external tests are not part of
+  the workspace offline gate. This is recorded as live-provider variance, not
+  treated as a passing gate or attributed to lazy result forwarding.
+- Exact next task: commit the lazy result fix, then audit v0.80 cache-friendly
+  dynamic tool loading (`addedToolNames` / deferred provider tools) against the
+  downstream `adjust_tool_set` registry before deciding whether its performance
+  benefit justifies the broader message/protocol change.
 
 ## 11. Working-session protocol
 
