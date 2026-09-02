@@ -2137,6 +2137,18 @@ this session does not merge, push, tag, or publish.
   contracts **9/9**, MCP server **377/377**, and RPC client **30/30**.
 - Exact next task: review, commit, and push the wording correction; then close
   the current upstream candidate audit with explicit defer/no-port decisions.
+- Began the next isolated upstream compatibility slice from `605a1b038`.
+  Terminal dimension refresh is now best-effort: a restricted Linux runtime
+  that rejects the self-directed `SIGWINCH` cannot crash GSD TUI startup, while
+  Windows continues to skip the signal. The focused SIGWINCH plus existing
+  terminal regression passed **7/7**; Pi patch inventory, extension typecheck,
+  pi-tui and core builds, and all package suites also pass — agent-core
+  **139/139**, agent-modes **287/287**, native **223 passed / 1 skipped**,
+  pi-agent-core **3/3**, pi-ai **49/49**, pi-coding-agent **72/72**, pi-tui
+  **8/8**, contracts **9/9**, MCP server **377/377**, and RPC client **30/30**.
+- Exact next task: review, commit, and push the restricted-runtime terminal
+  slice, then port and validate the cwd-sensitive tool execution correction
+  from `62835ea81` against the fork's extension context seam.
 
 ## 11. Working-session protocol
 

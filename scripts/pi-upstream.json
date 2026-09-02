@@ -98,6 +98,8 @@
     "packages/pi-coding-agent/src/core/tools/write.ts",
     "packages/pi-coding-agent/src/theme/**",
     "packages/pi-coding-agent/scripts/copy-assets.cjs",
+    "packages/pi-tui/src/terminal.ts",
+    "packages/pi-tui/test/regression-sigwinch-kill-eacces.test.ts",
     "packages/pi-tui/src/style.ts",
     "packages/pi-tui/src/editor-keybindings.ts"
   ],

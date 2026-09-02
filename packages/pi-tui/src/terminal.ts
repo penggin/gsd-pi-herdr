@@ -16,6 +16,20 @@ export function shouldEnableMouseReporting(env: NodeJS.ProcessEnv = process.env)
 	return env.PI_TUI_MOUSE === "1";
 }
 
+/**
+ * Refresh terminal dimensions after resume by signalling this process.
+ * Some restricted Linux environments reject kill(2), so this refresh is
+ * deliberately best-effort rather than a reason to fail TUI startup.
+ */
+export function refreshTerminalDimensions(): void {
+	if (process.platform === "win32" || process.pid <= 0) return;
+	try {
+		process.kill(process.pid, "SIGWINCH");
+	} catch {
+		// Dimension refresh is optional when signal delivery is unavailable.
+	}
+}
+
 /** True when stdout is no longer writable (pipe closed, terminal detached). */
 export function isStdoutClosedError(err: unknown): boolean {
 	if (!(err instanceof Error)) return false;
@@ -205,10 +219,8 @@ export class ProcessTerminal implements Terminal {
 		process.stdout.on("resize", this.resizeHandler);
 
 		// Refresh terminal dimensions - they may be stale after suspend/resume
-		// (SIGWINCH is lost while process is stopped). Unix only.
-		if (process.platform !== "win32") {
-			process.kill(process.pid, "SIGWINCH");
-		}
+		// (SIGWINCH is lost while process is stopped). Unix only, best-effort.
+		refreshTerminalDimensions();
 
 		// On Windows, enable ENABLE_VIRTUAL_TERMINAL_INPUT so the console sends
 		// VT escape sequences (e.g. \x1b[Z for Shift+Tab) instead of raw console
