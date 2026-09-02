@@ -376,12 +376,25 @@ export async function processResponsesStream<TApi extends Api>(
 	model: Model<TApi>,
 	options?: OpenAIResponsesStreamOptions,
 ): Promise<void> {
-	let currentItem: ResponseReasoningItem | ResponseOutputMessage | ResponseFunctionToolCall | ResponseFunctionWebSearch | null = null;
-	let currentBlock: ThinkingContent | TextContent | (ToolCall & { partialJson: string }) | ServerToolUse | null = null;
+	type ResponseOutputItem = ResponseReasoningItem | ResponseOutputMessage | ResponseFunctionToolCall | ResponseFunctionWebSearch;
+	type ResponseOutputBlock = ThinkingContent | TextContent | (ToolCall & { partialJson: string }) | ServerToolUse;
+	let currentItem: ResponseOutputItem | null = null;
+	let currentBlock: ResponseOutputBlock | null = null;
+	let currentContentIndex: number | null = null;
+	let currentOutputIndex: number | null = null;
+	let fallbackOutputIndex = 0;
+	const outputSlots = new Map<
+		number,
+		{
+			item: ResponseOutputItem;
+			block: ResponseOutputBlock;
+			contentIndex: number;
+		}
+	>();
 	let sawTerminalResponseEvent = false;
 	const reasoningBlocksById = new Map<string, ThinkingContent>();
 	const blocks = output.content;
-	const blockIndex = () => blocks.length - 1;
+	const blockIndex = () => currentContentIndex ?? blocks.length - 1;
 	const backfillReasoningSignatures = (responseOutput: ResponseInput): void => {
 		for (const item of responseOutput) {
 			if (item.type !== "reasoning" || !item.encrypted_content) continue;
@@ -433,9 +446,24 @@ export async function processResponsesStream<TApi extends Api>(
 	};
 
 	for await (const event of openaiStream) {
+		const eventOutputIndex =
+			"output_index" in event && typeof event.output_index === "number" ? event.output_index : undefined;
+		if (event.type !== "response.output_item.added" && eventOutputIndex !== undefined) {
+			const slot = outputSlots.get(eventOutputIndex);
+			if (slot) {
+				currentItem = slot.item;
+				currentBlock = slot.block;
+				currentContentIndex = slot.contentIndex;
+				currentOutputIndex = eventOutputIndex;
+			}
+		}
 		if (event.type === "response.created") {
 			output.responseId = event.response.id;
 		} else if (event.type === "response.output_item.added") {
+			currentOutputIndex = eventOutputIndex ?? fallbackOutputIndex++;
+			currentItem = null;
+			currentBlock = null;
+			currentContentIndex = null;
 			const item = event.item;
 			if (item.type === "reasoning") {
 				currentItem = item;
@@ -468,6 +496,14 @@ export async function processResponsesStream<TApi extends Api>(
 				};
 				output.content.push(currentBlock);
 				stream.push({ type: "server_tool_use", contentIndex: blockIndex() });
+			}
+			if (currentItem && currentBlock) {
+				currentContentIndex = output.content.length - 1;
+				outputSlots.set(currentOutputIndex, {
+					item: currentItem,
+					block: currentBlock,
+					contentIndex: currentContentIndex,
+				});
 			}
 		} else if (event.type === "response.reasoning_summary_part.added") {
 			if (currentItem && currentItem.type === "reasoning") {
@@ -643,6 +679,11 @@ export async function processResponsesStream<TApi extends Api>(
 				});
 				currentBlock = null;
 			}
+			if (currentOutputIndex !== null) outputSlots.delete(currentOutputIndex);
+			currentItem = null;
+			currentBlock = null;
+			currentContentIndex = null;
+			currentOutputIndex = null;
 		} else if (event.type === "response.completed" || event.type === "response.incomplete") {
 			finalizeResponse(event.response);
 		} else if (event.type === "error") {

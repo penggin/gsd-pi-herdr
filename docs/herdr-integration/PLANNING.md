@@ -1414,6 +1414,24 @@ this session does not merge, push, tag, or publish.
   agent-core **136/136**, agent-modes **287/287**, native **223 pass / 1 platform
   skip**, pi-agent-core **3/3**, pi-ai **49/49**, coding-agent **66/66**, pi-tui
   **8/8**, contracts **9/9**, MCP **377/377**, and RPC client **30/30**.
+- Hardened the shared OpenAI/Azure Responses parser against interleaved output
+  events. Active reasoning, text, function-call, and web-search blocks are now
+  selected by protocol `output_index` instead of one mutable global slot, while
+  sequential synthetic streams without an index retain the existing fallback.
+  This prevents a later `output_item.added` event from redirecting an earlier
+  item's deltas or terminal bookkeeping into the wrong content block.
+- Added a deterministic regression that interleaves a reasoning item and text
+  item, then delivers the reasoning delta after the text slot is opened. The
+  complete Responses/Azure focused matrix passes **55/55** with **7** expected
+  credential/environment skips; `build:pi-ai`, `typecheck:extensions`,
+  `build:core`, `git diff --check`, and all ten compiled package suites pass.
+  Counts remain agent-core **136/136**, agent-modes **287/287**, native **223
+  pass / 1 platform skip**, pi-agent-core **3/3**, pi-ai **49/49**,
+  coding-agent **66/66**, pi-tui **8/8**, contracts **9/9**, MCP **377/377**,
+  and RPC client **30/30**. No dependency or lockfile change was introduced.
+- Exact next task: commit and push this concurrent output-slot fix, then audit
+  the remaining v0.80 session-affinity representation as the next bounded
+  compatibility unit before considering the larger sampling/API migrations.
 
 ## 11. Working-session protocol
 

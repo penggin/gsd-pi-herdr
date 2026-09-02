@@ -62,6 +62,85 @@ async function* terminalEvent(
 }
 
 describe("OpenAI Responses terminal and reasoning replay", () => {
+	it("keeps interleaved reasoning and text deltas in their output-index slots", async () => {
+		const target = model();
+		const assistant = output(target);
+		async function* events(): AsyncIterable<ResponseStreamEvent> {
+			yield {
+				type: "response.output_item.added",
+				output_index: 0,
+				sequence_number: 0,
+				item: { type: "reasoning", id: "rs_interleaved", summary: [] },
+			} as ResponseStreamEvent;
+			yield {
+				type: "response.output_item.added",
+				output_index: 1,
+				sequence_number: 1,
+				item: { type: "message", id: "msg_interleaved", role: "assistant", status: "in_progress", content: [] },
+			} as ResponseStreamEvent;
+			yield {
+				type: "response.reasoning_text.delta",
+				output_index: 0,
+				sequence_number: 2,
+				content_index: 0,
+				item_id: "rs_interleaved",
+				delta: "reasoning delta",
+			} as ResponseStreamEvent;
+			yield {
+				type: "response.content_part.added",
+				output_index: 1,
+				sequence_number: 3,
+				content_index: 0,
+				item_id: "msg_interleaved",
+				part: { type: "output_text", text: "", annotations: [] },
+			} as ResponseStreamEvent;
+			yield {
+				type: "response.output_text.delta",
+				output_index: 1,
+				sequence_number: 4,
+				content_index: 0,
+				item_id: "msg_interleaved",
+				delta: "text delta",
+				logprobs: [],
+			} as ResponseStreamEvent;
+			yield {
+				type: "response.output_item.done",
+				output_index: 0,
+				sequence_number: 5,
+				item: {
+					type: "reasoning",
+					id: "rs_interleaved",
+					summary: [],
+					content: [{ type: "reasoning_text", text: "reasoning delta" }],
+				},
+			} as ResponseStreamEvent;
+			yield {
+				type: "response.output_item.done",
+				output_index: 1,
+				sequence_number: 6,
+				item: {
+					type: "message",
+					id: "msg_interleaved",
+					role: "assistant",
+					status: "completed",
+					content: [{ type: "output_text", text: "text delta", annotations: [] }],
+				},
+			} as ResponseStreamEvent;
+			yield {
+				type: "response.completed",
+				sequence_number: 7,
+				response: { id: "resp_interleaved", status: "completed" },
+			} as ResponseStreamEvent;
+		}
+
+		await processResponsesStream(events(), assistant, new AssistantMessageEventStream(), target);
+
+		expect(assistant.content).toMatchObject([
+			{ type: "thinking", thinking: "reasoning delta" },
+			{ type: "text", text: "text delta" },
+		]);
+	});
+
 	it("rejects a stream that ends before a terminal response event", async () => {
 		const target = model();
 		async function* earlyEof(): AsyncIterable<ResponseStreamEvent> {
