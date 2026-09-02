@@ -24,6 +24,7 @@ import { exportSessionToHtml, type ToolHtmlRenderer } from "../export-html/index
 import { createToolHtmlRenderer } from "../export-html/tool-renderer.js";
 import type { SessionStats } from "./agent-session-types.js";
 import type { AgentSessionHost } from "./agent-session-host.js";
+import { createRetryingSummaryCompleteFn } from "./summarization-retry.js";
 
 export class AgentSessionNavigationModule {
 	constructor(readonly host: AgentSessionHost) {}
@@ -331,6 +332,7 @@ export class AgentSessionNavigationModule {
 					customInstructions,
 					replaceInstructions,
 					reserveTokens: branchSummarySettings.reserveTokens,
+					completeFn: createRetryingSummaryCompleteFn(this.host, { source: "branchSummary" }),
 				});
 				if (result.aborted) {
 					return { cancelled: true, aborted: true };

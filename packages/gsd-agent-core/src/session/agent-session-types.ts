@@ -88,6 +88,18 @@ export type AgentSessionEvent =
 	  }
 	| { type: "auto_retry_start"; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
 	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
+	| {
+			type: "summarization_retry_scheduled";
+			attempt: number;
+			maxAttempts: number;
+			delayMs: number;
+			errorMessage: string;
+	  }
+	| ({ type: "summarization_retry_attempt_start" } & (
+			| { source: "branchSummary" }
+			| { source: "compaction"; reason: "manual" | "threshold" | "overflow" }
+	  ))
+	| { type: "summarization_retry_finished" }
 	| { type: "session_state_changed"; reason: SessionStateChangeReason }
 	| { type: "auto_compaction_start"; reason: "threshold" | "overflow" }
 	| {

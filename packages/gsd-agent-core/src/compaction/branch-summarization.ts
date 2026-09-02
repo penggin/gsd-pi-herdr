@@ -6,7 +6,7 @@
  */
 
 import type { AgentMessage } from "@gsd/pi-agent-core";
-import type { Model } from "@gsd/pi-ai";
+import type { AssistantMessage, Context, Model, SimpleStreamOptions } from "@gsd/pi-ai";
 import { completeSimple } from "@gsd/pi-ai";
 import {
 	convertToLlm,
@@ -77,6 +77,8 @@ export interface GenerateBranchSummaryOptions {
 	replaceInstructions?: boolean;
 	/** Tokens reserved for prompt + LLM response (default 16384) */
 	reserveTokens?: number;
+	/** Optional retry-aware completion supplied by the session runtime. */
+	completeFn?: (model: Model<any>, context: Context, options: SimpleStreamOptions) => Promise<AssistantMessage>;
 }
 
 // ============================================================================
@@ -284,7 +286,7 @@ export async function generateBranchSummary(
 	entries: SessionEntry[],
 	options: GenerateBranchSummaryOptions,
 ): Promise<BranchSummaryResult> {
-	const { model, apiKey, headers, signal, customInstructions, replaceInstructions, reserveTokens = 16384 } = options;
+	const { model, apiKey, headers, signal, customInstructions, replaceInstructions, reserveTokens = 16384, completeFn } = options;
 
 	// Token budget = context window minus reserved space for prompt + response
 	const contextWindow = model.contextWindow || 128000;
@@ -321,11 +323,11 @@ export async function generateBranchSummary(
 	];
 
 	// Call LLM for summarization
-	const response = await completeSimple(
-		model,
-		{ systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages },
-		{ apiKey, headers, signal, maxTokens: 2048 },
-	);
+	const context = { systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages };
+	const completionOptions = { apiKey, headers, signal, maxTokens: 2048 };
+	const response = completeFn
+		? await completeFn(model, context, completionOptions)
+		: await completeSimple(model, context, completionOptions);
 
 	// Check if aborted or errored
 	if (response.stopReason === "aborted") {

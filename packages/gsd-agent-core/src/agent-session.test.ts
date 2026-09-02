@@ -9,6 +9,7 @@ import { AgentSessionNavigationModule } from "./session/agent-session-navigation
 import { AgentSessionPromptModule } from "./session/agent-session-prompt.ts";
 import { AgentSessionCompactionModule } from "./session/agent-session-compaction.ts";
 import { AgentSessionEventsModule } from "./session/agent-session-events.ts";
+import { createRetryingSummaryCompleteFn } from "./session/summarization-retry.ts";
 
 describe("parseSkillBlock", () => {
   test("parses a valid skill block with trailing user message", () => {
@@ -81,6 +82,36 @@ describe("AgentSessionEventsModule", () => {
 
     assert.deepEqual(calls, ["retry", "compaction", "branch", "bash", "agent", "invalidate", "disconnect"]);
     assert.deepEqual(host._eventListeners, []);
+  });
+});
+
+describe("summarization retry", () => {
+  test("uses configured backoff for a transient compaction failure", async () => {
+    const events: Array<{ type: string }> = [];
+    const responses = [makeAssistantError("The operation timed out"), {
+      ...makeAssistantError(""),
+      stopReason: "stop",
+      content: [{ type: "text", text: "summary" }],
+      errorMessage: undefined,
+    }];
+    const host = {
+      settingsManager: { getRetrySettings: () => ({ enabled: true, maxRetries: 2, baseDelayMs: 0 }) },
+      isRetryableError: (message: { stopReason: string }) => message.stopReason === "error",
+      emit: (event: { type: string }) => events.push(event),
+      agent: {
+        streamFn: async () => ({ result: async () => responses.shift() }),
+      },
+    };
+
+    const complete = createRetryingSummaryCompleteFn(host as any, { source: "compaction", reason: "threshold" });
+    const result = await complete({} as any, { systemPrompt: "", messages: [] }, {} as any);
+
+    assert.equal(result.stopReason, "stop");
+    assert.deepEqual(events.map((event) => event.type), [
+      "summarization_retry_scheduled",
+      "summarization_retry_attempt_start",
+      "summarization_retry_finished",
+    ]);
   });
 });
 

@@ -17,6 +17,7 @@ import {
 	shouldCompact,
 } from "../compaction/index.js";
 import type { AgentSessionHost } from "./agent-session-host.js";
+import { createRetryingSummaryCompleteFn } from "./summarization-retry.js";
 
 export function resolveThresholdContextTokens(assistantMessage: AssistantMessage, messages: AgentMessage[]): number {
 	const estimate = estimateContextTokens(messages);
@@ -103,6 +104,7 @@ export class AgentSessionCompactionModule {
 					this.host._compactionAbortController.signal,
 					this.host.thinkingLevel,
 					this.host.agent.streamFn,
+					createRetryingSummaryCompleteFn(this.host, { source: "compaction", reason: "manual" }),
 				);
 				summary = result.summary;
 				firstKeptEntryId = result.firstKeptEntryId;
@@ -384,6 +386,7 @@ export class AgentSessionCompactionModule {
 					this.host._autoCompactionAbortController.signal,
 					this.host.thinkingLevel,
 					this.host.agent.streamFn,
+					createRetryingSummaryCompleteFn(this.host, { source: "compaction", reason }),
 				);
 				summary = compactResult.summary;
 				firstKeptEntryId = compactResult.firstKeptEntryId;
