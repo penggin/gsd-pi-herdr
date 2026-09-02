@@ -8,6 +8,7 @@ export * from "./images.js";
 export * from "./images-api-registry.js";
 export * from "./model-catalog.js";
 export * from "./models.js";
+export * from "./models-store.js";
 export type { BedrockOptions, BedrockThinkingDisplay } from "./providers/amazon-bedrock.js";
 export type { AnthropicEffort, AnthropicOptions, AnthropicThinkingDisplay } from "./providers/anthropic.js";
 export type { AnthropicVertexOptions } from "./providers/anthropic-vertex.js";
