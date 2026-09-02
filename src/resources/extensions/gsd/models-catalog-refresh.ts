@@ -22,7 +22,7 @@ import { isModelsCatalog, isModelsCatalogOverlay, type ModelsCatalog } from "@gs
 import { resolveGsdModelsCatalogPath } from "./copilot-overlay-writer.js";
 
 export const GSD_MODELS_CATALOG_URL =
-	"https://raw.githubusercontent.com/open-gsd/gsd-pi/main/packages/pi-ai/src/models.generated.json";
+	"https://raw.githubusercontent.com/penggin/gsd-pi-herdr/main/packages/pi-ai/src/models.generated.json";
 
 const DEFAULT_FETCH_TIMEOUT_MS = 15_000;
 
