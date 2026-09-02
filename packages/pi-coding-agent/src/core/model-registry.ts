@@ -44,9 +44,7 @@ import {
 } from "./model-discovery.js";
 import {
 	clearConfigValueCache,
-	resolveConfigValueOrThrow,
 	resolveConfigValueUncached,
-	resolveHeadersOrThrow,
 } from "./resolve-config-value.js";
 
 import {
@@ -61,8 +59,14 @@ import {
 	mergeProviderConfig,
 	type ProviderConfigInput,
 } from "./provider-composer.js";
+import {
+	resolveProviderRequestAuth,
+	type ProviderRequestConfig,
+	type ResolvedRequestAuth,
+} from "./provider-credentials.js";
 
 export type { ProviderConfigInput } from "./provider-composer.js";
+export type { ResolvedRequestAuth } from "./provider-credentials.js";
 
 export type { ProviderAuthMode } from "./provider-readiness.js";
 
@@ -274,23 +278,6 @@ interface ProviderOverride {
 	baseUrl?: string;
 	compat?: Model<Api>["compat"];
 }
-
-interface ProviderRequestConfig {
-	apiKey?: string;
-	headers?: Record<string, string>;
-	authHeader?: boolean;
-}
-
-export type ResolvedRequestAuth =
-	| {
-			ok: true;
-			apiKey?: string;
-			headers?: Record<string, string>;
-	  }
-	| {
-			ok: false;
-			error: string;
-	  };
 
 /** Result of loading custom models from models.json */
 interface CustomModelsResult {
@@ -822,47 +809,14 @@ export class ModelRegistry {
 	 * Get API key and request headers for a model.
 	 */
 	async getApiKeyAndHeaders(model: Model<Api>): Promise<ResolvedRequestAuth> {
-		try {
-			const providerConfig = this.providerRequestConfigs.get(model.provider);
-			const storedAuth = await this.authStorage.getApiKeyWithOAuthState(model.provider, { includeFallback: false });
-			const apiKey =
-				storedAuth?.apiKey ??
-				(providerConfig?.apiKey
-					? resolveConfigValueOrThrow(providerConfig.apiKey, `API key for provider "${model.provider}"`)
-					: undefined);
-
-			const providerHeaders = resolveHeadersOrThrow(providerConfig?.headers, `provider "${model.provider}"`);
-			const modelHeaders = resolveHeadersOrThrow(
-				this.modelRequestHeaders.get(this.getModelRequestKey(model.provider, model.id)),
-				`model "${model.provider}/${model.id}"`,
-			);
-
-			let headers =
-				model.headers || providerHeaders || modelHeaders
-					? { ...model.headers, ...providerHeaders, ...modelHeaders }
-					: undefined;
-
-			if (providerConfig?.authHeader) {
-				if (!apiKey) {
-					return { ok: false, error: `No API key found for "${model.provider}"` };
-				}
-				headers = { ...headers, Authorization: `Bearer ${apiKey}` };
-			}
-			if (model.provider === "kimi-coding" && storedAuth?.isOAuth && apiKey) {
-				headers = { ...headers, Authorization: `Bearer ${apiKey}` };
-			}
-
-			return {
-				ok: true,
-				apiKey,
-				headers: headers && Object.keys(headers).length > 0 ? headers : undefined,
-			};
-		} catch (error) {
-			return {
-				ok: false,
-				error: error instanceof Error ? error.message : String(error),
-			};
-		}
+		return resolveProviderRequestAuth(
+			{
+				authStorage: this.authStorage,
+				providerRequestConfigs: this.providerRequestConfigs,
+				modelRequestHeaders: this.modelRequestHeaders,
+			},
+			model,
+		);
 	}
 
 	/**
