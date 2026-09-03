@@ -681,9 +681,19 @@ const {
 const {
   AgentSessionRuntime,
   createAgentSession,
+  createHarnessV4SessionManagerRuntimeFactory,
   legacySessionManagerRuntimeFactory,
-  requireLegacySessionManager,
 } = await loadAgentCoreModule()
+const internalSessionBackend = process.env.GSD_INTERNAL_SESSION_BACKEND
+if (internalSessionBackend !== undefined && internalSessionBackend !== 'legacy-v3' && internalSessionBackend !== 'harness-v4') {
+  throw new Error(`Unsupported GSD_INTERNAL_SESSION_BACKEND: ${internalSessionBackend}`)
+}
+const sessionManagerRuntimeFactory = internalSessionBackend === 'harness-v4'
+  ? createHarnessV4SessionManagerRuntimeFactory({
+      fs: new (await import('@gsd/pi-agent-core/node')).NodeExecutionEnv({ cwd: process.cwd() }),
+      sessionsRoot: sessionsDir,
+    })
+  : legacySessionManagerRuntimeFactory
 markStartup('loadPiCodingAgent')
 
 // Pi's tool bootstrap can mis-detect already-installed fd/rg on some systems
@@ -783,19 +793,19 @@ markStartup('startupSettings')
 if (isPrintMode) {
   await ensureRtkBootstrap()
   const preparedSession = cliFlags.noSession
-    ? await legacySessionManagerRuntimeFactory.prepare({ kind: 'memory', cwd: process.cwd() })
+    ? await sessionManagerRuntimeFactory.prepare({ kind: 'memory', cwd: process.cwd() })
     : cliFlags.session
-      ? await legacySessionManagerRuntimeFactory.prepare({
+      ? await sessionManagerRuntimeFactory.prepare({
           kind: 'open',
           path: cliFlags.session,
           sessionDir: cliFlags.sessionDir,
         })
-      : await legacySessionManagerRuntimeFactory.prepare({
+      : await sessionManagerRuntimeFactory.prepare({
           kind: 'create',
           cwd: process.cwd(),
           sessionDir: cliFlags.sessionDir,
         })
-  const sessionManager = requireLegacySessionManager(preparedSession)
+  const sessionManager = preparedSession.legacyManager
 
   // Read --append-system-prompt file content (subagent writes agent system prompts to temp files)
   let appendSystemPrompt: string | undefined
@@ -932,35 +942,37 @@ await ensureRtkBootstrap()
 const cwd = process.cwd()
 const projectSessionsDir = getProjectSessionsDir(cwd)
 
-// Migrate legacy flat sessions: before per-directory scoping, all .jsonl session
-// files lived directly in ~/.gsd/sessions/. Move them into the correct per-cwd
-// subdirectory so /resume can find them.
-migrateLegacyFlatSessions(sessionsDir, projectSessionsDir)
+// Migrate legacy flat sessions only when the legacy backend owns this startup.
+// Harness v4 must not mutate v3 storage merely because it is being exercised
+// through the internal composition selector.
+if (sessionManagerRuntimeFactory.backend === 'legacy-v3') {
+  migrateLegacyFlatSessions(sessionsDir, projectSessionsDir)
+}
 
 const preparedSession = cliFlags._selectedSessionPath
-  ? await legacySessionManagerRuntimeFactory.prepare({
+  ? await sessionManagerRuntimeFactory.prepare({
       kind: 'open',
       path: cliFlags._selectedSessionPath,
       sessionDir: projectSessionsDir,
     })
   : cliFlags.session
-    ? await legacySessionManagerRuntimeFactory.prepare({
+    ? await sessionManagerRuntimeFactory.prepare({
         kind: 'open',
         path: cliFlags.session,
         sessionDir: cliFlags.sessionDir,
       })
     : cliFlags.continue
-      ? await legacySessionManagerRuntimeFactory.prepare({
+      ? await sessionManagerRuntimeFactory.prepare({
           kind: 'continue-recent',
           cwd,
           sessionDir: projectSessionsDir,
         })
-      : await legacySessionManagerRuntimeFactory.prepare({
+      : await sessionManagerRuntimeFactory.prepare({
           kind: 'create',
           cwd,
           sessionDir: cliFlags.sessionDir ?? projectSessionsDir,
         })
-const sessionManager = requireLegacySessionManager(preparedSession)
+const sessionManager = preparedSession.legacyManager
 
 exitIfManagedResourcesAreNewer(agentDir)
 initResources(agentDir)
@@ -1089,7 +1101,7 @@ sessionRuntime = new AgentSessionRuntime(
   createInteractiveRuntime,
   [],
   interactiveFallbackMsg,
-  legacySessionManagerRuntimeFactory,
+  sessionManagerRuntimeFactory,
   preparedSession,
 )
 

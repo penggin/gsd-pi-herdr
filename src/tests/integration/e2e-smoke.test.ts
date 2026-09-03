@@ -222,6 +222,37 @@ test("gsd --list-models runs without crashing", async (t) => {
   );
 });
 
+test("internal harness-v4 selector composes JSON no-session mode without a model call", async (t) => {
+  const gsdHome = createTempDir("gsd-e2e-harness-v4-");
+  t.after(() => rmSync(gsdHome, { recursive: true, force: true }));
+
+  const result = await runGsd(
+    ["--mode", "json", "--no-session"],
+    30_000,
+    {
+      GSD_HOME: gsdHome,
+      GSD_INTERNAL_SESSION_BACKEND: "harness-v4",
+    },
+  );
+
+  assert.equal(result.timedOut, false, "harness-v4 composition should not hang");
+  assert.equal(result.code, 0, result.stderr);
+  const records = stripAnsi(result.stdout)
+    .split("\n")
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line) as Record<string, unknown>];
+      } catch {
+        return [];
+      }
+    });
+  assert.ok(
+    records.some((record) => record.type === "session" && record.version === 4),
+    `expected a JSONL v4 session header, got:\n${stripAnsi(result.stdout).slice(0, 800)}`,
+  );
+  assertNoCrashMarkers(stripAnsi(result.stdout + result.stderr));
+});
+
 // ---------------------------------------------------------------------------
 // 6. gsd --print in text mode does not segfault or throw unhandled errors
 //    (may fail with "No model selected" when no API keys are configured)

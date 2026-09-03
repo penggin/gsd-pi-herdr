@@ -2500,6 +2500,27 @@ this session does not merge, push, tag, or publish.
   JSON/headless, and interactive startup parity on harness-v4. Keep the public
   preference surface and deployed default on legacy-v3 until that matrix and
   GSD/Herdr integration gates pass.
+- Completed P3.5c7's internal composition selector. Root print/JSON and
+  interactive startup now choose one prepared runtime factory from
+  `GSD_INTERNAL_SESSION_BACKEND`; only `legacy-v3` and `harness-v4` are accepted,
+  unknown values fail explicitly, and the unset/deployed default remains
+  legacy-v3. No public preference or automatic migration was added.
+- Harness-v4 startup no longer runs the legacy flat-session migration. A built
+  CLI, network-free `--mode json --no-session` smoke emitted the canonical v4
+  session header and exited zero. A separate real OpenAI Codex JSON turn also
+  completed through the v4 AgentSession path with the normal agent event and
+  usage stream. The v4 header is the intentional print-mode protocol header,
+  not persistence output leakage.
+- Verification for this slice: focused CLI source contract passes **1/1**,
+  built-CLI v4 composition smoke passes **1/1**, root TypeScript check passes,
+  and `build:core` passes. Legacy remains the production default.
+- Remaining risk: interactive resume/catalog and headless/web session queries
+  still contain legacy `SessionManager.list()` or path assumptions. The
+  internal selector must not be promoted while those reads are backend-specific.
+- Exact next task: introduce a version-neutral session catalog/list-open
+  boundary for resume selection and headless/web queries, then run the complete
+  legacy-v3 versus harness-v4 print/JSON/RPC/headless matrix. After that, run
+  GSD command regressions and real Herdr worker E2E before considering opt-in.
 
 ## 11. Working-session protocol
 

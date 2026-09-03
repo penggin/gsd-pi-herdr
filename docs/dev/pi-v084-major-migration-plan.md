@@ -2,7 +2,7 @@
 
 Date: 2026-09-03
 
-Status: P3.0–P3.4, P3.5a–P3.5b, and P3.5c1–P3.5c6 complete; P3.5c CLI/headless parity in progress; no v4 cutover
+Status: P3.0–P3.4, P3.5a–P3.5b, and P3.5c1–P3.5c7 complete; P3.5c CLI/headless parity in progress; no v4 cutover
 
 Upstream reference: `refs/pi-upstream/v0.84.4`
 
@@ -295,9 +295,20 @@ fork, switch, and new-session replacement execute on real v4 JSONL sessions.
 The legacy-only `setup(sessionManager)` option is rejected before teardown on
 v4, while `withSession` remains the backend-neutral post-replacement path.
 
-Next: add an internal, non-user-facing composition selector to exercise print,
-JSON/headless, and interactive startup against harness-v4 in tests. Do not add a
-global preference or change the default until the full parity matrix succeeds.
+P3.5c7 adds an internal-only composition selector through
+`GSD_INTERNAL_SESSION_BACKEND`. It accepts only `legacy-v3` or `harness-v4`,
+rejects unknown values instead of silently falling back, and leaves an unset
+environment on the deployed `legacy-v3` default. Root print/JSON and interactive
+construction receive the selected prepared runtime without unwrapping a legacy
+manager. Harness-v4 startup also skips the legacy flat-session migration so a
+validation run cannot mutate v3 storage. A network-free built-CLI smoke proves
+that JSON no-session mode constructs AgentSession and emits a version-4 session
+header; an additional real Codex JSON turn completed through the same path.
+
+Next: make session listing/resume selection and headless/web session queries use
+the version-neutral catalog rather than legacy `SessionManager.list()`, then run
+the full print/JSON/RPC/headless matrix against both internal backends. Do not
+add a public preference or change the default until GSD and Herdr gates pass.
 
 ### P3.6 — Integrate GSD, web, and Assessment Gates
 

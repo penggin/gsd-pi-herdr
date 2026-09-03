@@ -569,3 +569,26 @@ AgentSession/extension capability surface.
 This policy preserves installed legacy extensions, avoids a second v4 writer,
 and makes incompatibility explicit. It does not yet enable a global v4 default;
 CLI/headless/GSD/Herdr parity and controlled selection remain separate gates.
+
+---
+
+## ADR-H033 — Validate v4 composition through an internal fail-closed selector
+
+**Status:** Accepted
+**Date:** 2026-09-03
+
+The root composition may select `harness-v4` only through the internal
+`GSD_INTERNAL_SESSION_BACKEND` environment variable while migration parity is
+being established. The accepted values are exactly `legacy-v3` and
+`harness-v4`; an unknown value is an error, and an unset value retains the
+deployed legacy-v3 behavior. This is a test and operator-validation seam, not a
+documented user preference or automatic format migration.
+
+The selected factory prepares the entire capability/snapshot/runtime bundle for
+print, JSON-worker, and interactive startup. Harness-v4 validation must not run
+legacy flat-session migration as a startup side effect. Format mismatch or v4
+open failure remains explicit and cannot create a replacement legacy session.
+
+The selector is not a cutover decision. Session catalog/resume, headless/web
+queries, GSD lifecycle commands, and real Herdr worker flows must pass their
+two-backend matrices before a public opt-in or default change is considered.
