@@ -24,6 +24,8 @@ export interface JsonlV4SessionListOptions {
 	cwd?: string;
 }
 
+export type JsonlV4SessionDirectoryLayout = "cwd-partitioned" | "flat";
+
 function validateSessionId(id: string): void {
 	if (id.length > MAX_SESSION_ID_LENGTH || !SESSION_ID_PATTERN.test(id)) {
 		throw new SessionError(
@@ -57,12 +59,18 @@ function isContained(root: string, candidate: string): boolean {
 export class JsonlV4SessionRepository {
 	private readonly fs: FileSystem;
 	private readonly sessionsRootInput: string;
+	private readonly directoryLayout: JsonlV4SessionDirectoryLayout;
 	private readonly activeDestinations = new Set<string>();
 	private rootPromise: Promise<string> | undefined;
 
-	constructor(options: { fs: FileSystem; sessionsRoot: string }) {
+	constructor(options: {
+		fs: FileSystem;
+		sessionsRoot: string;
+		directoryLayout?: JsonlV4SessionDirectoryLayout;
+	}) {
 		this.fs = options.fs;
 		this.sessionsRootInput = options.sessionsRoot;
+		this.directoryLayout = options.directoryLayout ?? "cwd-partitioned";
 	}
 
 	async create(options: JsonlV4SessionCreateOptions): Promise<JsonlV4SessionStorage> {
@@ -159,7 +167,7 @@ export class JsonlV4SessionRepository {
 	}
 
 	private async claimDestination<T>(destination: { id: string; cwd: string }, operation: () => Promise<T>): Promise<T> {
-		const key = `${destination.cwd}\0${destination.id}`;
+		const key = this.directoryLayout === "flat" ? destination.id : `${destination.cwd}\0${destination.id}`;
 		if (this.activeDestinations.has(key)) {
 			throw new SessionError("already_exists", `Session already exists: ${destination.id}`);
 		}
@@ -213,10 +221,12 @@ export class JsonlV4SessionRepository {
 			await this.fs.createDir(root, { recursive: true, abortSignal }),
 			`Failed to create sessions root`,
 		);
-		const directory = getFileSystemResultOrThrow(
-			await this.fs.joinPath([root, directoryName(cwd)], abortSignal),
-			`Failed to resolve session directory`,
-		);
+		const directory = this.directoryLayout === "flat"
+			? root
+			: getFileSystemResultOrThrow(
+					await this.fs.joinPath([root, directoryName(cwd)], abortSignal),
+					`Failed to resolve session directory`,
+				);
 		getFileSystemResultOrThrow(
 			await this.fs.createDir(directory, { recursive: true, abortSignal }),
 			`Failed to create session directory`,
@@ -236,6 +246,9 @@ export class JsonlV4SessionRepository {
 
 	private async sessionDirectories(cwd?: string): Promise<string[]> {
 		const root = await this.root();
+		if (this.directoryLayout === "flat") {
+			return getFileSystemResultOrThrow(await this.fs.exists(root), `Failed to check sessions root`) ? [root] : [];
+		}
 		if (cwd !== undefined) {
 			const resolvedCwd = getFileSystemResultOrThrow(await this.fs.absolutePath(cwd), `Failed to resolve session cwd`);
 			const directory = getFileSystemResultOrThrow(

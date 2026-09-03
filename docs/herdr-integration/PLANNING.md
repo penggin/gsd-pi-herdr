@@ -2606,6 +2606,25 @@ this session does not merge, push, tag, or publish.
   cutover: the deployed default remains `legacy-v3`, the selector remains
   internal-only, and Herdr capability metadata remains unverified until the
   live pane matrix passes.
+- Completed P3.5c10 after the P3.6 audit identified that harness-v4 accepted but
+  ignored explicit `sessionDir` inputs. The v4 JSONL repository now supports a
+  flat explicit-root layout while preserving its existing cwd-partitioned
+  default. The selected factory applies the scoped repository consistently to
+  create, open, continue, list, fork, and rename; files remain contained,
+  atomically published, format-validated, and owned by one v4 writer.
+- Root session-directory selection now follows one tested precedence:
+  `--session-dir`, `GSD_CODING_AGENT_SESSION_DIR`, legacy
+  `PI_CODING_AGENT_SESSION_DIR`, then settings. The `gsd sessions` picker,
+  print/JSON, and interactive startup consume that result. This work also fixed
+  print/JSON `--continue`, which was parsed but previously created a new session
+  instead of calling the selected runtime's continue operation.
+- Verification evidence: v4 storage **5/5**, session resolver **2/2**,
+  agent-core **163/163**, focused built CLI **3/3**, full built CLI smoke
+  **28 passed / 1 provider-dependent skip**, two-backend command/GSD matrix
+  **12/12**, all ten package suites, extension typecheck, `build:core`, package
+  installation validation, Assessment pack validation, and `git diff --check`
+  pass. ADR-H035 records the mapping. The custom-directory cutover blocker is
+  closed without changing the deployed default.
 - Exact next task: from an actual Herdr-managed root pane (`HERDR_ENV=1`), run
   the pinned-Herdr P3.7 root/worker matrix with an internal harness-v4 root
   session: single dispatch, affinity reuse, parallel >4, cancellation, pane

@@ -8,11 +8,13 @@ import {
 	JsonlV4SessionRepository,
 	type JsonlV4SessionMetadata,
 	readJsonlV4Session,
+	SessionError,
 	Session as HarnessSession,
 	V4HarnessSessionStorageAdapter,
 	type V4HarnessSessionMetadata,
 	V4MemorySessionRepository,
 } from "@gsd/pi-agent-core";
+import { dirname } from "node:path";
 import {
 	createHarnessV4SessionCapabilityAdapter,
 	LegacyV3SessionCapabilityAdapter,
@@ -216,6 +218,39 @@ export function createHarnessV4SessionManagerRuntimeFactory(options: {
 }): SessionManagerRuntimeFactory {
 	const jsonl = new JsonlV4SessionRepository(options);
 	const memory = new V4MemorySessionRepository();
+	const flatRepositories = new Map<string, JsonlV4SessionRepository>();
+
+	async function flatRepository(sessionDir: string): Promise<{
+		repository: JsonlV4SessionRepository;
+		root: string;
+	}> {
+		const resolved = await options.fs.absolutePath(sessionDir);
+		if (!resolved.ok) {
+			throw new SessionError("storage", `Failed to resolve custom session directory: ${resolved.error.message}`);
+		}
+		let repository = flatRepositories.get(resolved.value);
+		if (!repository) {
+			repository = new JsonlV4SessionRepository({
+				fs: options.fs,
+				sessionsRoot: resolved.value,
+				directoryLayout: "flat",
+			});
+			flatRepositories.set(resolved.value, repository);
+		}
+		return { repository, root: resolved.value };
+	}
+
+	async function openPath(
+		path: string,
+		sessionDir?: string,
+		cwdOverride?: string,
+	): Promise<PreparedSessionRuntime> {
+		const scoped = await flatRepository(sessionDir ?? dirname(path));
+		const metadata = (await readJsonlV4Session(options.fs, path, {
+			sessionsRoot: scoped.root,
+		})).metadata;
+		return createHarnessPreparedSessionRuntime(await scoped.repository.open(metadata), cwdOverride);
+	}
 
 	return {
 		backend: "harness-v4",
@@ -225,25 +260,26 @@ export function createHarnessV4SessionManagerRuntimeFactory(options: {
 					if (target.parent?.kind === "legacy-path") {
 						throw new Error("harness-v4 sessions require a session-id parent reference");
 					}
+					const repository = target.sessionDir
+						? (await flatRepository(target.sessionDir)).repository
+						: jsonl;
 					return createHarnessPreparedSessionRuntime(
-						await jsonl.create({
+						await repository.create({
 							cwd: target.cwd,
 							...(target.parent ? { parentSessionId: target.parent.value } : {}),
 						}),
 					);
 				}
-				case "open": {
-					const metadata = (await readJsonlV4Session(options.fs, target.path, {
-						sessionsRoot: options.sessionsRoot,
-					})).metadata;
-					const source = await jsonl.open(metadata);
-					return createHarnessPreparedSessionRuntime(source, target.cwdOverride);
-				}
+				case "open":
+					return openPath(target.path, target.sessionDir, target.cwdOverride);
 				case "continue-recent": {
-					const recent = (await jsonl.list({ cwd: target.cwd }))[0];
+					const repository = target.sessionDir
+						? (await flatRepository(target.sessionDir)).repository
+						: jsonl;
+					const recent = (await repository.list(target.sessionDir ? {} : { cwd: target.cwd }))[0];
 					return recent
-						? createHarnessPreparedSessionRuntime(await jsonl.open(recent))
-						: createHarnessPreparedSessionRuntime(await jsonl.create({ cwd: target.cwd }));
+						? createHarnessPreparedSessionRuntime(await repository.open(recent))
+						: createHarnessPreparedSessionRuntime(await repository.create({ cwd: target.cwd }));
 				}
 				case "memory":
 					return createHarnessPreparedSessionRuntime(memory.create(), target.cwd);
@@ -257,19 +293,23 @@ export function createHarnessV4SessionManagerRuntimeFactory(options: {
 			if (target.leafId === null) {
 				return metadata.path
 					? createHarnessPreparedSessionRuntime(
-							await jsonl.create({ cwd: target.cwd, parentSessionId: metadata.id }),
-						  )
+							await (await flatRepository(dirname(metadata.path))).repository.create({
+								cwd: target.cwd,
+								parentSessionId: metadata.id,
+							}),
+						)
 					: createHarnessPreparedSessionRuntime(
 							memory.create({ parentSessionId: metadata.id }),
 							target.cwd,
 						  );
 			}
 			if (metadata.path) {
+				const scoped = await flatRepository(dirname(metadata.path));
 				const raw = (await readJsonlV4Session(options.fs, metadata.path, {
-					sessionsRoot: options.sessionsRoot,
+					sessionsRoot: scoped.root,
 				})).metadata as JsonlV4SessionMetadata;
 				return createHarnessPreparedSessionRuntime(
-					await jsonl.fork(raw, { cwd: target.cwd, entryId: target.leafId, position: "at" }),
+					await scoped.repository.fork(raw, { cwd: target.cwd, entryId: target.leafId, position: "at" }),
 				);
 			}
 			return createHarnessPreparedSessionRuntime(
@@ -285,11 +325,18 @@ export function createHarnessV4SessionManagerRuntimeFactory(options: {
 			);
 		},
 		async list(listOptions = {}): Promise<SessionInfo[]> {
-			const metadata = await jsonl.list({ cwd: listOptions.all ? undefined : listOptions.cwd ?? process.cwd() });
+			const repository = !listOptions.all && listOptions.sessionDir
+				? (await flatRepository(listOptions.sessionDir)).repository
+				: jsonl;
+			const metadata = await repository.list(
+				!listOptions.all && listOptions.sessionDir
+					? {}
+					: { cwd: listOptions.all ? undefined : listOptions.cwd ?? process.cwd() },
+			);
 			let loaded = 0;
 			const sessions = await Promise.all(metadata.map(async (item) => {
 				try {
-					const prepared = await createHarnessPreparedSessionRuntime(await jsonl.open(item));
+					const prepared = await createHarnessPreparedSessionRuntime(await repository.open(item));
 					return preparedSessionInfo(prepared, item.modifiedAt);
 				} finally {
 					loaded += 1;
@@ -299,10 +346,7 @@ export function createHarnessV4SessionManagerRuntimeFactory(options: {
 			return sessions.sort((left, right) => right.modified.getTime() - left.modified.getTime());
 		},
 		async rename(path, name): Promise<void> {
-			const metadata = (await readJsonlV4Session(options.fs, path, {
-				sessionsRoot: options.sessionsRoot,
-			})).metadata;
-			const prepared = await createHarnessPreparedSessionRuntime(await jsonl.open(metadata));
+			const prepared = await openPath(path);
 			await prepared.capabilities.appendSessionName(name);
 		},
 	};

@@ -618,3 +618,33 @@ This decision does not make harness-v4 public or default. Custom legacy
 `sessionDir` behavior, standalone package entry points, the full two-backend
 command matrix, GSD lifecycle regressions, and real Herdr worker evidence remain
 cutover gates.
+
+---
+
+## ADR-H035 — Preserve explicit session directories as flat backend-owned roots
+
+**Status:** Accepted
+**Date:** 2026-09-03
+
+The inherited `sessionDir` contract means “store session files directly in this
+directory”; it does not mean “treat this directory as a second global root and
+add another cwd-derived directory below it.” Harness-v4 therefore retains its
+cwd-partitioned layout only for the default global sessions root. An explicit
+CLI, environment, settings, or prepared-runtime `sessionDir` selects a flat v4
+repository rooted at exactly that resolved directory.
+
+The selected runtime factory owns this mapping for create, open, continue,
+list, fork, and rename. Explicit-path opens derive their containment root from
+the file's parent when no directory was supplied, and forks remain in their
+source session directory. Each flat repository still applies v4 path
+containment, symlink/file validation, atomic publication, serialized mutation,
+and unique session-ID checks; it is not a compatibility writer layered over
+`SessionManager`.
+
+The composition root resolves directory precedence once as `--session-dir`,
+`GSD_CODING_AGENT_SESSION_DIR`, legacy `PI_CODING_AGENT_SESSION_DIR`, then
+`settings.json` `sessionDir`. Print/JSON `--continue`, interactive startup, and
+the `gsd sessions` picker consume that same result. The legacy environment name
+is a compatibility alias, not a second store. This removes the custom-directory
+cutover blocker but does not authorize public harness-v4 selection; the real
+Herdr matrix remains required.

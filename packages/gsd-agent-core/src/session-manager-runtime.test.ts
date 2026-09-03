@@ -1,6 +1,6 @@
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import { AgentSessionRuntime } from "./agent-session-runtime.js";
@@ -248,6 +248,44 @@ describe("production session-manager runtime factory", () => {
 		const memoryFork = await factory.fork(memory, { cwd, leafId: memoryEntryId });
 		assert.equal(memoryFork.snapshot.getCwd(), cwd);
 		assert.deepEqual(memoryFork.snapshot.getBranch().map((entry) => entry.id), [memoryEntryId]);
+	});
+
+	it("honors an explicit harness-v4 sessionDir across create, open, continue, list, fork, and rename", async () => {
+		const root = makeRoot();
+		const cwd = join(root, "project");
+		const defaultRoot = join(root, "default-sessions-v4");
+		const customSessionDir = join(root, "custom-sessions");
+		mkdirSync(cwd, { recursive: true });
+		const factory = createHarnessV4SessionManagerRuntimeFactory({
+			fs: new NodeExecutionEnv({ cwd: root }),
+			sessionsRoot: defaultRoot,
+		});
+
+		const source = await factory.prepare({ kind: "create", cwd, sessionDir: customSessionDir });
+		const sourcePath = source.snapshot.getSessionFile();
+		assert.ok(sourcePath);
+		assert.equal(dirname(sourcePath), customSessionDir);
+		assert.equal(readdirSync(customSessionDir, { withFileTypes: true }).every((entry) => entry.isFile()), true);
+		const userId = await source.capabilities.appendMessage({ role: "user", content: "custom", timestamp: 1 });
+
+		const recent = await factory.prepare({ kind: "continue-recent", cwd, sessionDir: customSessionDir });
+		assert.equal(recent.snapshot.getSessionId(), source.snapshot.getSessionId());
+		const opened = await factory.prepare({ kind: "open", path: sourcePath });
+		assert.equal(opened.snapshot.getSessionId(), source.snapshot.getSessionId());
+
+		const forked = await factory.fork(source, { cwd, leafId: userId });
+		assert.equal(dirname(forked.snapshot.getSessionFile()!), customSessionDir);
+		assert.deepEqual(forked.snapshot.getBranch().map((entry) => entry.id), [userId]);
+		await factory.rename(sourcePath, "Custom catalog");
+
+		const customCatalog = await factory.list({ cwd, sessionDir: customSessionDir });
+		assert.equal(customCatalog.length, 2);
+		assert.equal(customCatalog.find(({ path }) => path === sourcePath)?.name, "Custom catalog");
+
+		const defaultSession = await factory.prepare({ kind: "create", cwd });
+		assert.notEqual(dirname(defaultSession.snapshot.getSessionFile()!), customSessionDir);
+		assert.equal((await factory.list({ cwd })).length, 1);
+		assert.equal((await factory.list({ cwd, sessionDir: customSessionDir })).length, 2);
 	});
 
 	it("rejects a legacy parent identity at the harness-v4 factory boundary", async () => {

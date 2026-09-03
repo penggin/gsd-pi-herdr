@@ -2,7 +2,7 @@
 
 Date: 2026-09-03
 
-Status: P3.0–P3.4, P3.5a–P3.5b, P3.5c1–P3.5c9, and P3.6 complete; P3.7 live validation ready; no v4 cutover
+Status: P3.0–P3.4, P3.5a–P3.5b, P3.5c1–P3.5c10, and P3.6 complete; P3.7 live validation ready; no v4 cutover
 
 Upstream reference: `refs/pi-upstream/v0.84.4`
 
@@ -368,10 +368,18 @@ quick usage, validation, verdict, and recovery surfaces without provider
 access. The focused GSD authority suite and combined browser contracts remain
 green, including inactive v4 rename.
 
-P3.7 is now the active gate. Custom extension-selected legacy `sessionDir`
-semantics remain a cutover limitation and must either gain an explicit v4
-mapping or remain fail-closed before any public preference. The production
-default is still legacy-v3.
+P3.5c10 closes the custom `sessionDir` compatibility gap discovered during the
+P3.6 audit. An explicit directory is now a flat backend-owned root for v4, just
+as it is for legacy-v3, while the default global v4 root remains partitioned by
+cwd. Create, explicit-path open, continue, list, fork, and rename all use the
+same scoped repository and retain v4 containment/atomicity checks. The root
+composition resolves `--session-dir`, the GSD environment variable, the legacy
+Pi environment alias, and settings in one deterministic precedence order.
+Print/JSON `--continue` now actually reopens the most recent selected session
+instead of silently creating another one.
+
+P3.7 is now the sole active cutover gate. The production default is still
+legacy-v3 and the v4 selector remains internal-only.
 
 ### P3.7 — Herdr live E2E and controlled cutover
 

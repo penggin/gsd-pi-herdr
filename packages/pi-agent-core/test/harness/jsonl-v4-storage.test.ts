@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { NodeExecutionEnv } from "../../src/harness/env/nodejs.ts";
 import { JsonlV4SessionRepository } from "../../src/harness/session/jsonl-v4-repo.ts";
@@ -44,6 +44,28 @@ function sessionFiles(root: string): string[] {
 }
 
 describe("JSONL v4 writable backend", () => {
+	it("stores explicit flat-layout sessions directly under their configured root", async () => {
+		const root = createTempDir();
+		const sessionsRoot = join(root, "custom-sessions");
+		const env = new NodeExecutionEnv({ cwd: root });
+		const repo = new JsonlV4SessionRepository({
+			fs: env,
+			sessionsRoot,
+			directoryLayout: "flat",
+		});
+
+		const first = await repo.create({ id: "flat-one", cwd: join(root, "workspace-a") });
+		const second = await repo.create({ id: "flat-two", cwd: join(root, "workspace-b") });
+
+		expect(readdirSync(sessionsRoot, { withFileTypes: true }).every((entry) => entry.isFile())).toBe(true);
+		expect(dirname(first.getMetadata().path)).toBe(sessionsRoot);
+		expect(dirname(second.getMetadata().path)).toBe(sessionsRoot);
+		expect((await repo.list({ cwd: join(root, "unrelated") })).map(({ id }) => id).sort()).toEqual([
+			"flat-one",
+			"flat-two",
+		]);
+	});
+
 	it("serializes concurrent mutations and reopens the same state", async () => {
 		const root = createTempDir();
 		const sessionsRoot = join(root, "sessions");

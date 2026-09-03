@@ -17,7 +17,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   assertNoCrashMarkers,
   createTempDir,
@@ -50,7 +50,7 @@ test("gsd --version outputs a semver version string and exits 0", async () => {
 
 test("gsd --build-info exposes downstream package and Herdr integration identity", async () => {
   const result = await runGsd(["--build-info"]);
-  assert.equal(result.exitCode, 0);
+  assert.equal(result.code, 0);
   const info = JSON.parse(result.stdout);
   assert.equal(info.package, "@penggin/gsd-pi-herdr");
   assert.equal(info.herdrIntegration, true);
@@ -286,6 +286,84 @@ test("internal harness-v4 JSON mode creates, opens, and continues one persisted 
       .find((record) => record.type === "session");
     assert.equal(header?.version, 4);
   }
+});
+
+test("internal harness-v4 honors a custom --session-dir without nesting another cwd directory", async (t) => {
+  const gsdHome = createTempDir("gsd-e2e-harness-v4-custom-home-");
+  const project = createTempDir("gsd-e2e-harness-v4-custom-project-");
+  const customSessionDir = join(gsdHome, "custom-sessions");
+  t.after(() => {
+    rmSync(gsdHome, { recursive: true, force: true });
+    rmSync(project, { recursive: true, force: true });
+  });
+  const env = {
+    GSD_HOME: gsdHome,
+    GSD_INTERNAL_SESSION_BACKEND: "harness-v4",
+  };
+
+  const created = await runGsd(
+    ["--mode", "json", "--session-dir", customSessionDir],
+    30_000,
+    env,
+    project,
+  );
+  assert.equal(created.timedOut, false);
+  assert.equal(created.code, 0, created.stderr);
+  const entries = readdirSync(customSessionDir, { withFileTypes: true });
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0]?.isFile(), true);
+  const sessionPath = join(customSessionDir, entries[0]!.name);
+  assert.equal(dirname(sessionPath), customSessionDir);
+
+  const opened = await runGsd(
+    ["--mode", "json", "--session", sessionPath],
+    30_000,
+    env,
+    project,
+  );
+  const continued = await runGsd(
+    ["--mode", "json", "--continue", "--session-dir", customSessionDir],
+    30_000,
+    env,
+    project,
+  );
+  for (const result of [opened, continued]) {
+    assert.equal(result.timedOut, false);
+    assert.equal(result.code, 0, result.stderr);
+    const header = stripAnsi(result.stdout)
+      .split("\n")
+      .flatMap((line) => {
+        try {
+          return [JSON.parse(line) as Record<string, unknown>];
+        } catch {
+          return [];
+        }
+      })
+      .find((record) => record.type === "session");
+    assert.equal(header?.version, 4);
+    assert.equal(header?.id, JSON.parse(readFileSync(sessionPath, "utf8").split("\n")[0]!).id);
+  }
+
+  const envSessionDir = join(gsdHome, "env-sessions");
+  const fromEnv = await runGsd(
+    ["--mode", "json"],
+    30_000,
+    { ...env, GSD_CODING_AGENT_SESSION_DIR: envSessionDir },
+    project,
+  );
+  assert.equal(fromEnv.code, 0, fromEnv.stderr);
+  const envEntries = readdirSync(envSessionDir, { withFileTypes: true });
+  assert.equal(envEntries.length, 1);
+  assert.equal(envEntries.every((entry) => entry.isFile()), true);
+
+  const settingsSessionDir = join(gsdHome, "settings-sessions");
+  mkdirSync(join(gsdHome, "agent"), { recursive: true });
+  writeFileSync(join(gsdHome, "agent", "settings.json"), JSON.stringify({ sessionDir: settingsSessionDir }));
+  const fromSettings = await runGsd(["--mode", "json"], 30_000, env, project);
+  assert.equal(fromSettings.code, 0, fromSettings.stderr);
+  const settingsEntries = readdirSync(settingsSessionDir, { withFileTypes: true });
+  assert.equal(settingsEntries.length, 1);
+  assert.equal(settingsEntries.every((entry) => entry.isFile()), true);
 });
 
 // ---------------------------------------------------------------------------

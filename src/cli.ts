@@ -41,6 +41,7 @@ import type { EnsureRtkResult } from './rtk.js'
 import { registerInstalledExtensionPackage } from './extension-registry.js'
 import { GSD_DISTRIBUTION_PACKAGE } from './distribution.js'
 import { createSelectedSessionRuntimeFactory } from './session-runtime-selection.js'
+import { resolveConfiguredSessionDirectory } from './session-directory.js'
 
 type PiCodingAgentModule = typeof import('@gsd/pi-coding-agent')
 type AgentCoreModule = typeof import('@gsd/agent-core')
@@ -515,12 +516,18 @@ if (cliFlags.web || (cliFlags.messages[0] === 'web' && cliFlags.messages[1] !== 
 // `gsd sessions` — list past sessions and pick one to resume
 if (cliFlags.messages[0] === 'sessions') {
   const sessionManagerRuntimeFactory = await loadSelectedSessionRuntimeFactory()
+  const { SettingsManager } = await loadPiCodingAgentModule()
   const cwd = process.cwd()
   const safePath = `--${cwd.replace(/^[/\\]/, '').replace(/[/\\:]/g, '-')}--`
   const projectSessionsDir = join(sessionsDir, safePath)
+  const configuredSessionDir = resolveConfiguredSessionDirectory({
+    cli: cliFlags.sessionDir,
+    settings: SettingsManager.create(cwd, agentDir).getSessionDir(),
+  })
+  const effectiveSessionDir = configuredSessionDir ?? projectSessionsDir
 
   process.stderr.write(chalk.dim(`Loading sessions for ${cwd}...\n`))
-  const sessions = await sessionManagerRuntimeFactory.list({ cwd, sessionDir: projectSessionsDir })
+  const sessions = await sessionManagerRuntimeFactory.list({ cwd, sessionDir: effectiveSessionDir })
 
   if (sessions.length === 0) {
     process.stderr.write(chalk.yellow('No sessions found for this directory.\n'))
@@ -575,6 +582,7 @@ if (cliFlags.messages[0] === 'sessions') {
 
   // Mark for the interactive session below to open this specific session
   cliFlags.continue = true
+  cliFlags.sessionDir = effectiveSessionDir
   cliFlags._selectedSessionPath = selected.path
 }
 
@@ -713,6 +721,10 @@ const modelRegistry = ModelRegistry.create(authStorage, modelsJsonPath)
 markStartup('ModelRegistry')
 const settingsManager = SettingsManager.create(process.cwd(), agentDir)
 applySecurityOverrides(settingsManager)
+const configuredSessionDir = resolveConfiguredSessionDirectory({
+  cli: cliFlags.sessionDir,
+  settings: settingsManager.getSessionDir(),
+})
 markStartup('SettingsManager.create')
 const { configureHttpDispatcher } = await import('@gsd/pi-coding-agent/core/http-dispatcher.js')
 configureHttpDispatcher(settingsManager.getHttpIdleTimeoutMs())
@@ -796,12 +808,18 @@ if (isPrintMode) {
       ? await sessionManagerRuntimeFactory.prepare({
           kind: 'open',
           path: cliFlags.session,
-          sessionDir: cliFlags.sessionDir,
+          sessionDir: configuredSessionDir,
         })
+      : cliFlags.continue
+        ? await sessionManagerRuntimeFactory.prepare({
+            kind: 'continue-recent',
+            cwd: process.cwd(),
+            sessionDir: configuredSessionDir,
+          })
       : await sessionManagerRuntimeFactory.prepare({
           kind: 'create',
           cwd: process.cwd(),
-          sessionDir: cliFlags.sessionDir,
+          sessionDir: configuredSessionDir,
         })
   const sessionManager = preparedSession.legacyManager
 
@@ -939,11 +957,12 @@ await ensureRtkBootstrap()
 // /resume only shows sessions from the current working directory.
 const cwd = process.cwd()
 const projectSessionsDir = getProjectSessionsDir(cwd)
+const effectiveSessionDir = configuredSessionDir ?? projectSessionsDir
 
 // Migrate legacy flat sessions only when the legacy backend owns this startup.
 // Harness v4 must not mutate v3 storage merely because it is being exercised
 // through the internal composition selector.
-if (sessionManagerRuntimeFactory.backend === 'legacy-v3') {
+if (sessionManagerRuntimeFactory.backend === 'legacy-v3' && configuredSessionDir === undefined) {
   migrateLegacyFlatSessions(sessionsDir, projectSessionsDir)
 }
 
@@ -951,24 +970,24 @@ const preparedSession = cliFlags._selectedSessionPath
   ? await sessionManagerRuntimeFactory.prepare({
       kind: 'open',
       path: cliFlags._selectedSessionPath,
-      sessionDir: projectSessionsDir,
+      sessionDir: effectiveSessionDir,
     })
   : cliFlags.session
     ? await sessionManagerRuntimeFactory.prepare({
         kind: 'open',
         path: cliFlags.session,
-        sessionDir: cliFlags.sessionDir,
+        sessionDir: effectiveSessionDir,
       })
     : cliFlags.continue
       ? await sessionManagerRuntimeFactory.prepare({
           kind: 'continue-recent',
           cwd,
-          sessionDir: projectSessionsDir,
+          sessionDir: effectiveSessionDir,
         })
       : await sessionManagerRuntimeFactory.prepare({
           kind: 'create',
           cwd,
-          sessionDir: cliFlags.sessionDir ?? projectSessionsDir,
+          sessionDir: effectiveSessionDir,
         })
 const sessionManager = preparedSession.legacyManager
 
