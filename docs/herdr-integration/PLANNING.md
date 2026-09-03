@@ -2921,6 +2921,37 @@ this session does not merge, push, tag, or publish.
   pre-execution evaluator, then consume it from native `tool_call` and external
   SDK hooks without duplicating lifecycle side effects. Add parity tests before
   enabling the shared evaluator for a second external engine.
+- Committed and pushed the hard-safety slice as
+  `d720ea884e0670062d75438345fd06f78ea3e2ae`. Its clean release-candidate
+  tarball is
+  `/srv/penglab/gsd-runs/artifacts/gsd-pi-herdr-1.16.2-d720ea88-043e9bd6.tgz`
+  with SHA-256
+  `043e9bd66ff2b6db24273f764c8448cdc7c4630b8b3ccb2b1bfaf4cc1c1cccb6`.
+- Installed the artifact at immutable remote prefix
+  `/srv/penglab/gsd-runs/toolchains/gsd-pi-herdr-1.16.2-d720ea88-043e9bd6`.
+  The installed build reports the exact commit, `dirty=false`, and
+  `buildKind=release-candidate`. The verified Linux x64 addon reports
+  `nativeLoaded=true` with 98 exports.
+- Installed-runtime policy smoke proves authoritative state writes return
+  `deny`, direct and `bash -c` wrapped destructive commands return `ask`, safe
+  verification returns `continue`, the actual SDK PreToolUse output is `ask`,
+  and the headless permission callback returns `deny`. Only after those checks
+  passed were the shared remote `gsd` and `gsd-mcp-server` links atomically
+  switched. The prior `53dc2f2a-d75b4f67` prefix remains intact for rollback;
+  no running GSD or Herdr process was killed or restarted, and no local global
+  installation changed.
+- Deployment exposed an existing installer limitation: bootstrap recovery after
+  `--ignore-scripts` restores the seven `@gsd/*` links but not the three shipped
+  `@opengsd/*` packages. This candidate was repaired with the packaged
+  `scripts/link-workspace-packages.cjs` before promotion and all ten links are
+  present. A future packaging slice should make first-launch repair use the
+  canonical ten-package manifest so operators cannot miss this manual step.
+- Exact next task: first close the newly evidenced bootstrap link-repair gap
+  with an installed-tarball regression. Then extract the remaining loop,
+  pending/deferred gate, queue, planning, worktree, and context-depth decisions
+  into one shared pre-execution evaluator and consume it from native
+  `tool_call` plus external SDK hooks without duplicating lifecycle side effects.
+  Add parity tests before enabling it for a second external engine.
 
 ## 11. Working-session protocol
 
