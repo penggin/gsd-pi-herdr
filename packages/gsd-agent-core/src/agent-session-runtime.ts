@@ -82,6 +82,7 @@ export class AgentSessionRuntime {
 	private _services: AgentSessionServices;
 	private readonly createRuntime: CreateAgentSessionRuntimeFactory;
 	private readonly sessionManagers: SessionManagerRuntimeFactory;
+	private _prepared: PreparedSessionRuntime;
 	private _diagnostics: AgentSessionRuntimeDiagnostic[];
 	private _modelFallbackMessage?: string;
 
@@ -92,11 +93,18 @@ export class AgentSessionRuntime {
 		_diagnostics: AgentSessionRuntimeDiagnostic[] = [],
 		_modelFallbackMessage?: string,
 		sessionManagers: SessionManagerRuntimeFactory = legacySessionManagerRuntimeFactory,
+		preparedSession?: PreparedSessionRuntime,
 	) {
 		this._session = _session;
 		this._services = _services;
 		this.createRuntime = createRuntime;
 		this.sessionManagers = sessionManagers;
+		this._prepared = preparedSession ?? {
+			backend: "legacy-v3",
+			capabilities: _session.sessionCapabilities,
+			snapshot: _session.sessionView,
+			legacyManager: _session.sessionManager,
+		};
 		this._diagnostics = _diagnostics;
 		this._modelFallbackMessage = _modelFallbackMessage;
 	}
@@ -185,9 +193,10 @@ export class AgentSessionRuntime {
 		this.session.dispose();
 	}
 
-	private apply(result: CreateAgentSessionRuntimeResult): void {
+	private apply(result: CreateAgentSessionRuntimeResult, prepared: PreparedSessionRuntime): void {
 		this._session = result.session;
 		this._services = result.services;
+		this._prepared = prepared;
 		this._diagnostics = result.diagnostics;
 		this._modelFallbackMessage = result.modelFallbackMessage;
 	}
@@ -230,14 +239,14 @@ export class AgentSessionRuntime {
 			path: sessionPath,
 			cwdOverride: options?.cwdOverride,
 		});
-		const sessionManager = requireLegacySessionManager(prepared);
-		assertSessionCwdExists(sessionManager, this.cwd);
-		await this.teardownCurrent("resume", sessionManager.getSessionFile());
+		assertSessionCwdExists(prepared.snapshot, this.cwd);
+		await this.teardownCurrent("resume", prepared.snapshot.getSessionFile());
 		this.apply(
 			await this.createPreparedRuntime(prepared, {
-				cwd: sessionManager.getCwd(),
+				cwd: prepared.snapshot.getCwd(),
 				sessionStartEvent: { type: "session_start", reason: "resume", previousSessionFile },
 			}),
+			prepared,
 		);
 		await this.finishSessionReplacement(options?.withSession);
 		return { cancelled: false };
@@ -259,20 +268,23 @@ export class AgentSessionRuntime {
 		const previousSessionFile = this.session.sessionFile;
 		const sessionDir = this.session.sessionView.getSessionDir();
 		const targetCwd = options?.workspaceRoot ?? this.cwd;
-		const prepared = await this.sessionManagers.prepare({ kind: "create", cwd: targetCwd, sessionDir });
-		const sessionManager = requireLegacySessionManager(prepared);
-		if (options?.parentSession) {
-			sessionManager.newSession({ parentSession: options.parentSession });
-			prepared.snapshot.refreshLegacy(sessionManager);
-		}
+		const prepared = await this.sessionManagers.prepare({
+			kind: "create",
+			cwd: targetCwd,
+			sessionDir,
+			...(options?.parentSession
+				? { parent: { kind: "legacy-path" as const, value: options.parentSession } }
+				: {}),
+		});
 		if (options?.abortSignal?.aborted) return { cancelled: true };
 
-		await this.teardownCurrent("new", sessionManager.getSessionFile());
+		await this.teardownCurrent("new", prepared.snapshot.getSessionFile());
 		this.apply(
 			await this.createPreparedRuntime(prepared, {
 				cwd: targetCwd,
 				sessionStartEvent: { type: "session_start", reason: "new", previousSessionFile },
 			}),
+			prepared,
 		);
 		if (options?.setup) {
 			await options.setup(this.session.sessionManager);
@@ -311,63 +323,28 @@ export class AgentSessionRuntime {
 		}
 
 		const previousSessionFile = this.session.sessionFile;
-		if (this.session.sessionFile !== undefined) {
-			const currentSessionFile = this.session.sessionFile;
-			if (!currentSessionFile) {
-				throw new Error("Persisted session is missing a session file");
-			}
-			const sessionDir = this.session.sessionView.getSessionDir();
-			if (!targetLeafId) {
-				const prepared = await this.sessionManagers.prepare({ kind: "create", cwd: this.cwd, sessionDir });
-				const sessionManager = requireLegacySessionManager(prepared);
-				sessionManager.newSession({ parentSession: currentSessionFile });
-				prepared.snapshot.refreshLegacy(sessionManager);
-				await this.teardownCurrent("fork", sessionManager.getSessionFile());
-				this.apply(
-					await this.createPreparedRuntime(prepared, {
-						cwd: this.cwd,
-						sessionStartEvent: { type: "session_start", reason: "fork", previousSessionFile },
-					}),
-				);
-				await this.finishSessionReplacement(options?.withSession);
-				return { cancelled: false, selectedText };
-			}
-
-			const prepared = await this.sessionManagers.prepare({
-				kind: "open",
-				path: currentSessionFile,
-				sessionDir,
+		let prepared: PreparedSessionRuntime;
+		if (this._prepared.snapshot.getSessionFile()) {
+			prepared = await this.sessionManagers.fork(this._prepared, {
+				cwd: this.cwd,
+				leafId: targetLeafId,
 			});
-			const sessionManager = requireLegacySessionManager(prepared);
-			const forkedSessionPath = sessionManager.createBranchedSession(targetLeafId);
-			if (!forkedSessionPath) {
-				throw new Error("Failed to create forked session");
-			}
-			prepared.snapshot.refreshLegacy(sessionManager);
-			await this.teardownCurrent("fork", sessionManager.getSessionFile());
-			this.apply(
-				await this.createPreparedRuntime(prepared, {
-					cwd: sessionManager.getCwd(),
-					sessionStartEvent: { type: "session_start", reason: "fork", previousSessionFile },
-				}),
-			);
-			await this.finishSessionReplacement(options?.withSession);
-			return { cancelled: false, selectedText };
-		}
-
-		const sessionManager = this.session.sessionManager;
-		await this.teardownCurrent("fork", sessionManager.getSessionFile());
-		if (!targetLeafId) {
-			sessionManager.newSession({ parentSession: previousSessionFile });
+			await this.teardownCurrent("fork", prepared.snapshot.getSessionFile());
 		} else {
-			sessionManager.createBranchedSession(targetLeafId);
+			// Legacy in-memory forks reuse their manager. Preserve the established
+			// shutdown view by invalidating the outgoing runtime before mutation.
+			await this.teardownCurrent("fork", undefined);
+			prepared = await this.sessionManagers.fork(this._prepared, {
+				cwd: this.cwd,
+				leafId: targetLeafId,
+			});
 		}
-		const prepared = await createLegacyPreparedSessionRuntime(sessionManager);
 		this.apply(
 			await this.createPreparedRuntime(prepared, {
-				cwd: this.cwd,
+				cwd: prepared.snapshot.getCwd(),
 				sessionStartEvent: { type: "session_start", reason: "fork", previousSessionFile },
 			}),
+			prepared,
 		);
 		await this.finishSessionReplacement(options?.withSession);
 		return { cancelled: false, selectedText };
@@ -408,14 +385,14 @@ export class AgentSessionRuntime {
 			sessionDir,
 			cwdOverride,
 		});
-		const sessionManager = requireLegacySessionManager(prepared);
-		assertSessionCwdExists(sessionManager, this.cwd);
-		await this.teardownCurrent("resume", sessionManager.getSessionFile());
+		assertSessionCwdExists(prepared.snapshot, this.cwd);
+		await this.teardownCurrent("resume", prepared.snapshot.getSessionFile());
 		this.apply(
 			await this.createPreparedRuntime(prepared, {
-				cwd: sessionManager.getCwd(),
+				cwd: prepared.snapshot.getCwd(),
 				sessionStartEvent: { type: "session_start", reason: "resume", previousSessionFile },
 			}),
+			prepared,
 		);
 		await this.finishSessionReplacement();
 		return { cancelled: false };
@@ -463,6 +440,7 @@ export async function createAgentSessionRuntime(
 		result.diagnostics,
 		result.modelFallbackMessage,
 		options.sessionManagers,
+		prepared,
 	);
 }
 

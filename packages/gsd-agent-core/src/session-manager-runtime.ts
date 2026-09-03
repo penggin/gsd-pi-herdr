@@ -14,7 +14,12 @@ import {
 export type ProductionSessionBackend = "legacy-v3";
 
 export type SessionManagerTarget =
-	| { kind: "create"; cwd: string; sessionDir?: string }
+	| {
+			kind: "create";
+			cwd: string;
+			sessionDir?: string;
+			parent?: { kind: "legacy-path" | "session-id"; value: string };
+	  }
 	| { kind: "open"; path: string; sessionDir?: string; cwdOverride?: string }
 	| { kind: "continue-recent"; cwd: string; sessionDir?: string }
 	| { kind: "memory"; cwd?: string };
@@ -56,6 +61,10 @@ export function requireLegacySessionManager(runtime: PreparedSessionRuntime): Se
 export interface SessionManagerRuntimeFactory {
 	readonly backend: ProductionSessionBackend;
 	prepare(target: SessionManagerTarget): Promise<PreparedSessionRuntime>;
+	fork(
+		source: PreparedSessionRuntime,
+		target: { cwd: string; leafId: string | null },
+	): Promise<PreparedSessionRuntime>;
 }
 
 export function createLegacySessionManagerRuntimeFactory(): SessionManagerRuntimeFactory {
@@ -63,8 +72,14 @@ export function createLegacySessionManagerRuntimeFactory(): SessionManagerRuntim
 		backend: "legacy-v3",
 		async prepare(target): Promise<PreparedSessionRuntime> {
 			switch (target.kind) {
-				case "create":
-					return createLegacyPreparedSessionRuntime(SessionManager.create(target.cwd, target.sessionDir));
+				case "create": {
+					if (target.parent?.kind === "session-id") {
+						throw new Error("legacy-v3 sessions require a legacy-path parent reference");
+					}
+					const manager = SessionManager.create(target.cwd, target.sessionDir);
+					if (target.parent) manager.newSession({ parentSession: target.parent.value });
+					return createLegacyPreparedSessionRuntime(manager);
+				}
 				case "open":
 					return createLegacyPreparedSessionRuntime(SessionManager.open(target.path, target.sessionDir, target.cwdOverride));
 				case "continue-recent":
@@ -72,6 +87,24 @@ export function createLegacySessionManagerRuntimeFactory(): SessionManagerRuntim
 				case "memory":
 					return createLegacyPreparedSessionRuntime(SessionManager.inMemory(target.cwd));
 			}
+		},
+		async fork(source, target): Promise<PreparedSessionRuntime> {
+			const manager = requireLegacySessionManager(source);
+			const sourceFile = source.snapshot.getSessionFile();
+			if (target.leafId === null) {
+				return this.prepare({
+					kind: "create",
+					cwd: target.cwd,
+					sessionDir: source.snapshot.getSessionDir(),
+					...(sourceFile ? { parent: { kind: "legacy-path" as const, value: sourceFile } } : {}),
+				});
+			}
+
+			const forkManager = sourceFile
+				? SessionManager.open(sourceFile, source.snapshot.getSessionDir())
+				: manager;
+			forkManager.createBranchedSession(target.leafId);
+			return createLegacyPreparedSessionRuntime(forkManager);
 		},
 	};
 }

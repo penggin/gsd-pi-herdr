@@ -92,6 +92,56 @@ describe("production session-manager runtime factory", () => {
 		}
 	});
 
+	it("owns parent creation and persisted fork semantics behind the runtime factory", async () => {
+		const root = makeRoot();
+		const sessions = join(root, "sessions");
+		const factory = createLegacySessionManagerRuntimeFactory();
+		const source = await factory.prepare({ kind: "create", cwd: root, sessionDir: sessions });
+		const sourceManager = requireLegacySessionManager(source);
+		const userId = sourceManager.appendMessage({ role: "user", content: "keep", timestamp: Date.now() });
+		sourceManager.appendMessage({
+			role: "assistant",
+			content: [{ type: "text", text: "done" }],
+			api: "test",
+			provider: "test",
+			model: "test",
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "stop",
+			timestamp: Date.now(),
+		});
+		const sourceFile = sourceManager.getSessionFile();
+		assert.ok(sourceFile);
+
+		const forked = await factory.fork(source, { cwd: root, leafId: userId });
+		assert.notEqual(forked.snapshot.getSessionFile(), sourceFile);
+		assert.equal(forked.snapshot.getHeader().parentSession, sourceFile);
+		assert.deepEqual(forked.snapshot.getBranch().map((entry) => entry.id), [userId]);
+		assert.equal(sourceManager.getBranch().length, 2, "persisted fork must not mutate the active source");
+
+		const emptyFork = await factory.fork(source, { cwd: root, leafId: null });
+		assert.equal(emptyFork.snapshot.getHeader().parentSession, sourceFile);
+		assert.deepEqual(emptyFork.snapshot.getBranch(), []);
+	});
+
+	it("rejects a v4 parent identity at the legacy factory boundary", async () => {
+		const root = makeRoot();
+		await assert.rejects(
+			createLegacySessionManagerRuntimeFactory().prepare({
+				kind: "create",
+				cwd: root,
+				parent: { kind: "session-id", value: "v4-parent" },
+			}),
+			/legacy-path parent reference/,
+		);
+	});
+
 	it("rejects harness-v4 input instead of silently creating an empty legacy session", async () => {
 		const root = makeRoot();
 		const path = join(root, "v4.jsonl");

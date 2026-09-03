@@ -1090,6 +1090,7 @@ sessionRuntime = new AgentSessionRuntime(
   [],
   interactiveFallbackMsg,
   legacySessionManagerRuntimeFactory,
+  preparedSession,
 )
 
 // Validate configured model AFTER extensions have registered their models (#2626).

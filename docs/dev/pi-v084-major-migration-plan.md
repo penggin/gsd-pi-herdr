@@ -2,7 +2,7 @@
 
 Date: 2026-09-03
 
-Status: P3.0–P3.4, P3.5a–P3.5b, and P3.5c1–P3.5c3 complete; P3.5c construction semantics in progress; no v4 cutover
+Status: P3.0–P3.4, P3.5a–P3.5b, and P3.5c1–P3.5c4 complete; P3.5c v4 composition in progress; no v4 cutover
 
 Upstream reference: `refs/pi-upstream/v0.84.4`
 
@@ -258,6 +258,22 @@ Next: add version-neutral construction and fork operations to the runtime
 factory/capability boundary, remove replacement semantics' dependency on the
 transitional legacy handle, then run the complete CLI/print/JSON/headless parity
 matrix. Do not remove the harness-v4 guard until that matrix passes.
+
+P3.5c4 moves new-session parent identity and fork construction behind the
+runtime factory. `AgentSessionRuntime` now supplies a typed parent reference or
+source runtime plus target leaf and no longer calls legacy `newSession()` or
+`createBranchedSession()` itself. The legacy factory rejects a v4 session-ID
+parent instead of silently serializing it as a file path, creates persisted
+forks without mutating the active source, and preserves the established
+shutdown-before-mutation order for in-memory legacy forks. Session cwd and
+target-file reads use the prepared snapshot; the sole remaining legacy unwrap
+inside replacement is the centralized `createRuntime()` compatibility bridge.
+
+Next: implement a harness-v4 prepared-runtime factory over the validated v4
+memory/JSONL repositories, then replace the centralized legacy construction
+bridge and extension `newSession({ setup })` compatibility surface with an
+explicit backend-aware contract. Keep v4 unselectable until both changes and
+CLI/headless parity are complete.
 
 ### P3.6 — Integrate GSD, web, and Assessment Gates
 

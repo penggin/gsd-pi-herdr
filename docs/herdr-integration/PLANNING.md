@@ -2453,6 +2453,23 @@ this session does not merge, push, tag, or publish.
   before changing the harness-v4 fail-closed guard. No global macOS install is
   needed; deploy a verified package only to `penglab:/srv/penglab` when SSH is
   reachable.
+- Completed P3.5c4's backend-owned construction semantics. The runtime factory
+  now owns typed parent references and source-to-leaf forks; replacement code no
+  longer calls legacy `newSession()` or `createBranchedSession()` directly.
+  Legacy-v3 rejects a harness-v4 session-ID parent, persisted forks are prepared
+  without mutating the active source, and in-memory forks retain the prior
+  shutdown-before-mutation behavior. Focused cross-format capability/runtime
+  tests pass **16/16**, agent-core passes **158/158**, agent-modes passes **9/9**,
+  CLI/print/headless boundary tests pass **40/40**, extension typecheck passes,
+  and the complete core build passes.
+- Remaining risk: `AgentSession` construction and the backward-compatible
+  extension `newSession({ setup(sessionManager) })` callback still expose a
+  legacy manager. These are explicit blockers to selecting harness-v4, not
+  prompt-only or silent fallback behavior.
+- Exact next task: add a harness-v4 prepared-runtime factory over the validated
+  v4 memory/JSONL repositories, then design the backend-aware replacement for
+  the centralized legacy construction bridge and extension setup callback.
+  Keep the harness-v4 runtime selection guard intact until CLI/headless parity.
 
 ## 11. Working-session protocol
 
