@@ -2693,6 +2693,23 @@ this session does not merge, push, tag, or publish.
   Shared remote `gsd` and `gsd-mcp-server` links now target this clean
   candidate. Previous prefixes remain intact for rollback; running processes
   were not killed and acquire it on their normal restart.
+- Extended the auditor so supplied detach snapshots must retain identical
+  workspace/tab/pane identities and the root pane, while restart records must
+  retain the derived root/session/pane identity, replace the lease instance,
+  advance its start time, and prove the resumed v4 file is a strict append-only
+  extension equal to the audited live file. Continuity plus artifact coverage
+  passes **5/5** and the complete Herdr integration suite remains **30/30**;
+  typecheck, package validation, and `git diff --check` pass.
+- Packaged clean continuity commit
+  `a0f8e6b5f8b47ea573ff798044b895722c0ccf50` as
+  `/srv/penglab/gsd-runs/artifacts/gsd-pi-herdr-1.16.2-a0f8e6b5-476f0297.tgz`
+  (`sha256:476f0297f8c9e7faf22de3ba9c583e0017a58943d5e73b488890e2ae9c65cece`)
+  and installed it at immutable prefix
+  `/srv/penglab/gsd-runs/toolchains/gsd-pi-herdr-1.16.2-a0f8e6b5-476f0297`.
+  First launch repaired seven internal links, the verified Linux x64 addon
+  reports `nativeLoaded: true` with 98 exports, and shared remote `gsd` and
+  `gsd-mcp-server` links now target this clean candidate. Previous prefixes
+  remain rollback targets and running processes were not killed.
 - Exact next task: from an actual Herdr-managed root pane (`HERDR_ENV=1`), run
   the pinned-Herdr P3.7 root/worker matrix with an internal harness-v4 root
   session: single dispatch, affinity reuse, parallel >4, cancellation, pane
