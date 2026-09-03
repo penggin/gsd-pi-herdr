@@ -42,6 +42,16 @@ export interface SupervisionContext {
   taskEstimate?: string;
 }
 
+function resolveSupervisionHost(sctx: SupervisionContext): {
+  ctx: ExtensionContext;
+  pi: ExtensionAPI;
+} {
+  const liveCtx = sctx.s.cmdCtx;
+  return liveCtx
+    ? { ctx: liveCtx, pi: liveCtx as unknown as ExtensionAPI }
+    : { ctx: sctx.ctx, pi: sctx.pi };
+}
+
 export const PROJECT_RESEARCH_SOFT_TIMEOUT_MINUTES = 3;
 export const PROJECT_RESEARCH_HARD_TIMEOUT_MINUTES = 5;
 
@@ -162,6 +172,7 @@ export function startUnitSupervision(sctx: SupervisionContext): void {
   s.wrapupWarningHandle = setTimeout(async () => {
     s.wrapupWarningHandle = null;
     if (!s.active || !s.currentUnit) return;
+    const { ctx: liveCtx, pi: livePi } = resolveSupervisionHost(sctx);
     writeUnitRuntimeRecord(s.basePath, unitType, unitId, s.currentUnit.startedAt, {
       phase: "wrapup-warning-sent",
       wrapupWarningSent: true,
@@ -171,9 +182,9 @@ export function startUnitSupervision(sctx: SupervisionContext): void {
     // with "Skipped due to queued user message", leading to provider errors (#3512).
     const softTrigger = getInFlightToolCount() === 0;
     if (softTrigger) {
-      await applySupervisorModelIfConfigured(ctx, pi, s.basePath);
+      await applySupervisorModelIfConfigured(liveCtx, livePi, s.basePath);
     }
-    pi.sendMessage(
+    livePi.sendMessage(
       {
         customType: "gsd-auto-wrapup",
         display: s.verbose,
@@ -195,6 +206,7 @@ export function startUnitSupervision(sctx: SupervisionContext): void {
   s.idleWatchdogHandle = setInterval(async () => {
     try {
       if (!s.active || !s.currentUnit) return;
+      const { ctx: liveCtx, pi: livePi } = resolveSupervisionHost(sctx);
       const expectedCurrentUnit = {
         type: s.currentUnit.type,
         id: s.currentUnit.id,
@@ -245,7 +257,7 @@ export function startUnitSupervision(sctx: SupervisionContext): void {
         // below do not override the stall verdict (#2527).
         stalledToolDetected = true;
         clearInFlightTools();
-        ctx.ui.notify(
+        liveCtx.ui.notify(
           `Stalled tool detected: a tool has been in-flight for ${Math.round(toolAgeMs / 60000)}min (budget ${Math.round(stalledToolTimeoutMs / 60000)}min). Treating as hung — attempting idle recovery.`,
           "warning",
         );
@@ -267,12 +279,12 @@ export function startUnitSupervision(sctx: SupervisionContext): void {
       }
 
       if (s.currentUnit) {
-        await closeoutUnit(ctx, s.basePath, s.currentUnit.type, s.currentUnit.id, s.currentUnit.startedAt, buildSnapshotOpts());
+        await closeoutUnit(liveCtx, s.basePath, s.currentUnit.type, s.currentUnit.id, s.currentUnit.startedAt, buildSnapshotOpts());
       } else {
-        saveActivityLog(ctx, s.basePath, unitType, unitId);
+        saveActivityLog(liveCtx, s.basePath, unitType, unitId);
       }
 
-      const recovery = await recoverTimedOutUnit(ctx, pi, unitType, unitId, "idle", buildRecoveryContext());
+      const recovery = await recoverTimedOutUnit(liveCtx, livePi, unitType, unitId, "idle", buildRecoveryContext());
       if (recovery === "recovered") return;
 
       // Guard: recoverTimedOutUnit is async — pauseAuto/stopAuto may have
@@ -282,18 +294,18 @@ export function startUnitSupervision(sctx: SupervisionContext): void {
       writeUnitRuntimeRecord(s.basePath, unitType, unitId, s.currentUnit.startedAt, {
         phase: "paused",
       });
-      ctx.ui.notify(
+      liveCtx.ui.notify(
         `Unit ${unitType} ${unitId} made no meaningful progress for ${supervisor.idle_timeout_minutes}min. Pausing auto-mode.`,
         "warning",
       );
-      await pauseAuto(ctx, pi, undefined, { expectedCurrentUnit });
+      await pauseAuto(liveCtx, livePi, undefined, { expectedCurrentUnit });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       logError("timer", `[idle-watchdog] Unhandled error: ${message}`);
       // Unblock any pending unit promise so the auto-loop is not orphaned.
       resolveAgentEndCancelled({ message: `Idle watchdog error: ${message}`, category: "idle", isTransient: true });
       try {
-        ctx.ui.notify(`Idle watchdog error: ${message}`, "warning");
+        resolveSupervisionHost(sctx).ctx.ui.notify(`Idle watchdog error: ${message}`, "warning");
       } catch (err) { /* best effort */
         logWarning("timer", `notification failed: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -305,6 +317,7 @@ export function startUnitSupervision(sctx: SupervisionContext): void {
     try {
       s.unitTimeoutHandle = null;
       if (!s.active) return;
+      const { ctx: liveCtx, pi: livePi } = resolveSupervisionHost(sctx);
       // User-interactive tools (ask_user_questions, secure_env_collect) block
       // waiting for human input by design. Unlike the idle watchdog (above),
       // the hard timeout had no interactive exemption, so a long human
@@ -326,26 +339,26 @@ export function startUnitSupervision(sctx: SupervisionContext): void {
           phase: "timeout",
           timeoutAt: Date.now(),
         });
-        await closeoutUnit(ctx, s.basePath, s.currentUnit.type, s.currentUnit.id, s.currentUnit.startedAt, buildSnapshotOpts());
+        await closeoutUnit(liveCtx, s.basePath, s.currentUnit.type, s.currentUnit.id, s.currentUnit.startedAt, buildSnapshotOpts());
       } else {
-        saveActivityLog(ctx, s.basePath, unitType, unitId);
+        saveActivityLog(liveCtx, s.basePath, unitType, unitId);
       }
 
-      const recovery = await recoverTimedOutUnit(ctx, pi, unitType, unitId, "hard", buildRecoveryContext());
+      const recovery = await recoverTimedOutUnit(liveCtx, livePi, unitType, unitId, "hard", buildRecoveryContext());
       if (recovery === "recovered") return;
 
-      ctx.ui.notify(
+      liveCtx.ui.notify(
         `Unit ${unitType} ${unitId} exceeded ${supervisor.hard_timeout_minutes}min hard timeout. Pausing auto-mode.`,
         "warning",
       );
-      await pauseAuto(ctx, pi, undefined, { expectedCurrentUnit });
+      await pauseAuto(liveCtx, livePi, undefined, { expectedCurrentUnit });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       logError("timer", `[hard-timeout] Unhandled error: ${message}`);
       // Unblock any pending unit promise so the auto-loop is not orphaned.
       resolveAgentEndCancelled({ message: `Hard timeout error: ${message}`, category: "timeout", isTransient: true });
       try {
-        ctx.ui.notify(`Hard timeout error: ${message}`, "warning");
+        resolveSupervisionHost(sctx).ctx.ui.notify(`Hard timeout error: ${message}`, "warning");
       } catch (err) { /* best effort */
         logWarning("timer", `notification failed: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -367,6 +380,7 @@ export function startUnitSupervision(sctx: SupervisionContext): void {
   const continueHereThreshold = computeBudgets(executorContextWindow).continueThresholdPercent;
   s.continueHereHandle = setInterval(async () => {
     if (!s.active || !s.currentUnit || !s.cmdCtx) return;
+    const { ctx: liveCtx, pi: livePi } = resolveSupervisionHost(sctx);
     const runtime = readUnitRuntimeRecord(s.basePath, unitType, unitId);
     if (runtime?.continueHereFired) return;
 
@@ -388,7 +402,7 @@ export function startUnitSupervision(sctx: SupervisionContext): void {
 
     const displayPercent = rawPercent.toFixed(1);
     if (s.verbose) {
-      ctx.ui.notify(
+      liveCtx.ui.notify(
         `Context at ${displayPercent}% (threshold: ${continueHereThreshold}%) — sending wrap-up signal.`,
         "info",
       );
@@ -397,9 +411,9 @@ export function startUnitSupervision(sctx: SupervisionContext): void {
     // Only trigger a new turn if no tools are currently in flight (#3512).
     const contextTrigger = getInFlightToolCount() === 0;
     if (contextTrigger) {
-      await applySupervisorModelIfConfigured(ctx, pi, s.basePath);
+      await applySupervisorModelIfConfigured(liveCtx, livePi, s.basePath);
     }
-    pi.sendMessage(
+    livePi.sendMessage(
       {
         customType: "gsd-auto-wrapup",
         display: s.verbose,

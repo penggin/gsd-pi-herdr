@@ -179,3 +179,35 @@ test("soft-timeout applies the supervisor model swap when no tools are in flight
     cleanup(h);
   }
 });
+
+test("soft-timeout resolves the replacement session host when the timer fires", async () => {
+  const h = makeHarness();
+  mock.timers.enable({ apis: ["setTimeout", "setInterval", "Date"], now: 0 });
+  try {
+    const replacementSetModelCalls: unknown[][] = [];
+    const replacementSendMessageCalls: unknown[][] = [];
+    h.s.cmdCtx = {
+      ...h.ctx,
+      sendMessage: (...args: unknown[]) => replacementSendMessageCalls.push(args),
+      setModel: async (...args: unknown[]) => {
+        replacementSetModelCalls.push(args);
+        return true;
+      },
+      getThinkingLevel: () => "off",
+      setThinkingLevel: () => {},
+    };
+
+    startUnitSupervision(h.sctx);
+    isolateSoftTimeout(h.s);
+    mock.timers.tick(60_000);
+    await flush();
+
+    assert.equal(h.setModelCalls.length, 0, "the invalidated API must not receive the model swap");
+    assert.equal(h.sendMessageCalls.length, 0, "the invalidated API must not receive the wrap-up message");
+    assert.equal(replacementSetModelCalls.length, 1, "the replacement API receives the model swap");
+    assert.equal(replacementSendMessageCalls.length, 1, "the replacement API receives the wrap-up message");
+  } finally {
+    mock.timers.reset();
+    cleanup(h);
+  }
+});

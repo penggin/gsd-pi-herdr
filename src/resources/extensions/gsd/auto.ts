@@ -659,6 +659,22 @@ function withDetachedAutoKeepalive<T>(run: Promise<T>): Promise<T> {
 
 export const _withDetachedAutoKeepaliveForTest = withDetachedAutoKeepalive;
 
+function tryNotifyDetachedAutoFailure(ctx: ExtensionContext, message: string): boolean {
+  try {
+    ctx.ui.notify(`Auto-start failed: ${message}`, "error");
+    return true;
+  } catch (notifyErr) {
+    logWarning(
+      "engine",
+      `auto start notification failed: ${notifyErr instanceof Error ? notifyErr.message : String(notifyErr)}`,
+      { file: "auto.ts" },
+    );
+    return false;
+  }
+}
+
+export const _tryNotifyDetachedAutoFailureForTest = tryNotifyDetachedAutoFailure;
+
 export function startAutoDetached(
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI,
@@ -673,13 +689,13 @@ export function startAutoDetached(
 ): void {
   void withDetachedAutoKeepalive(startAuto(ctx, pi, base, verboseMode, options)).catch(async (err) => {
     const message = getErrorMessage(err);
+    logWarning("engine", `auto start error: ${message}`, { file: "auto.ts" });
+    debugLog("auto-start-failed", { error: message });
     // A successful newSession invalidates the command context that launched
     // this detached coroutine. Report and clean up through the latest context
     // instead of masking the original failure with another stale-context error.
     const liveCtx = s.cmdCtx ?? ctx;
-    liveCtx.ui.notify(`Auto-start failed: ${message}`, "error");
-    logWarning("engine", `auto start error: ${message}`, { file: "auto.ts" });
-    debugLog("auto-start-failed", { error: message });
+    tryNotifyDetachedAutoFailure(liveCtx, message);
     // Backstop cleanup (#1235): if startAuto threw after auto-mode was activated
     // (e.g. an exception during bootstrap, before the loop's try/finally could
     // run cleanupAfterLoopExit), s.active and the on-disk auto lock leak, so the
@@ -2518,13 +2534,15 @@ function buildLoopDeps(pi: ExtensionAPI, ctx: ExtensionContext): LoopDeps {
     invalidateAllCaches,
     deriveState,
     rebuildState,
-    loadEffectiveGSDPreferences: () =>
-      loadEffectiveGSDPreferencesWithRegistry(
-        ctx.modelRegistry,
+    loadEffectiveGSDPreferences: () => {
+      const liveCtx = s.cmdCtx ?? ctx;
+      return loadEffectiveGSDPreferencesWithRegistry(
+        liveCtx.modelRegistry,
         s.basePath || undefined,
-        resolveProfileAnchorProvider(ctx.model?.provider, s.autoModeStartModel?.provider),
+        resolveProfileAnchorProvider(liveCtx.model?.provider, s.autoModeStartModel?.provider),
         s.autoModeStartModel ? `${s.autoModeStartModel.provider}/${s.autoModeStartModel.id}` : undefined,
-      ),
+      );
+    },
 
     // Pre-dispatch health gate
     preDispatchHealthGate,
@@ -2630,6 +2648,8 @@ function buildLoopDeps(pi: ExtensionAPI, ctx: ExtensionContext): LoopDeps {
     postflightPopStash,
   } as unknown as LoopDeps;
 }
+
+export const _buildLoopDepsForTest = buildLoopDeps;
 
 /**
  * Start auto-mode. Handles both fresh-start and resume paths, sets up session

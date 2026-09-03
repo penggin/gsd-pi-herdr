@@ -4,9 +4,12 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import {
+  _buildLoopDepsForTest,
+  _tryNotifyDetachedAutoFailureForTest,
   _resolveEffectiveUnitIsolationModeForTest,
   _withDetachedAutoKeepaliveForTest,
 } from "../auto.ts";
+import { autoSession } from "../auto-runtime-state.ts";
 import {
   _scheduleAutoStartAfterIdleForTest,
   resolveGuidedExecuteLaunchMode,
@@ -201,9 +204,46 @@ test("startAutoDetached reports failures asynchronously (#3733)", () => {
   );
   assert.ok(
     autoSrc.includes("const liveCtx = s.cmdCtx ?? ctx") &&
-      autoSrc.includes("liveCtx.ui.notify(`Auto-start failed: ${message}`, \"error\")"),
-    "startAutoDetached should surface async startup failures through the live session context",
+      autoSrc.includes("tryNotifyDetachedAutoFailure(liveCtx, message)"),
+    "startAutoDetached should surface async startup failures best-effort through the live session context",
   );
+});
+
+test("next-iteration preferences resolve through the replacement command context", () => {
+  const previousCmdCtx = autoSession.cmdCtx;
+  const staleCtx = Object.defineProperties({}, {
+    modelRegistry: { get: () => { throw new Error("stale modelRegistry"); } },
+    model: { get: () => { throw new Error("stale model"); } },
+  }) as any;
+  const freshCtx = {
+    modelRegistry: { getAvailable: () => [] },
+    model: { provider: "anthropic" },
+  } as any;
+
+  autoSession.cmdCtx = freshCtx;
+  try {
+    const deps = _buildLoopDepsForTest({ events: { emit() {} } } as any, staleCtx);
+    assert.doesNotThrow(
+      () => deps.loadEffectiveGSDPreferences(),
+      "iteration 2 must not dereference the invalidated command-entry context",
+    );
+  } finally {
+    autoSession.cmdCtx = previousCmdCtx;
+  }
+});
+
+test("detached failure reporting cannot throw when its context is stale", () => {
+  const staleCtx = Object.defineProperty({}, "ui", {
+    get: () => { throw new Error("stale ui"); },
+  }) as any;
+  assert.equal(_tryNotifyDetachedAutoFailureForTest(staleCtx, "original failure"), false);
+
+  const notifications: string[] = [];
+  const freshCtx = {
+    ui: { notify: (message: string) => notifications.push(message) },
+  } as any;
+  assert.equal(_tryNotifyDetachedAutoFailureForTest(freshCtx, "original failure"), true);
+  assert.deepEqual(notifications, ["Auto-start failed: original failure"]);
 });
 
 test("failed auto-start always clears leaked s.active so later /gsd auto is not bricked (#1235)", () => {
