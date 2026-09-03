@@ -27,6 +27,7 @@ export function runGsd(
   timeoutMs = 8_000,
   env: NodeJS.ProcessEnv = {},
   cwd: string = projectRoot,
+  stdin?: string,
 ): Promise<RunResult> {
   return new Promise((resolve) => {
     let stdout = "";
@@ -45,7 +46,7 @@ export function runGsd(
     child.stderr.on("data", (chunk: Buffer) => {
       stderr += chunk.toString();
     });
-    child.stdin.end();
+    child.stdin.end(stdin);
 
     const timer = setTimeout(() => {
       timedOut = true;

@@ -31,6 +31,7 @@ import { printTimings, time } from "@gsd/pi-coding-agent/core/timings.js";
 import { allTools } from "@gsd/pi-coding-agent/core/tools/index.js";
 import { runMigrations, showDeprecationWarnings } from "@gsd/pi-coding-agent/migrations.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
+import { assertStandaloneSessionBackend } from "./standalone-session-backend.js";
 import { initTheme, stopThemeWatcher } from "@gsd/pi-coding-agent/theme/theme.js";
 
 /**
@@ -407,6 +408,8 @@ async function handleConfigCommand(args: string[]): Promise<boolean> {
 }
 
 export async function main(args: string[]) {
+	assertStandaloneSessionBackend(process.env.GSD_INTERNAL_SESSION_BACKEND);
+
 	// Catch unhandled promise rejections so the process doesn't silently disappear
 	process.on("unhandledRejection", (reason) => {
 		const message = reason instanceof Error ? reason.stack ?? reason.message : String(reason);

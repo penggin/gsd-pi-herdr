@@ -2544,6 +2544,17 @@ this session does not merge, push, tag, or publish.
   remove or explicitly isolate remaining standalone direct-manager ownership,
   then run GSD/web/Assessment Gate regressions followed by real Herdr E2E. Deploy
   the verified package only to `penglab:/srv/penglab` when SSH is reachable.
+- Completed P3.5c9's built command matrix. Legacy-v3 and harness-v4 each pass
+  text print, JSON header, RPC v2 init/shutdown, and headless resume-catalog
+  startup. The matrix is network-free and passes **10/10** across both backends.
+- The standalone `@gsd/agent-modes` entry is explicitly isolated as legacy-v3:
+  setting the root-only harness-v4 selector there now fails with a diagnostic
+  instead of silently using `SessionManager`. The package test script now runs
+  root-level contracts as well as nested tests; agent-modes passes **11/11**.
+- Exact next task: begin P3.6 by running and filling two-backend GSD lifecycle,
+  Assessment Gate, and browser session command regressions. Custom legacy
+  `sessionDir` parity remains a known adapter limitation. Keep v4 internal-only,
+  then proceed to P3.7's real Herdr worker E2E before any cutover decision.
 
 ## 11. Working-session protocol
 

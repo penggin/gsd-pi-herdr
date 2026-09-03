@@ -2,7 +2,7 @@
 
 Date: 2026-09-03
 
-Status: P3.0–P3.4, P3.5a–P3.5b, and P3.5c1–P3.5c8 complete; P3.5c two-backend command parity in progress; no v4 cutover
+Status: P3.0–P3.4, P3.5a–P3.5b, and P3.5c1–P3.5c9 complete; P3.6 GSD/web integration next; no v4 cutover
 
 Upstream reference: `refs/pi-upstream/v0.84.4`
 
@@ -324,6 +324,18 @@ internal backends, then cover GSD lifecycle and browser command surfaces. The
 standalone `@gsd/agent-modes` executable and custom legacy `sessionDir` semantics
 remain explicit adapter work; neither is grounds for exposing a public v4
 preference yet.
+
+P3.5c9 completes the built-CLI command matrix for the migration seam. Both
+legacy-v3 and harness-v4 pass text print startup, JSON session headers, RPC v2
+init/shutdown, and headless resume-catalog resolution. The standalone
+`@gsd/agent-modes` compatibility entry remains legacy-owned and now rejects an
+internal v4 selector explicitly instead of silently running a v3 manager. Its
+package test command also includes root-level contract tests, which had
+previously been skipped by the recursive-only glob.
+
+Next: begin P3.6 with GSD lifecycle, Assessment Gate, and browser session command
+regressions on both internal backends. Preserve the internal-only selector and
+legacy default until P3.7 supplies real Herdr worker evidence.
 
 ### P3.6 — Integrate GSD, web, and Assessment Gates
 
