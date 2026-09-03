@@ -70,8 +70,11 @@ export {
 	createAgentSession,
 } from "./sdk.js";
 export {
+	createLegacyPreparedSessionRuntime,
 	createLegacySessionManagerRuntimeFactory,
 	legacySessionManagerRuntimeFactory,
+	requireLegacySessionManager,
+	type PreparedSessionRuntime,
 	type ProductionSessionBackend,
 	type SessionManagerRuntimeFactory,
 	type SessionManagerTarget,

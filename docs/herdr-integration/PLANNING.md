@@ -2431,6 +2431,28 @@ this session does not merge, push, tag, or publish.
   and the selected adapter together. Then migrate `AgentSessionRuntime` session
   replacement paths and run CLI/print/JSON/headless parity before considering
   removal of the harness-v4 fail-closed guard.
+- Completed P3.5c3's prepared-runtime boundary. `SessionManagerRuntimeFactory`
+  now returns a single backend-owned bundle containing the selected capability
+  adapter, its coherent synchronous read snapshot, backend identity, and a
+  transitional legacy manager only where current construction semantics still
+  require it. Root print/JSON-worker and interactive startup, plus `/new`,
+  `/resume`, `/fork`, and import replacement, preserve the same bundle through
+  SDK construction rather than reconstructing adapters independently.
+- SDK restore queries and initial model/thinking records now use the selected
+  capability adapter and refresh the supplied snapshot before exposing the
+  session. A regression proves that the prepared snapshot contains SDK-created
+  initialization records. Focused capability/runtime tests pass **14/14**,
+  CLI/print/headless boundary tests pass **40/40**, agent-modes passes **9/9**,
+  agent-core passes **156/156**, and ordered package builds plus extension
+  typecheck pass. The unrelated DB schema fixture tests retain their existing
+  package-name/global-adapter isolation failures when co-scheduled and were not
+  changed in this slice.
+- Exact next task: add version-neutral create/new/fork semantics to the runtime
+  factory or capability contract, then remove `requireLegacySessionManager()`
+  from replacement paths. Run the full CLI/print/JSON/headless parity matrix
+  before changing the harness-v4 fail-closed guard. No global macOS install is
+  needed; deploy a verified package only to `penglab:/srv/penglab` when SSH is
+  reachable.
 
 ## 11. Working-session protocol
 

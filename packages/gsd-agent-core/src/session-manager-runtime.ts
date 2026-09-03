@@ -1,4 +1,9 @@
 import { SessionManager } from "@gsd/pi-coding-agent/core/session-manager.js";
+import {
+	LegacyV3SessionCapabilityAdapter,
+	type SessionCapabilityAdapter,
+	SessionCapabilityReadSnapshot,
+} from "./session-capability-adapter.js";
 
 /**
  * Session storage backend selected by the production composition root.
@@ -14,6 +19,32 @@ export type SessionManagerTarget =
 	| { kind: "continue-recent"; cwd: string; sessionDir?: string }
 	| { kind: "memory"; cwd?: string };
 
+/** One coherently prepared session backend and its compatibility surfaces. */
+export interface PreparedSessionRuntime {
+	readonly backend: ProductionSessionBackend;
+	readonly capabilities: SessionCapabilityAdapter;
+	readonly snapshot: SessionCapabilityReadSnapshot;
+	/** Present only while legacy-v3 remains available to unconverted construction paths. */
+	readonly legacyManager?: SessionManager;
+}
+
+export async function createLegacyPreparedSessionRuntime(manager: SessionManager): Promise<PreparedSessionRuntime> {
+	const capabilities = new LegacyV3SessionCapabilityAdapter(manager);
+	return {
+		backend: "legacy-v3",
+		capabilities,
+		snapshot: await SessionCapabilityReadSnapshot.create(capabilities),
+		legacyManager: manager,
+	};
+}
+
+export function requireLegacySessionManager(runtime: PreparedSessionRuntime): SessionManager {
+	if (!runtime.legacyManager) {
+		throw new Error(`Session backend ${runtime.backend} does not expose a legacy SessionManager`);
+	}
+	return runtime.legacyManager;
+}
+
 /**
  * Awaitable construction boundary for production session storage.
  *
@@ -24,22 +55,22 @@ export type SessionManagerTarget =
  */
 export interface SessionManagerRuntimeFactory {
 	readonly backend: ProductionSessionBackend;
-	prepare(target: SessionManagerTarget): Promise<SessionManager>;
+	prepare(target: SessionManagerTarget): Promise<PreparedSessionRuntime>;
 }
 
 export function createLegacySessionManagerRuntimeFactory(): SessionManagerRuntimeFactory {
 	return {
 		backend: "legacy-v3",
-		async prepare(target): Promise<SessionManager> {
+		async prepare(target): Promise<PreparedSessionRuntime> {
 			switch (target.kind) {
 				case "create":
-					return SessionManager.create(target.cwd, target.sessionDir);
+					return createLegacyPreparedSessionRuntime(SessionManager.create(target.cwd, target.sessionDir));
 				case "open":
-					return SessionManager.open(target.path, target.sessionDir, target.cwdOverride);
+					return createLegacyPreparedSessionRuntime(SessionManager.open(target.path, target.sessionDir, target.cwdOverride));
 				case "continue-recent":
-					return SessionManager.continueRecent(target.cwd, target.sessionDir);
+					return createLegacyPreparedSessionRuntime(SessionManager.continueRecent(target.cwd, target.sessionDir));
 				case "memory":
-					return SessionManager.inMemory(target.cwd);
+					return createLegacyPreparedSessionRuntime(SessionManager.inMemory(target.cwd));
 			}
 		},
 	};

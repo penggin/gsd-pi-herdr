@@ -18,6 +18,11 @@ import { SettingsManager } from "@gsd/pi-coding-agent/core/settings-manager.js";
 import { isInstallTelemetryEnabled } from "@gsd/pi-coding-agent/core/telemetry.js";
 import { time } from "@gsd/pi-coding-agent/core/timings.js";
 import {
+	LegacyV3SessionCapabilityAdapter,
+	type SessionCapabilityAdapter,
+	SessionCapabilityReadSnapshot,
+} from "./session-capability-adapter.js";
+import {
 	createBashTool,
 	createCodingTools,
 	createEditTool,
@@ -75,6 +80,10 @@ export interface CreateAgentSessionOptions {
 
 	/** Session manager. Default: SessionManager.create(cwd) */
 	sessionManager?: SessionManager;
+	/** Internal selected persistence adapter paired with sessionManager during migration. */
+	sessionCapabilities?: SessionCapabilityAdapter;
+	/** Synchronous read projection paired with sessionCapabilities. */
+	sessionSnapshot?: SessionCapabilityReadSnapshot;
 
 	/** Settings manager. Default: SettingsManager.create(cwd, agentDir) */
 	settingsManager?: SettingsManager;
@@ -222,6 +231,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
 	const sessionManager = options.sessionManager ?? SessionManager.create(cwd, getDefaultSessionDir(cwd, agentDir));
+	const sessionCapabilities = options.sessionCapabilities ?? new LegacyV3SessionCapabilityAdapter(sessionManager);
+	const sessionSnapshot = options.sessionSnapshot ?? await SessionCapabilityReadSnapshot.create(sessionCapabilities);
 
 	if (!resourceLoader) {
 		resourceLoader = new DefaultResourceLoader({ cwd, agentDir, settingsManager });
@@ -230,9 +241,9 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	}
 
 	// Check if session has existing data to restore
-	const existingSession = sessionManager.buildSessionContext();
+	const existingSession = await sessionCapabilities.buildSessionContext();
 	const hasExistingSession = existingSession.messages.length > 0;
-	const hasThinkingEntry = sessionManager.getBranch().some((entry) => entry.type === "thinking_level_change");
+	const hasThinkingEntry = (await sessionCapabilities.getBranch()).some((entry) => entry.type === "thinking_level_change");
 
 	let model = options.model;
 	let modelFallbackMessage: string | undefined;
@@ -398,7 +409,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				headers: response.headers,
 			});
 		},
-		sessionId: sessionManager.getSessionId(),
+		sessionId: (await sessionCapabilities.getMetadata()).id,
 		transformContext: async (messages) => {
 			const runner = extensionRunnerRef.current;
 			if (!runner) return messages;
@@ -416,19 +427,22 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	if (hasExistingSession) {
 		agent.state.messages = existingSession.messages;
 		if (!hasThinkingEntry) {
-			sessionManager.appendThinkingLevelChange(thinkingLevel);
+			await sessionCapabilities.appendThinkingLevelChange(thinkingLevel);
 		}
 	} else {
 		// Save initial model and thinking level for new sessions so they can be restored on resume
 		if (model) {
-			sessionManager.appendModelChange(model.provider, model.id);
+			await sessionCapabilities.appendModelChange(model.provider, model.id);
 		}
-		sessionManager.appendThinkingLevelChange(thinkingLevel);
+		await sessionCapabilities.appendThinkingLevelChange(thinkingLevel);
 	}
+	await sessionSnapshot.refresh(sessionCapabilities);
 
 	const session = new AgentSession({
 		agent,
 		sessionManager,
+		sessionCapabilities,
+		sessionSnapshot,
 		settingsManager,
 		cwd,
 		scopedModels: options.scopedModels,

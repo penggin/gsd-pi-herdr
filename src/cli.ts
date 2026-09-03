@@ -678,7 +678,12 @@ const {
   ModelRegistry,
   SettingsManager,
 } = await loadPiCodingAgentModule()
-const { AgentSessionRuntime, createAgentSession, legacySessionManagerRuntimeFactory } = await loadAgentCoreModule()
+const {
+  AgentSessionRuntime,
+  createAgentSession,
+  legacySessionManagerRuntimeFactory,
+  requireLegacySessionManager,
+} = await loadAgentCoreModule()
 markStartup('loadPiCodingAgent')
 
 // Pi's tool bootstrap can mis-detect already-installed fd/rg on some systems
@@ -777,7 +782,7 @@ markStartup('startupSettings')
 // ---------------------------------------------------------------------------
 if (isPrintMode) {
   await ensureRtkBootstrap()
-  const sessionManager = cliFlags.noSession
+  const preparedSession = cliFlags.noSession
     ? await legacySessionManagerRuntimeFactory.prepare({ kind: 'memory', cwd: process.cwd() })
     : cliFlags.session
       ? await legacySessionManagerRuntimeFactory.prepare({
@@ -790,6 +795,7 @@ if (isPrintMode) {
           cwd: process.cwd(),
           sessionDir: cliFlags.sessionDir,
         })
+  const sessionManager = requireLegacySessionManager(preparedSession)
 
   // Read --append-system-prompt file content (subagent writes agent system prompts to temp files)
   let appendSystemPrompt: string | undefined
@@ -834,6 +840,8 @@ if (isPrintMode) {
     modelRegistry,
     settingsManager,
     sessionManager,
+    sessionCapabilities: preparedSession.capabilities,
+    sessionSnapshot: preparedSession.snapshot,
     resourceLoader,
   })
   markStartup('createAgentSession')
@@ -929,7 +937,7 @@ const projectSessionsDir = getProjectSessionsDir(cwd)
 // subdirectory so /resume can find them.
 migrateLegacyFlatSessions(sessionsDir, projectSessionsDir)
 
-const sessionManager = cliFlags._selectedSessionPath
+const preparedSession = cliFlags._selectedSessionPath
   ? await legacySessionManagerRuntimeFactory.prepare({
       kind: 'open',
       path: cliFlags._selectedSessionPath,
@@ -952,6 +960,7 @@ const sessionManager = cliFlags._selectedSessionPath
           cwd,
           sessionDir: cliFlags.sessionDir ?? projectSessionsDir,
         })
+const sessionManager = requireLegacySessionManager(preparedSession)
 
 exitIfManagedResourcesAreNewer(agentDir)
 initResources(agentDir)
@@ -991,6 +1000,8 @@ const { session, extensionsResult, modelFallbackMessage: interactiveFallbackMsg 
   modelRegistry,
   settingsManager,
   sessionManager,
+  sessionCapabilities: preparedSession.capabilities,
+  sessionSnapshot: preparedSession.snapshot,
   resourceLoader,
 })
 markStartup('createAgentSession')
@@ -999,11 +1010,15 @@ let sessionRuntime: import('@gsd/agent-core').AgentSessionRuntime
 const createInteractiveRuntime = async ({
   cwd: runtimeCwd,
   sessionManager: nextSessionManager,
+  sessionCapabilities: nextSessionCapabilities,
+  sessionSnapshot: nextSessionSnapshot,
   sessionStartEvent,
 }: {
   cwd: string
   agentDir: string
   sessionManager: typeof sessionManager
+  sessionCapabilities?: (typeof preparedSession)['capabilities']
+  sessionSnapshot?: (typeof preparedSession)['snapshot']
   sessionStartEvent?: import('@gsd/pi-coding-agent').SessionStartEvent
 }) => {
   const nextSettingsManager = SettingsManager.create(runtimeCwd, agentDir)
@@ -1035,6 +1050,8 @@ const createInteractiveRuntime = async ({
     modelRegistry,
     settingsManager: nextSettingsManager,
     sessionManager: nextSessionManager,
+    sessionCapabilities: nextSessionCapabilities,
+    sessionSnapshot: nextSessionSnapshot,
     resourceLoader: nextResourceLoader,
     sessionStartEvent,
     model: previousSession.model,

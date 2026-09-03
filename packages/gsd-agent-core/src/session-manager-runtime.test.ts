@@ -4,7 +4,11 @@ import { join } from "node:path";
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import { AgentSessionRuntime } from "./agent-session-runtime.js";
-import { createLegacySessionManagerRuntimeFactory } from "./session-manager-runtime.js";
+import { createAgentSession } from "./sdk.js";
+import {
+	createLegacySessionManagerRuntimeFactory,
+	requireLegacySessionManager,
+} from "./session-manager-runtime.js";
 import { SessionManager } from "@gsd/pi-coding-agent/core/session-manager.js";
 
 describe("production session-manager runtime factory", () => {
@@ -27,7 +31,10 @@ describe("production session-manager runtime factory", () => {
 		const factory = createLegacySessionManagerRuntimeFactory();
 
 		assert.equal(factory.backend, "legacy-v3");
-		const created = await factory.prepare({ kind: "create", cwd: root, sessionDir: sessions });
+		const createdRuntime = await factory.prepare({ kind: "create", cwd: root, sessionDir: sessions });
+		const created = requireLegacySessionManager(createdRuntime);
+		assert.equal(createdRuntime.capabilities.format, "legacy-v3");
+		assert.equal(createdRuntime.snapshot.getSessionId(), created.getSessionId());
 		created.appendMessage({ role: "user", content: "hello", timestamp: Date.now() });
 		created.appendMessage({
 			role: "assistant",
@@ -49,16 +56,40 @@ describe("production session-manager runtime factory", () => {
 
 		const path = created.getSessionFile();
 		assert.ok(path);
-		const opened = await factory.prepare({ kind: "open", path: path!, sessionDir: sessions });
+		const opened = requireLegacySessionManager(await factory.prepare({ kind: "open", path: path!, sessionDir: sessions }));
 		assert.equal(opened.getSessionId(), created.getSessionId());
 		assert.equal(opened.buildSessionContext().messages.length, 2);
 
-		const recent = await factory.prepare({ kind: "continue-recent", cwd: root, sessionDir: sessions });
+		const recent = requireLegacySessionManager(await factory.prepare({ kind: "continue-recent", cwd: root, sessionDir: sessions }));
 		assert.equal(recent.getSessionId(), created.getSessionId());
 
-		const memory = await factory.prepare({ kind: "memory", cwd: root });
+		const memory = requireLegacySessionManager(await factory.prepare({ kind: "memory", cwd: root }));
 		assert.equal(memory.isPersisted(), false);
 		assert.equal(memory.getCwd(), root);
+	});
+
+	it("keeps the prepared read snapshot current through SDK initialization", async () => {
+		const root = makeRoot();
+		const cwd = join(root, "project");
+		const agentDir = join(root, "agent");
+		mkdirSync(cwd, { recursive: true });
+		mkdirSync(agentDir, { recursive: true });
+		const prepared = await createLegacySessionManagerRuntimeFactory().prepare({ kind: "memory", cwd });
+		const manager = requireLegacySessionManager(prepared);
+		const { session } = await createAgentSession({
+			cwd,
+			agentDir,
+			noTools: "all",
+			sessionManager: manager,
+			sessionCapabilities: prepared.capabilities,
+			sessionSnapshot: prepared.snapshot,
+		});
+		try {
+			assert.deepEqual(session.sessionView.getEntries(), manager.getEntries());
+			assert.equal(session.sessionView.getBranch().at(-1)?.type, "thinking_level_change");
+		} finally {
+			session.dispose();
+		}
 	});
 
 	it("rejects harness-v4 input instead of silently creating an empty legacy session", async () => {
@@ -113,10 +144,12 @@ describe("production session-manager runtime factory", () => {
 	it("replaces the owned runtime in teardown-create-rebind order for a new workspace", async () => {
 		const events: string[] = [];
 		const currentManager = SessionManager.inMemory("/current");
-		const nextManager = SessionManager.inMemory("/next");
+		const nextPrepared = await createLegacySessionManagerRuntimeFactory().prepare({ kind: "memory", cwd: "/next" });
+		const nextManager = requireLegacySessionManager(nextPrepared);
 		const current = {
 			sessionFile: undefined,
 			sessionManager: currentManager,
+			sessionView: { getSessionDir: () => "" },
 			extensionRunner: { hasHandlers: () => false },
 			abort: async () => events.push("abort"),
 			drainSessionMutations: async () => events.push("drain"),
@@ -125,16 +158,19 @@ describe("production session-manager runtime factory", () => {
 		const next = {
 			...current,
 			sessionManager: nextManager,
+			sessionView: nextPrepared.snapshot,
 			abort: async () => {},
 			dispose: () => {},
 		};
 		const runtime = new AgentSessionRuntime(
 			current as never,
 			{ cwd: "/current", agentDir: "/agent" } as never,
-			async ({ cwd, sessionManager }) => {
+			async ({ cwd, sessionManager, sessionCapabilities, sessionSnapshot }) => {
 				events.push("create-runtime");
 				assert.equal(cwd, "/next");
 				assert.equal(sessionManager, nextManager);
+				assert.equal(sessionCapabilities, nextPrepared.capabilities);
+				assert.equal(sessionSnapshot, nextPrepared.snapshot);
 				return {
 					session: next,
 					services: { cwd, agentDir: "/agent", diagnostics: [] },
@@ -149,7 +185,7 @@ describe("production session-manager runtime factory", () => {
 				prepare: async (target) => {
 					events.push("prepare");
 					assert.deepEqual(target, { kind: "create", cwd: "/next", sessionDir: "" });
-					return nextManager;
+					return nextPrepared;
 				},
 			},
 		);

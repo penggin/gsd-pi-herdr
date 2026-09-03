@@ -2,7 +2,7 @@
 
 Date: 2026-09-03
 
-Status: P3.0–P3.4, P3.5a–P3.5b, and P3.5c1–P3.5c2a complete; P3.5c runtime adoption in progress; no v4 cutover
+Status: P3.0–P3.4, P3.5a–P3.5b, and P3.5c1–P3.5c3 complete; P3.5c construction semantics in progress; no v4 cutover
 
 Upstream reference: `refs/pi-upstream/v0.84.4`
 
@@ -242,6 +242,22 @@ normal appends update it incrementally while tree/name/label changes refresh the
 whole projection. Legacy new/open/fork construction surfaces still require
 conversion. The only production backend remains `legacy-v3`; no v4 preference,
 write cutover, or automatic migration is exposed.
+
+P3.5c3 replaces bare `SessionManager` factory results with one coherently
+prepared runtime object containing the selected backend identity, awaitable
+capability adapter, synchronous read snapshot, and a transitional legacy handle.
+CLI print/JSON-worker and interactive startup pass the whole prepared bundle
+into the SDK, and `/new`, `/resume`, `/fork`, and import replacement paths keep
+that bundle intact through prepare → teardown → create → rebind. SDK restoration
+and initial model/thinking persistence use the selected capability adapter and
+refresh the same snapshot before publishing the `AgentSession`. The legacy
+handle remains required for construction/fork operations that have not yet been
+expressed as version-neutral capabilities, so harness-v4 remains fail-closed.
+
+Next: add version-neutral construction and fork operations to the runtime
+factory/capability boundary, remove replacement semantics' dependency on the
+transitional legacy handle, then run the complete CLI/print/JSON/headless parity
+matrix. Do not remove the harness-v4 guard until that matrix passes.
 
 ### P3.6 — Integrate GSD, web, and Assessment Gates
 

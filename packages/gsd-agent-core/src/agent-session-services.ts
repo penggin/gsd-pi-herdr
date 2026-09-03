@@ -10,6 +10,7 @@ import { DefaultResourceLoader, type DefaultResourceLoaderOptions, type Resource
 import { type CreateAgentSessionOptions, type CreateAgentSessionResult, createAgentSession } from "./sdk.js";
 import type { SessionManager } from "@gsd/pi-coding-agent/core/session-manager.js";
 import { SettingsManager } from "@gsd/pi-coding-agent/core/settings-manager.js";
+import type { SessionCapabilityAdapter, SessionCapabilityReadSnapshot } from "./session-capability-adapter.js";
 
 /**
  * Non-fatal issues collected while creating services or sessions.
@@ -49,6 +50,8 @@ export interface CreateAgentSessionServicesOptions {
 export interface CreateAgentSessionFromServicesOptions {
 	services: AgentSessionServices;
 	sessionManager: SessionManager;
+	sessionCapabilities?: SessionCapabilityAdapter;
+	sessionSnapshot?: SessionCapabilityReadSnapshot;
 	sessionStartEvent?: SessionStartEvent;
 	model?: Model<any>;
 	thinkingLevel?: ThinkingLevel;
@@ -188,6 +191,8 @@ export async function createAgentSessionFromServices(
 		modelRegistry: options.services.modelRegistry,
 		resourceLoader: options.services.resourceLoader,
 		sessionManager: options.sessionManager,
+		sessionCapabilities: options.sessionCapabilities,
+		sessionSnapshot: options.sessionSnapshot,
 		model: options.model,
 		thinkingLevel: options.thinkingLevel,
 		scopedModels: options.scopedModels,
