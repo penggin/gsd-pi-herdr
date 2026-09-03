@@ -3174,6 +3174,29 @@ this session does not merge, push, tag, or publish.
   whenever native source changes before remote promotion; do not reintroduce
   Cursor, Gemini, or Antigravity work under the current provider scope.
 
+### 2026-09-03 — Automated Pi upstream freshness gate
+
+- Re-ran the read-only upstream audit before selecting more work. Stable remains
+  `v0.84.4` at `b79e4cc834970cca69daebffab7df1da7d1e52c4` and main remains
+  `4e69b0c28060f0f02fbe38bfa7c21a2e2eb25057`; no unreviewed Codex, GLM,
+  session, or common runtime change exists at this checkpoint.
+- Closed an operational gap in the freshness policy: the fail-closed audit was
+  only a documented local command. Added a read-only GitHub workflow that runs
+  weekly, by manual dispatch, and when the audit contract changes in a pull
+  request. It has only `contents: read`, uses the existing bounded
+  `git ls-remote` implementation, and cannot fetch, vendor, update the baseline,
+  open an issue, or mutate upstream.
+- A moved stable/main ref still exits nonzero. Success, drift, and network-error
+  runs all retain the Markdown report and stderr diagnostic for 30 days and add
+  the evidence to the Actions job summary.
+- Focused audit/workflow/runner-contract tests pass **15/15**, the live audit is
+  current, and `git diff --check` passes. The dedicated
+  `test:pi-upstream-audit` command now covers both parser and workflow policy.
+- Exact next task: commit and push this workflow, dispatch it once from the
+  feature branch, and require a successful live Actions run with retained audit
+  evidence. After that, implement no speculative provider work: only verified
+  Codex/GLM failures or a freshness alert should trigger the next runtime slice.
+
 ## 11. Working-session protocol
 
 For every Herdr session:

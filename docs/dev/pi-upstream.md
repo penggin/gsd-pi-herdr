@@ -16,6 +16,7 @@ GSD vendors the [earendil-works/pi](https://github.com/earendil-works/pi) monore
 | Boundary | `npm run verify:pi-boundary` (also in `scripts/ci-fast-gates.sh`) |
 | Patch inventory CI | `npm run verify:pi-patches` |
 | Read-only freshness audit | `pnpm run audit:pi-upstream` |
+| Automated freshness audit | `.github/workflows/pi-upstream-audit.yml` (weekly, manual, and contract PRs) |
 | Claude tool schemas | `npm run test:pi-claude-schemas` |
 
 Phase 2 used **GSD shim restoration** (incremental compat on upstream v0.75.5 APIs) rather than a full upstream modes sync. `@gsd/agent-modes` was migrated from the old GSD fork and reconciled via shims in pi-tui, pi-coding-agent, pi-ai, and agent-core.
@@ -40,6 +41,13 @@ concepts separate: updating the audit baseline must never vendor or overwrite
 downstream code. Run `pnpm run audit:pi-upstream`; it performs only
 `git ls-remote`, reports `current` when both refs match, and exits 2 when a new
 stable release or main commit requires review.
+
+The downstream workflow runs the same fail-closed check every Wednesday and
+can also be dispatched manually. It has only `contents: read` permission and
+retains the report and diagnostics for 30 days whether the audit passes,
+detects a moved ref, or encounters a network error. A failed freshness run is
+a request for read-only review; it never fetches, vendors, opens an issue, or
+updates the reviewed baseline automatically.
 
 `patchAllowlist` in the same JSON file lists every path GSD may diverge from upstream under `packages/pi-*`. CI (`verify:pi-patches`) fails if you change other pi-* files without updating the allowlist. By default the script checks **working tree** changes only; set `VERIFY_PI_PATCHES_BRANCH=1` to include the full branch diff vs main (vendor bumps).
 
