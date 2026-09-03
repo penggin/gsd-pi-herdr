@@ -233,9 +233,13 @@ use the synchronous extension-facing API through a new mutation drain: legacy
 writes begin immediately, v4 writes serialize, and command/input/Agent/prompt
 boundaries await and surface any recorded durability failure. This is a queue
 over the selected adapter, not a second writer. Navigation query/export and
-session replacement surfaces still require conversion. The only production
-backend remains `legacy-v3`; no v4 preference, write cutover, or automatic
-migration is exposed.
+tree navigation now uses the capability contract exclusively for leaf/entry
+queries, branch-summary publication, labels, movement, and context rebuilding.
+Session transition and runtime teardown drain pending extension mutations before
+invalidating the outgoing session. Synchronous UI query/export and legacy
+new/open/fork construction surfaces still require conversion. The only
+production backend remains `legacy-v3`; no v4 preference, write cutover, or
+automatic migration is exposed.
 
 ### P3.6 — Integrate GSD, web, and Assessment Gates
 

@@ -11,12 +11,11 @@ import type {
 	SessionBeforeTreeResult,
 	TreePreparation,
 } from "@gsd/pi-coding-agent/core/extensions/index.js";
-import type { BranchSummaryEntry, SessionManager } from "@gsd/pi-coding-agent/core/session-manager.js";
+import type { BranchSummaryEntry, SessionEntry, SessionManager } from "@gsd/pi-coding-agent/core/session-manager.js";
 import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader } from "@gsd/pi-coding-agent/core/session-manager.js";
 import { theme } from "@gsd/pi-coding-agent/theme/theme.js";
 import {
 	calculateContextTokens,
-	collectEntriesForBranchSummary,
 	estimateContextTokens,
 	generateBranchSummary,
 } from "../compaction/index.js";
@@ -32,6 +31,35 @@ interface UsageTotals {
 	cacheRead: number;
 	cacheWrite: number;
 	cost: number;
+}
+
+async function collectCapabilityEntriesForBranchSummary(
+	host: AgentSessionHost,
+	oldLeafId: string | null,
+	targetId: string,
+): Promise<{ entries: SessionEntry[]; commonAncestorId: string | null }> {
+	if (!oldLeafId) return { entries: [], commonAncestorId: null };
+
+	const oldPath = new Set((await host.sessionCapabilities.getBranch(oldLeafId)).map((entry) => entry.id));
+	const targetPath = await host.sessionCapabilities.getBranch(targetId);
+	let commonAncestorId: string | null = null;
+	for (let index = targetPath.length - 1; index >= 0; index--) {
+		if (oldPath.has(targetPath[index].id)) {
+			commonAncestorId = targetPath[index].id;
+			break;
+		}
+	}
+
+	const entries: SessionEntry[] = [];
+	let current: string | null = oldLeafId;
+	while (current && current !== commonAncestorId) {
+		const entry = await host.sessionCapabilities.getEntry(current);
+		if (!entry) break;
+		entries.push(entry);
+		current = entry.parentId;
+	}
+	entries.reverse();
+	return { entries, commonAncestorId };
 }
 
 function addUsage(totals: UsageTotals, usage: Usage): void {
@@ -54,9 +82,11 @@ export class AgentSessionNavigationModule {
 		if (!this.host.agent.state.isStreaming) {
 			this.host.abortRetry();
 			await this.host.agent.waitForIdle();
+			await this.host.drainSessionMutations();
 			return;
 		}
 		await this.host.abort();
+		await this.host.drainSessionMutations();
 	}
 
 	async newSession(options?: {
@@ -265,7 +295,8 @@ export class AgentSessionNavigationModule {
 		targetId: string,
 		options: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string } = {},
 	): Promise<{ editorText?: string; cancelled: boolean; aborted?: boolean; summaryEntry?: BranchSummaryEntry }> {
-		const oldLeafId = this.host.sessionManager.getLeafId();
+		await this.host.drainSessionMutations();
+		const oldLeafId = await this.host.sessionCapabilities.getLeafId();
 
 		if (targetId === oldLeafId) {
 			return { cancelled: false };
@@ -275,13 +306,13 @@ export class AgentSessionNavigationModule {
 			throw new Error("No model available for summarization");
 		}
 
-		const targetEntry = this.host.sessionManager.getEntry(targetId);
+		const targetEntry = await this.host.sessionCapabilities.getEntry(targetId);
 		if (!targetEntry) {
 			throw new Error(`Entry ${targetId} not found`);
 		}
 
-		const { entries: entriesToSummarize, commonAncestorId } = collectEntriesForBranchSummary(
-			this.host.sessionManager,
+		const { entries: entriesToSummarize, commonAncestorId } = await collectCapabilityEntriesForBranchSummary(
+			this.host,
 			oldLeafId,
 			targetId,
 		);
@@ -390,34 +421,32 @@ export class AgentSessionNavigationModule {
 
 			let summaryEntry: BranchSummaryEntry | undefined;
 			if (summaryText) {
-				const summaryId = this.host.sessionManager.branchWithSummary(
-					newLeafId,
-					summaryText,
-					summaryDetails,
-					fromExtension,
-					summaryUsage,
-				);
-				summaryEntry = this.host.sessionManager.getEntry(summaryId) as BranchSummaryEntry;
+				const summaryId = await this.host.sessionCapabilities.moveTo(newLeafId, {
+					summary: summaryText,
+					details: summaryDetails,
+					fromHook: fromExtension,
+					usage: summaryUsage,
+				});
+				if (!summaryId) throw new Error("Session backend did not publish the branch summary entry");
+				summaryEntry = (await this.host.sessionCapabilities.getEntry(summaryId)) as BranchSummaryEntry;
 
 				if (label) {
-					this.host.sessionManager.appendLabelChange(summaryId, label);
+					await this.host.sessionCapabilities.appendLabel(summaryId, label);
 				}
-			} else if (newLeafId === null) {
-				this.host.sessionManager.resetLeaf();
 			} else {
-				this.host.sessionManager.branch(newLeafId);
+				await this.host.sessionCapabilities.moveTo(newLeafId);
 			}
 
 			if (label && !summaryText) {
-				this.host.sessionManager.appendLabelChange(targetId, label);
+				await this.host.sessionCapabilities.appendLabel(targetId, label);
 			}
 
-			const sessionContext = this.host.sessionManager.buildSessionContext();
+			const sessionContext = await this.host.sessionCapabilities.buildSessionContext();
 			this.host.agent.state.messages = sessionContext.messages;
 
 			await this.host._extensionRunner.emit({
 				type: "session_tree",
-				newLeafId: this.host.sessionManager.getLeafId(),
+				newLeafId: await this.host.sessionCapabilities.getLeafId(),
 				oldLeafId,
 				summaryEntry,
 				fromExtension: summaryText ? fromExtension : undefined,

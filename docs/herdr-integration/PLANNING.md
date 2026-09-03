@@ -2394,6 +2394,20 @@ this session does not merge, push, tag, or publish.
   capability contract, add a coherent snapshot for synchronous UI/extension
   reads, and add an awaited disposal/replacement drain. Only after those paths
   and CLI/headless parity pass may the AgentSession harness-v4 guard be removed.
+- Converted tree navigation to the capability contract. Both legacy-v3 and
+  harness-v4 now traverse old/target branches, publish optional summaries and
+  labels, move the leaf, and rebuild context through one selected adapter; a
+  focused cross-format navigation test passes. Harness-only lane records remain
+  hidden from the public entry view.
+- Session transitions and `AgentSessionRuntime` teardown now drain mutations
+  emitted by shutdown or other synchronous extension callbacks before the old
+  runtime is invalidated. The replacement-order regression explicitly proves
+  abort → drain → invalidate → dispose → create → rebind. Focused navigation,
+  capability, and runtime tests pass **11/11**, and agent-core build passes.
+- Exact next task: introduce the coherent read snapshot needed by synchronous
+  footer, selector, stats, export, and extension getter APIs; then migrate
+  new/open/fork construction to return a capability-backed runtime object. Keep
+  harness-v4 fail-closed until those reads and CLI/headless parity are proven.
 
 ## 11. Working-session protocol
 

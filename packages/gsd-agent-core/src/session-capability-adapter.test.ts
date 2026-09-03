@@ -13,6 +13,7 @@ import {
 	type SessionCapabilityAdapter,
 	SessionCapabilityMutationDrain,
 } from "./session-capability-adapter.js";
+import { AgentSessionNavigationModule } from "./session/agent-session-navigation.js";
 
 function normalizeValue(value: unknown): unknown {
 	if (Array.isArray(value)) return value.map(normalizeValue);
@@ -50,6 +51,28 @@ async function exercise(adapter: SessionCapabilityAdapter): Promise<{
 	};
 }
 
+async function exerciseNavigation(adapter: SessionCapabilityAdapter): Promise<void> {
+	await adapter.appendMessage({ role: "user", content: "root", timestamp: 1 });
+	const targetId = await adapter.appendModelChange("test-provider", "test-model");
+	await adapter.appendMessage({ role: "user", content: "old branch", timestamp: 2 });
+	const host = {
+		sessionCapabilities: adapter,
+		drainSessionMutations: async () => {},
+		model: undefined,
+		agent: { state: { messages: [] } },
+		_extensionRunner: { hasHandlers: () => false, emit: async () => {} },
+		_branchSummaryAbortController: undefined,
+	};
+
+	const result = await new AgentSessionNavigationModule(host as never).navigateTree(targetId);
+	assert.deepEqual(result, { cancelled: false, summaryEntry: undefined, editorText: undefined });
+	assert.equal(await adapter.getLeafId(), targetId);
+	assert.deepEqual((await adapter.buildSessionContext()).model, {
+		provider: "test-provider",
+		modelId: "test-model",
+	});
+}
+
 describe("session capability adapter", () => {
 	it("preserves branch, context, label, and name semantics across legacy-v3 and harness-v4", async () => {
 		const legacy = new LegacyV3SessionCapabilityAdapter(SessionManager.inMemory("/workspace"));
@@ -58,6 +81,13 @@ describe("session capability adapter", () => {
 		const v4 = await createHarnessV4SessionCapabilityAdapter(harness);
 
 		assert.deepEqual(await exercise(v4), await exercise(legacy));
+	});
+
+	it("navigates the same capability tree without touching a legacy manager", async () => {
+		await exerciseNavigation(new LegacyV3SessionCapabilityAdapter(SessionManager.inMemory("/workspace")));
+		const backend = new V4MemorySessionRepository().create({ id: "v4-navigation" });
+		const harness = new Session(new V4HarnessSessionStorageAdapter(backend));
+		await exerciseNavigation(await createHarnessV4SessionCapabilityAdapter(harness));
 	});
 
 	it("reports parent references without conflating legacy paths and v4 session IDs", async () => {

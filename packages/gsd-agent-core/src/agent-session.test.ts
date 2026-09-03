@@ -366,6 +366,7 @@ describe("AgentSessionNavigationModule", () => {
         reset: () => {},
       },
       sessionManager,
+      drainSessionMutations: async () => {},
       abortRetry: () => {},
       abort: async () => {},
       disconnectFromAgent: () => {},

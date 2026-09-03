@@ -119,6 +119,7 @@ describe("production session-manager runtime factory", () => {
 			sessionManager: currentManager,
 			extensionRunner: { hasHandlers: () => false },
 			abort: async () => events.push("abort"),
+			drainSessionMutations: async () => events.push("drain"),
 			dispose: () => events.push("dispose"),
 		};
 		const next = {
@@ -163,6 +164,14 @@ describe("production session-manager runtime factory", () => {
 		assert.deepEqual(result, { cancelled: false });
 		assert.equal(runtime.session, next);
 		assert.equal(runtime.cwd, "/next");
-		assert.deepEqual(events, ["prepare", "abort", "before-invalidate", "dispose", "create-runtime", "rebind"]);
+		assert.deepEqual(events, [
+			"prepare",
+			"abort",
+			"drain",
+			"before-invalidate",
+			"dispose",
+			"create-runtime",
+			"rebind",
+		]);
 	});
 });
