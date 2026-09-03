@@ -3038,6 +3038,20 @@ this session does not merge, push, tag, or publish.
   capability-restricted guarded-workflow path and tests. Do not treat
   `tool_execution_start` as enforcement and do not broaden external CLI access
   speculatively.
+- Committed and pushed the shared policy slice as
+  `b520707a8f188ec8718588c921f34e09bd1b0e88`. The clean remote artifact is
+  `/srv/penglab/gsd-runs/artifacts/gsd-pi-herdr-1.16.2-b520707a-59073642.tgz`
+  (`sha256:59073642cf8d5f14ad8dbc111ab4ea2cb0d99d5ae242eefcbfbb7e55c88877d3`),
+  installed at immutable prefix
+  `/srv/penglab/gsd-runs/toolchains/gsd-pi-herdr-1.16.2-b520707a-59073642`.
+- Remote validation started from `--ignore-scripts` with both the native and
+  `@opengsd/contracts` links absent. The first public launch repaired all ten
+  canonical workspace links; the verified Linux x64 addon loads natively, and
+  the installed Claude SDK hook denied a `Write` during queue mode before tool
+  execution with the canonical queue-policy reason. The shared `gsd` and
+  `gsd-mcp-server` links were switched only after those checks. The prior
+  `d3a4868c-79eeb73d` prefix remains intact for rollback; no running process was
+  killed or restarted and no local global installation changed.
 
 ## 11. Working-session protocol
 
