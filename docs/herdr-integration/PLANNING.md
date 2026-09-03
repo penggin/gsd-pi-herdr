@@ -3344,6 +3344,65 @@ this session does not merge, push, tag, or publish.
   projections directly; if a distinct failure appears, preserve its new
   evidence and diagnose that failure independently.
 
+### 2026-09-03 — Retry-closeout session replacement completion
+
+- Followed the live `M013/S03/T08` retry through five distinct host-side
+  failures instead of treating the first verification classifier repair as the
+  whole incident. The executor, two 48-pass/4-skip browser matrices, and the
+  final 46-pass focused pin run were already sound. Subsequent evidence showed
+  that Pi correctly invalidated the initiating extension context after each
+  `newSession`, while GSD still retained parts of that old session boundary.
+- Commit `6556b7419` made fresh replacement contexts flow through the long-lived
+  auto iteration. Commit `7a5d462df` restored a unit's workflow tool surface
+  from the replacement registry and fails closed before model dispatch when a
+  required operation is absent. Commit `612020ff8` fixed the Pi CLI replacement
+  factory: `createAgentSession({tools})` is a permanent registry allowlist, so
+  the outgoing active tool names are now reapplied only after the full new
+  registry is created. Commit `ab230d2cf` centralized the native equivalents
+  for canonical workflow operations (`capture_thought`, `memory_query`, and
+  `gsd_graph`). The replacement executor then invoked both `CAPTURE THOUGHT`
+  and `COMPLETE TASK`, staged T08, and passed the 4 ms post-execution gate.
+- The remaining live failure occurred after that successful closeout:
+  `AutoOrchestrator` still held its constructor-time `ctx/pi`, and the detached
+  rejection handler also notified through the initial command context. The
+  20:05 crash log points to the latter at installed `auto.js:359`; the persisted
+  wedge recorded the same stale-context failure during orchestration. Commit
+  `7dc143e14` adds an explicit orchestrator host-handle rebind without resetting
+  its transition/liveness state and makes detached reporting/cleanup use the
+  latest `s.cmdCtx`. A dedicated replacement-session regression protects the
+  handoff.
+- Focused replacement/detached/orchestrator tests pass **72/72**. The combined
+  auto-loop, post-unit retry bridge, replacement, and detached suite passes
+  **164/164**. The prior focused gates remain green: auto-loop **138/138**,
+  task-recovery/doctor **39/39**, agent-core **170/170**, CLI **1/1**, workflow
+  phase matrix **139/139**, token/tool gating **30/30**, and changed-source
+  **277/277** for the preceding registry/equivalence slice.
+  `typecheck:extensions`, `build:core`, `validate-pack`, and `git diff --check`
+  pass; package validation ends with **Package is installable. Safe to
+  publish.**
+- Installed clean local release candidate `7dc143e14` (`dirty=false`) and
+  resumed persisted wedge `W-2a506e46` only after `/gsd doctor` reported 0
+  issues. Canonical state had already advanced T08, so resume did not rerun it:
+  the root immediately entered `M013/S03/T09` and remained healthy in
+  auto-mode with three running workers. No crash log newer than the original
+  20:05 `pid-31622.log` appeared during the observation window.
+- Deployed the same tarball to the remote standing runtime as
+  `/srv/penglab/gsd-runs/artifacts/gsd-pi-herdr-1.16.2-7dc143e1-92607ffc.tgz`
+  (`sha256:92607ffcd55d624df42d68653d4a1ba1fb8f333f896b356ed7128a4f05de0571`)
+  and immutable prefix
+  `/srv/penglab/gsd-runs/toolchains/gsd-pi-herdr-1.16.2-7dc143e1-92607ffc`.
+  Its Linux x64 addon retains SHA-256
+  `b1d5b33b59cc1578eed207544a4020699f0c9d123c0247481df1914002b51da7`,
+  loads natively, and exposes 98 addon exports. Shared `gsd` and
+  `gsd-mcp-server` links were switched atomically; remote PID 948361 was not
+  restarted and the prior `6556b741-f18a869e` prefix remains rollback-ready.
+- Residual risk: T09 was still executing when this repair was closed, so this
+  evidence proves recovery, non-replay of T08, and next-unit dispatch—not T09's
+  eventual product result. Exact next task is to observe T09's ordinary
+  completion and treat any new provider, verification, or application failure
+  as a separate incident. A new stale-context crash after `7dc143e14` is the
+  only signal that should reopen this session-replacement diagnosis.
+
 ## 11. Working-session protocol
 
 For every Herdr session:

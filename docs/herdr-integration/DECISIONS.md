@@ -848,6 +848,16 @@ without deriving `tools` from the outgoing session, then reapplies the outgoing
 active names with `setActiveToolsByName` before rebinding. Unit scoping remains
 an active-surface concern and must never narrow the next runtime's registry.
 
+Rebinding also includes every stateful orchestration object that retains host
+handles. In particular, `AutoOrchestrator` preserves its workflow state while
+replacing its `ctx` and `pi` fields during the same handoff; recreating the
+orchestrator would discard transition and liveness state, while leaving its
+original handles makes post-unit verification fail after an otherwise
+successful executor turn. Detached failure reporting and cleanup must likewise
+resolve the latest command context from the auto session instead of capturing
+the command-entry context, so error handling cannot mask the originating error
+with a second stale-context failure.
+
 This contract applies to auto units, manual phase dispatch, hook dispatch, and
 workspace re-rooting. Compatibility with a host that does not invoke
 `withSession` is retained only for legacy non-invalidating test/host seams; the
