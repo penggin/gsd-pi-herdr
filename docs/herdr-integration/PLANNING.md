@@ -2294,6 +2294,27 @@ this session does not merge, push, tag, or publish.
   then begin P3.5c by implementing a functional version-neutral manager adapter
   over the validated async v4 stores. Do not expose `harness-v4` until the full
   legacy manager capability contract passes.
+- P3.5b and packaging hardening were committed as `93afa4b0e` and `494e6ae20`
+  and pushed to `origin/feature/pi-v084-startup-performance`. Final focused
+  **8/8**, packaging-contract **10/10**, changed-source **27/27**, extension
+  typecheck, agent-core/agent-modes builds, complete package matrix,
+  `build:core`, `validate-pack`, assessment-pack validation, and
+  `git diff --check` all pass. `validate-pack` ends with **Package is
+  installable. Safe to publish.**
+- Built a clean release-candidate tarball from `494e6ae20`: SHA-256
+  `b95c84cb301c3aab07b95220d635da395cd92528ad6cc04f969a60db3c8b21ca`,
+  about **60 MiB** compressed, with clean commit/ref metadata. Remote deployment
+  could not start because three bounded SSH attempts to the configured
+  `penglab` endpoint (`192.168.0.6:22`) timed out; the current Mac route is via
+  `172.25.80.1` and the private host does not answer ICMP. No shared remote link,
+  existing prefix, running process, or Mac installation was changed.
+- Exact next operational task: restore LAN/VPN reachability to `penglab`, upload
+  the verified `494e6ae20-b95c84cb` candidate, install it under a new immutable
+  `/srv/penglab/gsd-runs/toolchains` prefix, verify the Linux native addon and
+  build identity, then atomically switch only the shared remote links. In
+  parallel, P3.5c begins with the explicit async mutation/read capability
+  contract needed to adapt the validated v4 repository without a duplicate
+  synchronous writer.
 
 ## 11. Working-session protocol
 
