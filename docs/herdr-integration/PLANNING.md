@@ -3091,6 +3091,40 @@ this session does not merge, push, tag, or publish.
   verified OpenCodex provider, and prove an installed GSD search turn plus
   unchanged GLM behavior before switching the shared remote link. Do not
   install locally.
+- Committed and pushed the capability slice as
+  `9e09e779f155a9531979e823188304ab70f35f20`. The clean release-candidate
+  artifact is
+  `/srv/penglab/gsd-runs/artifacts/gsd-pi-herdr-1.16.2-9e09e779-426cc709.tgz`
+  (`sha256:426cc7091d5eb6e3028830630c30d63e6837e7f27f0139d828bf85c6cd9f0915`),
+  installed at immutable prefix
+  `/srv/penglab/gsd-runs/toolchains/gsd-pi-herdr-1.16.2-9e09e779-426cc709`.
+- The local-platform tarball carried only the Darwin release addon. Native
+  source did not change from the prior deployed commit, so the candidate was
+  supplemented with the prior verified Linux x64 addon at SHA-256
+  `72e5d00f1f15121bd8b33156a050c41588d0943d6dfe0194940e6d40a874f166`.
+  The candidate then reported `nativeLoaded=true`; no native fallback warning
+  appeared in either installed model smoke. This is an operator deployment
+  detail, not a source or package claim.
+- Candidate first launch repaired all ten internal workspace links. An
+  isolated copied model catalog with the new flag produced one
+  `serverToolUse`, one `webSearchResult`, and exact final
+  `SEARCH_ROUTE_OK 2026-09-03`; GLM independently returned `GLM_ROUTE_OK`.
+- After those gates passed, atomically switched the shared remote `gsd` and
+  `gsd-mcp-server` links, backed up the mode-600 model catalog as
+  `models.json.pre-9e09e779`, and set the verified OpenCodex provider's
+  `compat.nativeWebSearch` to `true`. The global installed-runtime repeat
+  produced the same search evidence and exact final response, retained GLM
+  behavior, reported the clean commit/build identity, and emitted no native
+  fallback warning. Sanitized evidence is under
+  `/srv/penglab/gsd-runs/private/native-search-global-9e09e779`.
+- The preceding `b520707a-59073642` prefix and model-catalog backup remain
+  intact for rollback. No running GSD or Herdr process was killed or restarted,
+  and no local global installation changed.
+- Exact next task: treat hosted-search support as proven only for this exact
+  OpenCodex route and keep all other compatible proxies fail-closed. Re-run the
+  live protocol probe after an OpenCodex upgrade. The next code change should
+  respond to a concrete Codex/GLM production failure or a moved upstream audit
+  ref; Cursor, Gemini, and Antigravity remain out of scope.
 
 ## 11. Working-session protocol
 
