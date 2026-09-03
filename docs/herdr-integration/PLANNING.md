@@ -3403,6 +3403,30 @@ this session does not merge, push, tag, or publish.
   as a separate incident. A new stale-context crash after `7dc143e14` is the
   only signal that should reopen this session-replacement diagnosis.
 
+### 2026-09-04 — Remaining replacement-session owners diagnosed and repaired
+
+- The post-`7dc143e14` recurrence was not an old installed artifact. Two clean
+  post-install processes crashed exactly at the 20-minute soft timeout through
+  `auto-timers.js`, and the final run completed T09 iteration 1 before failing
+  iteration 2 prior to its `iteration-start` event. Pi's guarded getters and
+  the compiled crash lines localized the remaining stale owners to supervision
+  timer closures and `buildLoopDeps.loadEffectiveGSDPreferences`; detached UI
+  reporting could then mask either originating rejection.
+- Supervision callbacks now resolve the current context/API from `s.cmdCtx`
+  when they fire, loop preferences resolve that same live owner when invoked,
+  and detached failure reporting logs durably before attempting a best-effort
+  UI notification. Behavior-level regressions make the original context throw
+  after a replacement and cover all three boundaries.
+- Focused replacement/timer/detached tests pass **20/20** and
+  `typecheck:extensions` passes. Three isolated manual mutants were killed:
+  restoring the captured timer API, restoring the captured loop context, or
+  rethrowing a stale notification each makes its corresponding regression fail.
+- Exact next task: run the broader changed-source/build/package gates, install
+  a clean immutable local candidate, reload the existing target root, and
+  resume wedge `W-2a506e46`. Require T09 to pass both the 20-minute supervision
+  boundary and its next-iteration prologue without another stale-context crash
+  before archiving the debug session.
+
 ## 11. Working-session protocol
 
 For every Herdr session:
