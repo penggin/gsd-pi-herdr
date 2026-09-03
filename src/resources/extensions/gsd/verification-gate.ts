@@ -586,7 +586,7 @@ function appendStderrWarning(stderr: string, warning: string | null): string {
  */
 const KNOWN_COMMAND_PREFIXES = new Set([
   "npm", "npx", "yarn", "pnpm", "bun", "bunx", "deno",
-  "uv",
+  "uv", "rtk",
   "node", "ts-node", "tsx", "tsc",
   "sh", "bash", "zsh",
   "echo", "cat", "ls", "test", "true", "false", "pwd", "env",
@@ -600,6 +600,13 @@ const KNOWN_COMMAND_PREFIXES = new Set([
   "grep", "find", "diff", "wc", "sort", "head", "tail",
 ]);
 
+const BARE_PROSE_COMMAND_JOIN_RE = new RegExp(
+  `\\bplus\\s+(?:${[...KNOWN_COMMAND_PREFIXES]
+    .map((prefix) => prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("|")}|(?:\\.{0,2}/))\\b`,
+  "i",
+);
+
 /**
  * English words that never appear as a shell sub-command or operand but are
  * common in descriptive prose. Deliberately excludes:
@@ -612,6 +619,76 @@ const PROSE_MARKER_WORDS = new Set([
   "returns", "contains", "confirms", "exists", "piped", "authored",
   "that", "which", "whether", "there", "its", "their",
 ]);
+
+/**
+ * Return only text that is outside shell quotes. Quoted command arguments may
+ * legitimately contain acceptance-language examples (for example a `node -e`
+ * script that prints "plus rtk"), so prose detection must not inspect them.
+ */
+function unquotedShellText(value: string): string {
+  let result = "";
+  let inSingle = false;
+  let inDouble = false;
+  let escaped = false;
+
+  for (const ch of value) {
+    if (escaped) {
+      result += " ";
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\" && !inSingle) {
+      result += " ";
+      escaped = true;
+      continue;
+    }
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle;
+      result += " ";
+      continue;
+    }
+    if (ch === '"' && !inSingle) {
+      inDouble = !inDouble;
+      result += " ";
+      continue;
+    }
+    result += inSingle || inDouble ? " " : ch;
+  }
+
+  return result;
+}
+
+/**
+ * Detect planner-written acceptance prose appended to a command-shaped verify.
+ * This is intentionally phrase-based rather than a broad token denylist: words
+ * such as `plus`, `green`, and `times` can be valid command operands on their
+ * own. The phrases below describe repetition/environment/result assertions and
+ * the bare English connector used to join a second command in the production
+ * retry-closeout failure.
+ */
+function readsAsMixedCommandAndAcceptanceProse(candidate: string): boolean {
+  const unquoted = unquotedShellText(candidate);
+
+  return (
+    /\b(?:once|twice)\s+on\s+(?:an?\s+)?(?:quiet|clean|fresh)\s+machine\b/i.test(unquoted) ||
+    /\ball\s+\d+\s+(?:tests?\s+)?green\b/i.test(unquoted) ||
+    /\bboth\s+times\b/i.test(unquoted) ||
+    BARE_PROSE_COMMAND_JOIN_RE.test(unquoted)
+  );
+}
+
+function startsWithCommandShape(candidate: string): boolean {
+  const tokens = candidate.trim().split(/\s+/);
+  const effectiveTokens = tokens[0] === "!" ? tokens.slice(1) : tokens;
+  const firstToken = effectiveTokens[0] ?? "";
+  return (
+    KNOWN_COMMAND_PREFIXES.has(firstToken) ||
+    firstToken.startsWith("/") ||
+    firstToken.startsWith("./") ||
+    firstToken.startsWith("../") ||
+    effectiveTokens.some((token) => token.startsWith("-"))
+  );
+}
 
 /**
  * Does a known-command-prefixed string read as prose rather than a command?
@@ -648,6 +725,11 @@ function readsAsProseAfterCommandWord(tokens: string[]): boolean {
 export function isLikelyCommand(cmd: string): boolean {
   const trimmed = cmd.trim();
   if (!trimmed) return false;
+
+  // A runnable prefix does not make an acceptance sentence executable. This
+  // must run before the flag heuristic because mixed planner prose often
+  // begins with a real command and contains real flags (#retry-closeout).
+  if (readsAsMixedCommandAndAcceptanceProse(trimmed)) return false;
 
   const tokens = trimmed.split(/\s+/);
   const firstToken = tokens[0];
@@ -731,6 +813,19 @@ export function assertVerifyIsShellCheckable(verify: string): void {
     throw new Error(
       `verify must be a shell command, not a GSD tool invocation: "${toolVerifyLine}" — ` +
       "use a shell-checkable command, or describe the tool-verified outcome as prose",
+    );
+  }
+
+  const mixedVerifyLine = splitUnquotedLines(verify.replace(ITEM_WRAPPER_RE, "\n"))
+    .map((line) => line.replace(INTERPRETER_PREFIX_RE, "").trim())
+    .filter(Boolean)
+    .find((line) =>
+      startsWithCommandShape(line) && readsAsMixedCommandAndAcceptanceProse(line)
+    );
+  if (mixedVerifyLine) {
+    throw new Error(
+      `verify must not mix a shell command with acceptance prose: "${mixedVerifyLine}" — ` +
+      "join runnable commands with shell operators such as `&&`, or keep the acceptance criterion as prose",
     );
   }
 }

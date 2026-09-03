@@ -22,7 +22,7 @@ import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { discoverCommands, runVerificationGate, runVerificationGateForTargets, formatFailureContext, captureRuntimeErrors, runDependencyAudit, isLikelyCommand, validateVerificationCommand, splitUnquotedLines } from "../verification-gate.ts";
+import { assertVerifyIsShellCheckable, discoverCommands, runVerificationGate, runVerificationGateForTargets, formatFailureContext, captureRuntimeErrors, runDependencyAudit, isLikelyCommand, validateVerificationCommand, splitUnquotedLines } from "../verification-gate.ts";
 import type { CaptureRuntimeErrorsOptions, DependencyAuditOptions } from "../verification-gate.ts";
 import { validatePreferences } from "../preferences.ts";
 
@@ -1055,6 +1055,49 @@ test("isLikelyCommand: known command word followed by English prose is rejected 
   assert.equal(isLikelyCommand("git ls-files packages/core/src"), true);
   assert.equal(isLikelyCommand("cargo build --release"), true);
   assert.equal(isLikelyCommand("npm run test:unit"), true);
+});
+
+const RETRY_CLOSEOUT_PROSE_VERIFY =
+  "rtk scripts/pnpm-pinned.sh --filter web test:e2e twice on a quiet machine " +
+  "(all 52 green both times) plus rtk scripts/pnpm-pinned.sh --filter web exec bun test " +
+  "src/app/page.test.tsx src/app/layout.test.ts src/components/landing/navbar.test.tsx green";
+
+test("retry closeout: command-prefixed acceptance prose is never executed", () => {
+  assert.equal(isLikelyCommand(RETRY_CLOSEOUT_PROSE_VERIFY), false);
+
+  const dir = makeTempDir("gsd-retry-closeout-prose");
+  try {
+    const result = discoverCommands({
+      cwd: dir,
+      taskPlanVerify: RETRY_CLOSEOUT_PROSE_VERIFY,
+      taskEvidence: [
+        { command: "rtk scripts/pnpm-pinned.sh --filter web test:e2e", exitCode: 0, verdict: "passed" },
+      ],
+    });
+    assert.deepEqual(result, { commands: [], source: "task-plan-prose" });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("retry closeout: new plans reject mixed command and acceptance prose", () => {
+  assert.throws(
+    () => assertVerifyIsShellCheckable(RETRY_CLOSEOUT_PROSE_VERIFY),
+    /verify must not mix a shell command with acceptance prose/,
+  );
+
+  assert.doesNotThrow(() =>
+    assertVerifyIsShellCheckable(
+      "rtk scripts/pnpm-pinned.sh --filter web test:e2e && " +
+      "rtk scripts/pnpm-pinned.sh --filter web exec bun test src/app/page.test.tsx",
+    )
+  );
+  assert.doesNotThrow(() =>
+    assertVerifyIsShellCheckable("The end-to-end suite passes twice on a quiet machine")
+  );
+  assert.doesNotThrow(() =>
+    assertVerifyIsShellCheckable("node -e 'console.log(\"plus rtk is quoted data\")'")
+  );
 });
 
 test("isLikelyCommand: prose markers exclude operand-shaped words", () => {
