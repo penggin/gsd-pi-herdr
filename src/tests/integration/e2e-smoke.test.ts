@@ -16,7 +16,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   assertNoCrashMarkers,
@@ -251,6 +251,41 @@ test("internal harness-v4 selector composes JSON no-session mode without a model
     `expected a JSONL v4 session header, got:\n${stripAnsi(result.stdout).slice(0, 800)}`,
   );
   assertNoCrashMarkers(stripAnsi(result.stdout + result.stderr));
+});
+
+test("internal harness-v4 JSON mode creates, opens, and continues one persisted session", async (t) => {
+  const gsdHome = createTempDir("gsd-e2e-harness-v4-persisted-");
+  t.after(() => rmSync(gsdHome, { recursive: true, force: true }));
+  const env = {
+    GSD_HOME: gsdHome,
+    GSD_INTERNAL_SESSION_BACKEND: "harness-v4",
+  };
+
+  const created = await runGsd(["--mode", "json"], 30_000, env);
+  assert.equal(created.code, 0, created.stderr);
+  const sessionFiles = readdirSync(join(gsdHome, "sessions"), { recursive: true })
+    .map(String)
+    .filter((path) => path.endsWith(".jsonl"));
+  assert.equal(sessionFiles.length, 1);
+  const sessionPath = join(gsdHome, "sessions", sessionFiles[0]!);
+
+  const opened = await runGsd(["--mode", "json", "--session", sessionPath], 30_000, env);
+  const continued = await runGsd(["--mode", "json", "--continue"], 30_000, env);
+  for (const result of [opened, continued]) {
+    assert.equal(result.timedOut, false);
+    assert.equal(result.code, 0, result.stderr);
+    const header = stripAnsi(result.stdout)
+      .split("\n")
+      .flatMap((line) => {
+        try {
+          return [JSON.parse(line) as Record<string, unknown>];
+        } catch {
+          return [];
+        }
+      })
+      .find((record) => record.type === "session");
+    assert.equal(header?.version, 4);
+  }
 });
 
 // ---------------------------------------------------------------------------

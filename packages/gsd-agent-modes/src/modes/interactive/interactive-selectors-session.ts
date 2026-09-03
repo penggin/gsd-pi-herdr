@@ -192,10 +192,16 @@ export function showTreeSelector(host: InteractiveModeDelegateHost, initialSelec
 
 export function showSessionSelector(host: InteractiveModeDelegateHost): void {
 		host.showSelector((done) => {
+			const currentSessionsLoader = host.sessionRuntime
+				? (onProgress) => host.sessionRuntime.listSessions({ onProgress })
+				: (onProgress) =>
+					SessionManager.list(host.sessionManager.getCwd(), host.sessionManager.getSessionDir(), onProgress);
+			const allSessionsLoader = host.sessionRuntime
+				? (onProgress) => host.sessionRuntime.listSessions({ all: true, onProgress })
+				: SessionManager.listAll;
 			const selector = new SessionSelectorComponent(
-				(onProgress) =>
-					SessionManager.list(host.sessionManager.getCwd(), host.sessionManager.getSessionDir(), onProgress),
-				SessionManager.listAll,
+				currentSessionsLoader,
+				allSessionsLoader,
 				async (sessionPath) => {
 					done();
 					await host.handleResumeSession(sessionPath);
@@ -212,8 +218,11 @@ export function showSessionSelector(host: InteractiveModeDelegateHost): void {
 					renameSession: async (sessionFilePath: string, nextName: string | undefined) => {
 						const next = (nextName ?? "").trim();
 						if (!next) return;
-						const mgr = SessionManager.open(sessionFilePath);
-						mgr.appendSessionInfo(next);
+						if (host.sessionRuntime) {
+							await host.sessionRuntime.renameSession(sessionFilePath, next);
+						} else {
+							SessionManager.open(sessionFilePath).appendSessionInfo(next);
+						}
 					},
 					showRenameHint: true,
 					keybindings: host.keybindings,

@@ -1,4 +1,8 @@
-import { SessionManager } from "@gsd/pi-coding-agent/core/session-manager.js";
+import {
+	SessionManager,
+	type SessionInfo,
+	type SessionListProgress,
+} from "@gsd/pi-coding-agent/core/session-manager.js";
 import {
 	type FileSystem,
 	JsonlV4SessionRepository,
@@ -34,6 +38,13 @@ export type SessionManagerTarget =
 	| { kind: "open"; path: string; sessionDir?: string; cwdOverride?: string }
 	| { kind: "continue-recent"; cwd: string; sessionDir?: string }
 	| { kind: "memory"; cwd?: string };
+
+export interface SessionCatalogListOptions {
+	cwd?: string;
+	sessionDir?: string;
+	all?: boolean;
+	onProgress?: SessionListProgress;
+}
 
 /** One coherently prepared session backend and its compatibility surfaces. */
 export interface PreparedSessionRuntime {
@@ -94,6 +105,60 @@ export interface SessionManagerRuntimeFactory {
 		source: PreparedSessionRuntime,
 		target: { cwd: string; leafId: string | null },
 	): Promise<PreparedSessionRuntime>;
+	list(options?: SessionCatalogListOptions): Promise<SessionInfo[]>;
+	rename(path: string, name: string): Promise<void>;
+}
+
+function sessionMessageText(message: unknown): { role?: string; text: string; timestamp?: number } {
+	if (typeof message !== "object" || message === null) return { text: "" };
+	const candidate = message as { role?: unknown; content?: unknown; timestamp?: unknown };
+	const role = typeof candidate.role === "string" ? candidate.role : undefined;
+	const timestamp = typeof candidate.timestamp === "number" ? candidate.timestamp : undefined;
+	if (typeof candidate.content === "string") return { role, text: candidate.content, timestamp };
+	if (!Array.isArray(candidate.content)) return { role, text: "", timestamp };
+	const text = candidate.content
+		.filter((part): part is { type: "text"; text: string } =>
+			typeof part === "object"
+			&& part !== null
+			&& (part as { type?: unknown }).type === "text"
+			&& typeof (part as { text?: unknown }).text === "string")
+		.map((part) => part.text)
+		.join(" ");
+	return { role, text, timestamp };
+}
+
+function preparedSessionInfo(runtime: PreparedSessionRuntime, fallbackModifiedAt: number): SessionInfo {
+	const entries = runtime.snapshot.getEntries();
+	let messageCount = 0;
+	let firstMessage = "";
+	let lastActivity = 0;
+	const allMessages: string[] = [];
+	for (const entry of entries) {
+		if (entry.type !== "message") continue;
+		messageCount += 1;
+		const message = sessionMessageText(entry.message);
+		if (message.role !== "user" && message.role !== "assistant") continue;
+		const entryTimestamp = Date.parse(entry.timestamp);
+		const activity = message.timestamp ?? (Number.isNaN(entryTimestamp) ? 0 : entryTimestamp);
+		lastActivity = Math.max(lastActivity, activity);
+		if (!message.text) continue;
+		allMessages.push(message.text);
+		if (!firstMessage && message.role === "user") firstMessage = message.text;
+	}
+	const header = runtime.snapshot.getHeader();
+	const sessionName = runtime.snapshot.getSessionName();
+	return {
+		path: runtime.snapshot.getSessionFile() ?? "",
+		id: runtime.snapshot.getSessionId(),
+		cwd: runtime.snapshot.getCwd(),
+		...(sessionName ? { name: sessionName } : {}),
+		...(header.parentSession ? { parentSessionPath: header.parentSession } : {}),
+		created: new Date(header.timestamp),
+		modified: new Date(lastActivity || fallbackModifiedAt),
+		messageCount,
+		firstMessage: firstMessage || "(no messages)",
+		allMessagesText: allMessages.join(" "),
+	};
 }
 
 export function createLegacySessionManagerRuntimeFactory(): SessionManagerRuntimeFactory {
@@ -134,6 +199,13 @@ export function createLegacySessionManagerRuntimeFactory(): SessionManagerRuntim
 				: manager;
 			forkManager.createBranchedSession(target.leafId);
 			return createLegacyPreparedSessionRuntime(forkManager);
+		},
+		list(options = {}): Promise<SessionInfo[]> {
+			if (options.all) return SessionManager.listAll(options.onProgress);
+			return SessionManager.list(options.cwd ?? process.cwd(), options.sessionDir, options.onProgress);
+		},
+		async rename(path, name): Promise<void> {
+			SessionManager.open(path).appendSessionInfo(name);
 		},
 	};
 }
@@ -211,6 +283,27 @@ export function createHarnessV4SessionManagerRuntimeFactory(options: {
 				),
 				target.cwd,
 			);
+		},
+		async list(listOptions = {}): Promise<SessionInfo[]> {
+			const metadata = await jsonl.list({ cwd: listOptions.all ? undefined : listOptions.cwd ?? process.cwd() });
+			let loaded = 0;
+			const sessions = await Promise.all(metadata.map(async (item) => {
+				try {
+					const prepared = await createHarnessPreparedSessionRuntime(await jsonl.open(item));
+					return preparedSessionInfo(prepared, item.modifiedAt);
+				} finally {
+					loaded += 1;
+					listOptions.onProgress?.(loaded, metadata.length);
+				}
+			}));
+			return sessions.sort((left, right) => right.modified.getTime() - left.modified.getTime());
+		},
+		async rename(path, name): Promise<void> {
+			const metadata = (await readJsonlV4Session(options.fs, path, {
+				sessionsRoot: options.sessionsRoot,
+			})).metadata;
+			const prepared = await createHarnessPreparedSessionRuntime(await jsonl.open(metadata));
+			await prepared.capabilities.appendSessionName(name);
 		},
 	};
 }

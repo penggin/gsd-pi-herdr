@@ -22,6 +22,7 @@ import { rmSync } from "node:fs";
 
 import {
   assertNoCrashMarkers,
+  createTempDir,
   createTempWithGsd,
   ensureBuiltLoader,
   runGsd,
@@ -236,6 +237,30 @@ test("headless --resume with nonexistent ID exits 1 with descriptive error", asy
 
   const combined = stripAnsi(result.stdout + result.stderr);
   assertNoCrashMarkers(combined);
+});
+
+test("headless --resume resolves its catalog through harness-v4", async (t) => {
+  const tmpDir = createTempWithGsd("gsd-e2e-v4-resume-bad-");
+  const gsdHome = createTempDir("gsd-e2e-v4-resume-home-");
+  t.after(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+    rmSync(gsdHome, { recursive: true, force: true });
+  });
+
+  const result = await runGsd(
+    ["headless", "--resume", "nonexistent-v4-id", "--max-restarts", "0", "auto"],
+    30_000,
+    {
+      GSD_HOME: gsdHome,
+      GSD_INTERNAL_SESSION_BACKEND: "harness-v4",
+    },
+    tmpDir,
+  );
+
+  assert.equal(result.timedOut, false);
+  assert.equal(result.code, 1);
+  assert.match(stripAnsi(result.stderr), /nonexistent-v4-id|No session matching/);
+  assertNoCrashMarkers(stripAnsi(result.stdout + result.stderr));
 });
 
 // ===========================================================================

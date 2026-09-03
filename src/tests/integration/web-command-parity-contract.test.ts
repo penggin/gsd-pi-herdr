@@ -178,16 +178,16 @@ test("bash-prefixed input dispatches to rpc bash instead of prompt", async (t) =
 
 test("registered GSD command roots stay on the prompt/extension path", async () => {
   const registeredRoots = await collectRegisteredGsdCommandRoots()
-  assert.deepEqual(
-    registeredRoots,
-    ["exit", "gsd", "kill", "worktree", "wt"],
-    "browser parity contract only expects the current GSD command roots",
-  )
+	assert.deepEqual(
+		registeredRoots,
+		["codex-compact", "exit", "gsd", "kill", "worktree", "wt"],
+		"browser parity contract only expects the current GSD command roots",
+	)
 
   // Non-gsd roots are extension commands that pass through to the bridge.
   // Derived dynamically so adding a new registration fails this assertion loudly.
   const nonGsdRoots = registeredRoots.filter((r) => r !== "gsd")
-  assert.equal(nonGsdRoots.length, 4, "expected exactly 4 non-gsd passthrough roots; update this count when adding registrations")
+	assert.equal(nonGsdRoots.length, 5, "expected exactly 5 non-gsd passthrough roots; update this count when adding registrations")
   for (const root of nonGsdRoots) {
     assertPromptPassthrough(`/${root}`)
   }

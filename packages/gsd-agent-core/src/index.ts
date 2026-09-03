@@ -77,6 +77,7 @@ export {
 	requireLegacySessionManager,
 	type PreparedSessionRuntime,
 	type ProductionSessionBackend,
+	type SessionCatalogListOptions,
 	type SessionManagerRuntimeFactory,
 	type SessionManagerTarget,
 } from "./session-manager-runtime.js";

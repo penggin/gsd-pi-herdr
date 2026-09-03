@@ -7,9 +7,8 @@ test('CLI startup prepares every session target through the awaitable runtime fa
   const startup = source.slice(source.indexOf('const {\n  AgentSessionRuntime,'))
 
   assert.doesNotMatch(startup, /requireLegacySessionManager/)
-  assert.match(startup, /GSD_INTERNAL_SESSION_BACKEND/)
-  assert.match(startup, /createHarnessV4SessionManagerRuntimeFactory/)
-  assert.match(startup, /Unsupported GSD_INTERNAL_SESSION_BACKEND/)
+  assert.match(source, /createSelectedSessionRuntimeFactory/)
+  assert.match(source, /sessionManagerRuntimeFactory\.list\(\{ cwd, sessionDir: projectSessionsDir \}\)/)
   assert.match(startup, /sessionManagerRuntimeFactory\.prepare\(\{ kind: 'memory'/)
   assert.match(startup, /kind: 'continue-recent'/)
   assert.equal((startup.match(/kind: 'open'/g) ?? []).length, 3)

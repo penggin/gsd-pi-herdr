@@ -18,10 +18,11 @@ import { resolve } from 'node:path'
 import { ChildProcess } from 'node:child_process'
 
 import { RpcClient } from '@gsd/agent-modes/modes/rpc/rpc-client.js'
-import { SessionManager } from '@gsd/pi-coding-agent'
 import type { SessionInfo } from '@gsd/pi-coding-agent'
+import { sessionsDir } from './app-paths.js'
 import { getProjectSessionsDir } from './project-sessions.js'
 import { loadAndValidateAnswerFile, AnswerInjector } from './headless-answers.js'
+import { createSelectedSessionRuntimeFactory } from './session-runtime-selection.js'
 
 import {
   isTerminalNotification,
@@ -1034,7 +1035,14 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
   // --resume: resolve session ID and switch to it
   if (options.resumeSession) {
     const projectSessionsDir = getProjectSessionsDir(process.cwd())
-    const sessions = await SessionManager.list(process.cwd(), projectSessionsDir)
+    const sessionRuntimeFactory = await createSelectedSessionRuntimeFactory({
+      cwd: process.cwd(),
+      sessionsRoot: sessionsDir,
+    })
+    const sessions = await sessionRuntimeFactory.list({
+      cwd: process.cwd(),
+      sessionDir: projectSessionsDir,
+    })
     const result = resolveResumeSession(sessions, options.resumeSession)
     if (result.error) {
       process.stderr.write(`[headless] Error: ${result.error}\n`)

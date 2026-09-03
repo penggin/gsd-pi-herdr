@@ -2,7 +2,7 @@
 
 Date: 2026-09-03
 
-Status: P3.0–P3.4, P3.5a–P3.5b, and P3.5c1–P3.5c7 complete; P3.5c CLI/headless parity in progress; no v4 cutover
+Status: P3.0–P3.4, P3.5a–P3.5b, and P3.5c1–P3.5c8 complete; P3.5c two-backend command parity in progress; no v4 cutover
 
 Upstream reference: `refs/pi-upstream/v0.84.4`
 
@@ -309,6 +309,21 @@ Next: make session listing/resume selection and headless/web session queries use
 the version-neutral catalog rather than legacy `SessionManager.list()`, then run
 the full print/JSON/RPC/headless matrix against both internal backends. Do not
 add a public preference or change the default until GSD and Herdr gates pass.
+
+P3.5c8 adds catalog and rename operations to the selected session runtime
+factory. The root `sessions` picker, interactive `/resume` and rename actions,
+headless `--resume`, and web session list/rename subprocesses now resolve through
+that boundary. Legacy-v3 delegates to its existing manager; harness-v4 reads and
+validates its JSONL repository and projects the established `SessionInfo` view
+without creating a parallel index or writer. The default web boot path retains
+its existing fast legacy reader while the explicit harness-v4 selector uses the
+version-neutral subprocess.
+
+Next: run the complete print, JSON, RPC, and headless command matrix against both
+internal backends, then cover GSD lifecycle and browser command surfaces. The
+standalone `@gsd/agent-modes` executable and custom legacy `sessionDir` semantics
+remain explicit adapter work; neither is grounds for exposing a public v4
+preference yet.
 
 ### P3.6 — Integrate GSD, web, and Assessment Gates
 

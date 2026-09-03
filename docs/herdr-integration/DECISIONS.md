@@ -592,3 +592,29 @@ open failure remains explicit and cannot create a replacement legacy session.
 The selector is not a cutover decision. Session catalog/resume, headless/web
 queries, GSD lifecycle commands, and real Herdr worker flows must pass their
 two-backend matrices before a public opt-in or default change is considered.
+
+---
+
+## ADR-H034 — Keep session catalog and rename authority in the selected backend
+
+**Status:** Accepted
+**Date:** 2026-09-03
+
+Session discovery and display metadata are backend operations. The selected
+runtime factory therefore owns list and rename operations in addition to
+create/open/continue/fork. Legacy-v3 delegates to `SessionManager`; harness-v4
+lists and validates its JSONL repository, opens each accepted session, and
+projects the existing `SessionInfo` contract from the authoritative snapshot.
+No second catalog, migration table, or independent metadata writer is created.
+
+Root CLI session selection, interactive `/resume` and rename, headless resume,
+and web list/rename subprocesses must use this boundary. A legacy fallback may
+remain only for backward-compatible embeddings that construct interactive mode
+without `AgentSessionRuntime`, and the unset/legacy web boot path may retain its
+existing bounded local reader for startup performance. Selecting harness-v4
+must never route those operations through a v3 parser.
+
+This decision does not make harness-v4 public or default. Custom legacy
+`sessionDir` behavior, standalone package entry points, the full two-backend
+command matrix, GSD lifecycle regressions, and real Herdr worker evidence remain
+cutover gates.

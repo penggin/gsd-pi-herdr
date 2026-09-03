@@ -40,6 +40,7 @@ import {
 import type { EnsureRtkResult } from './rtk.js'
 import { registerInstalledExtensionPackage } from './extension-registry.js'
 import { GSD_DISTRIBUTION_PACKAGE } from './distribution.js'
+import { createSelectedSessionRuntimeFactory } from './session-runtime-selection.js'
 
 type PiCodingAgentModule = typeof import('@gsd/pi-coding-agent')
 type AgentCoreModule = typeof import('@gsd/agent-core')
@@ -52,6 +53,7 @@ let agentCoreModulePromise: Promise<AgentCoreModule> | undefined
 let interactiveModeModulePromise: Promise<InteractiveModeModule> | undefined
 let printModeModulePromise: Promise<PrintModeModule> | undefined
 let rpcModeModulePromise: Promise<RpcModeModule> | undefined
+let sessionRuntimeFactoryPromise: Promise<import('@gsd/agent-core').SessionManagerRuntimeFactory> | undefined
 
 function loadPiCodingAgentModule(): Promise<PiCodingAgentModule> {
   return (piCodingAgentModulePromise ??= import('@gsd/pi-coding-agent'))
@@ -71,6 +73,13 @@ function loadPrintModeModule(): Promise<PrintModeModule> {
 
 function loadRpcModeModule(): Promise<RpcModeModule> {
   return (rpcModeModulePromise ??= import('@gsd/agent-modes/modes/rpc/rpc-mode.js'))
+}
+
+function loadSelectedSessionRuntimeFactory() {
+  return (sessionRuntimeFactoryPromise ??= createSelectedSessionRuntimeFactory({
+    cwd: process.cwd(),
+    sessionsRoot: sessionsDir,
+  }))
 }
 
 // ---------------------------------------------------------------------------
@@ -505,13 +514,13 @@ if (cliFlags.web || (cliFlags.messages[0] === 'web' && cliFlags.messages[1] !== 
 
 // `gsd sessions` — list past sessions and pick one to resume
 if (cliFlags.messages[0] === 'sessions') {
-  const { SessionManager } = await loadPiCodingAgentModule()
+  const sessionManagerRuntimeFactory = await loadSelectedSessionRuntimeFactory()
   const cwd = process.cwd()
   const safePath = `--${cwd.replace(/^[/\\]/, '').replace(/[/\\:]/g, '-')}--`
   const projectSessionsDir = join(sessionsDir, safePath)
 
   process.stderr.write(chalk.dim(`Loading sessions for ${cwd}...\n`))
-  const sessions = await SessionManager.list(cwd, projectSessionsDir)
+  const sessions = await sessionManagerRuntimeFactory.list({ cwd, sessionDir: projectSessionsDir })
 
   if (sessions.length === 0) {
     process.stderr.write(chalk.yellow('No sessions found for this directory.\n'))
@@ -681,19 +690,8 @@ const {
 const {
   AgentSessionRuntime,
   createAgentSession,
-  createHarnessV4SessionManagerRuntimeFactory,
-  legacySessionManagerRuntimeFactory,
 } = await loadAgentCoreModule()
-const internalSessionBackend = process.env.GSD_INTERNAL_SESSION_BACKEND
-if (internalSessionBackend !== undefined && internalSessionBackend !== 'legacy-v3' && internalSessionBackend !== 'harness-v4') {
-  throw new Error(`Unsupported GSD_INTERNAL_SESSION_BACKEND: ${internalSessionBackend}`)
-}
-const sessionManagerRuntimeFactory = internalSessionBackend === 'harness-v4'
-  ? createHarnessV4SessionManagerRuntimeFactory({
-      fs: new (await import('@gsd/pi-agent-core/node')).NodeExecutionEnv({ cwd: process.cwd() }),
-      sessionsRoot: sessionsDir,
-    })
-  : legacySessionManagerRuntimeFactory
+const sessionManagerRuntimeFactory = await loadSelectedSessionRuntimeFactory()
 markStartup('loadPiCodingAgent')
 
 // Pi's tool bootstrap can mis-detect already-installed fd/rg on some systems

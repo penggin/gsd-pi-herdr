@@ -8,6 +8,7 @@ import { emitSessionShutdownEvent } from "@gsd/pi-coding-agent/core/extensions/r
 import type { CreateAgentSessionResult } from "./sdk.js";
 import { assertSessionCwdExists } from "@gsd/pi-coding-agent/core/session-cwd.js";
 import type { SessionManager } from "@gsd/pi-coding-agent/core/session-manager.js";
+import type { SessionInfo, SessionListProgress } from "@gsd/pi-coding-agent/core/session-manager.js";
 import {
 	createLegacyPreparedSessionRuntime,
 	legacySessionManagerRuntimeFactory,
@@ -127,6 +128,23 @@ export class AgentSessionRuntime {
 
 	get modelFallbackMessage(): string | undefined {
 		return this._modelFallbackMessage;
+	}
+
+	listSessions(options: {
+		all?: boolean;
+		cwd?: string;
+		sessionDir?: string;
+		onProgress?: SessionListProgress;
+	} = {}): Promise<SessionInfo[]> {
+		return this.sessionManagers.list({
+			...options,
+			cwd: options.cwd ?? this.session.sessionView.getCwd(),
+			sessionDir: options.sessionDir ?? this.session.sessionView.getSessionDir(),
+		});
+	}
+
+	renameSession(path: string, name: string): Promise<void> {
+		return this.sessionManagers.rename(path, name);
 	}
 
 	setRebindSession(rebindSession?: (session: AgentSession) => Promise<void>): void {

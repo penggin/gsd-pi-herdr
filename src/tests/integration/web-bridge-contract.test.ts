@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { PassThrough } from "node:stream";
 import { StringDecoder } from "node:string_decoder";
 
@@ -402,6 +402,78 @@ test("/api/boot returns current-project workspace data, resumable sessions, onbo
   assert.equal(payload.bridge.sessionState.retryInProgress, false);
   assert.equal(payload.bridge.sessionState.retryAttempt, 0);
   assert.equal(harness.spawnCalls, 1);
+});
+
+test("/api/boot lists harness-v4 sessions through the selected runtime catalog", async (t) => {
+  const fixture = makeWorkspaceFixture();
+  const { createHarnessV4SessionManagerRuntimeFactory } = await import("@gsd/agent-core");
+  const { NodeExecutionEnv } = await import("../../../packages/pi-agent-core/src/harness/env/nodejs.ts");
+  const factory = createHarnessV4SessionManagerRuntimeFactory({
+    fs: new NodeExecutionEnv({ cwd: fixture.projectCwd }),
+    sessionsRoot: fixture.sessionsDir,
+  });
+  const prepared = await factory.prepare({ kind: "create", cwd: fixture.projectCwd });
+  await prepared.capabilities.appendMessage({ role: "user", content: "v4 browser", timestamp: Date.now() });
+  await prepared.capabilities.appendSessionName("V4 Browser");
+  const sessionPath = prepared.snapshot.getSessionFile();
+  assert.ok(sessionPath);
+  const projectSessionsDir = dirname(sessionPath);
+
+  const harness = createHarness((command, current) => {
+    if (command.type === "get_state") {
+      current.emit({
+        id: command.id,
+        type: "response",
+        command: "get_state",
+        success: true,
+        data: {
+          sessionId: prepared.snapshot.getSessionId(),
+          sessionFile: sessionPath,
+          thinkingLevel: "off",
+          isStreaming: false,
+          isCompacting: false,
+          steeringMode: "all",
+          followUpMode: "all",
+          autoCompactionEnabled: false,
+          autoRetryEnabled: false,
+          retryInProgress: false,
+          retryAttempt: 0,
+          messageCount: 1,
+          pendingMessageCount: 0,
+        },
+      });
+      return;
+    }
+    assert.fail(`unexpected command during v4 boot: ${command.type}`);
+  });
+
+  bridge.configureBridgeServiceForTests({
+    env: {
+      ...process.env,
+      GSD_INTERNAL_SESSION_BACKEND: "harness-v4",
+      GSD_WEB_PROJECT_CWD: fixture.projectCwd,
+      GSD_WEB_PROJECT_SESSIONS_DIR: projectSessionsDir,
+      GSD_WEB_PACKAGE_ROOT: repoRoot,
+    },
+    spawn: harness.spawn,
+    indexWorkspace: async () => fakeWorkspaceIndex(),
+    getAutoDashboardData: () => fakeAutoDashboardData(),
+    getOnboardingNeeded: () => false,
+  });
+
+  t.after(async () => {
+    await bridge.resetBridgeServiceForTests();
+    fixture.cleanup();
+  });
+
+  const response = await bootRoute.GET();
+  const responseBody = await response.text();
+  assert.equal(response.status, 200, responseBody);
+  const payload = JSON.parse(responseBody) as any;
+  assert.equal(payload.resumableSessions.length, 1);
+  assert.equal(payload.resumableSessions[0].id, prepared.snapshot.getSessionId());
+  assert.equal(payload.resumableSessions[0].name, "V4 Browser");
+  assert.equal(payload.resumableSessions[0].messageCount, 1);
 });
 
 test("/api/boot uses the authoritative auto helper by default and stays snapshot-shaped", async (t) => {

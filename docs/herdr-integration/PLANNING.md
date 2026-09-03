@@ -2521,6 +2521,29 @@ this session does not merge, push, tag, or publish.
   boundary for resume selection and headless/web queries, then run the complete
   legacy-v3 versus harness-v4 print/JSON/RPC/headless matrix. After that, run
   GSD command regressions and real Herdr worker E2E before considering opt-in.
+- Completed P3.5c8's version-neutral session catalog boundary. The selected
+  runtime factory now owns list and rename operations. Legacy-v3 preserves the
+  established manager behavior; harness-v4 validates and opens its authoritative
+  JSONL records, then projects the existing `SessionInfo` shape without a second
+  index or writer. Root `gsd sessions`, interactive `/resume` and rename,
+  headless `--resume`, and web list/rename subprocesses use this boundary.
+- Added ADR-H034. The unset/deployed default remains legacy-v3, and the fast
+  legacy web boot reader remains unchanged. An explicit harness-v4 web boot
+  traverses the selected runtime instead of parsing v4 with legacy assumptions.
+- Verification evidence: agent-core passes **162/162**, agent-modes passes
+  **9/9**, the built harness-v4 create/open/continue plus headless-resume E2E
+  set passes **3/3**, the web bridge/session/command contract set passes, and
+  `build:core` passes. A manual built `gsd sessions` run listed and selected a
+  real version-4 catalog entry without a model request.
+- Remaining risks: standalone `@gsd/agent-modes` entry code still contains its
+  legacy construction adapter; custom legacy `sessionDir` semantics are not yet
+  represented in the v4 repository; and the complete print/JSON/RPC/headless,
+  GSD lifecycle, and real Herdr matrices have not yet passed. No public v4
+  preference or cutover is authorized.
+- Exact next task: execute and fill the complete two-backend command matrix,
+  remove or explicitly isolate remaining standalone direct-manager ownership,
+  then run GSD/web/Assessment Gate regressions followed by real Herdr E2E. Deploy
+  the verified package only to `penglab:/srv/penglab` when SSH is reachable.
 
 ## 11. Working-session protocol
 

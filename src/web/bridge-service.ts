@@ -2,7 +2,7 @@ import { execFile, spawn, type ChildProcess, type SpawnOptions } from "node:chil
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { StringDecoder } from "node:string_decoder";
 import type { Readable } from "node:stream";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { resolveTypeStrippingFlag, resolveSubprocessModule, buildSubprocessPrefixArgs } from "./ts-subprocess-flags.ts";
 import { safePackageRootFromImportUrl } from "./safe-import-meta-resolve.ts";
@@ -650,7 +650,7 @@ interface BridgeServiceDeps {
   env?: NodeJS.ProcessEnv;
   indexWorkspace?: (basePath: string) => Promise<GSDWorkspaceIndex>;
   getAutoDashboardData?: () => AutoDashboardData | Promise<AutoDashboardData>;
-  listSessions?: (projectSessionsDir: string) => Promise<LocalSessionInfo[]>;
+  listSessions?: (projectSessionsDir: string, projectCwd?: string) => Promise<LocalSessionInfo[]>;
   getOnboardingState?: () => OnboardingState | Promise<OnboardingState>;
   getOnboardingNeeded?: (authPath: string, env: NodeJS.ProcessEnv) => boolean | Promise<boolean>;
 }
@@ -677,33 +677,42 @@ const defaultBridgeServiceDeps: BridgeServiceDeps = {
       existsSync: deps.existsSync ?? existsSync,
     });
   },
-  listSessions: async (projectSessionsDir: string) => listProjectSessions(projectSessionsDir),
+  listSessions: async (projectSessionsDir: string, projectCwd?: string) => {
+    const env = getBridgeDeps().env ?? process.env;
+    if (env.GSD_INTERNAL_SESSION_BACKEND === undefined || env.GSD_INTERNAL_SESSION_BACKEND === "legacy-v3") {
+      return listProjectSessions(projectSessionsDir);
+    }
+    const config = resolveBridgeRuntimeConfig(env, projectCwd);
+    return loadSessionBrowserSessionsViaChildProcess({ ...config, projectSessionsDir });
+  },
 };
 
 let bridgeServiceOverrides: Partial<BridgeServiceDeps> | null = null;
 const projectBridgeRegistry = new Map<string, BridgeService>();
 const workspaceIndexCache = new Map<string, WorkspaceIndexCacheEntry>();
 
-function resolveSessionManagerModulePath(packageRoot: string, checkExists: typeof existsSync): string {
+function resolveSessionRuntimeSelectionModulePath(packageRoot: string, checkExists: typeof existsSync): string {
   const candidates = [
-    join(packageRoot, "packages", "pi-coding-agent", "dist", "core", "session-manager.js"),
-    join(packageRoot, "dist-test", "packages", "pi-coding-agent", "src", "core", "session-manager.js"),
+    join(packageRoot, "dist", "session-runtime-selection.js"),
+    join(packageRoot, "dist-test", "src", "session-runtime-selection.js"),
+    join(packageRoot, "src", "session-runtime-selection.ts"),
   ];
   for (const candidate of candidates) {
     if (checkExists(candidate)) return candidate;
   }
-  throw new Error(`session manager module not found; checked=${candidates.join(", ")}`);
+  throw new Error(`session runtime selection module not found; checked=${candidates.join(", ")}`);
 }
 
 async function loadSessionBrowserSessionsViaChildProcess(config: BridgeRuntimeConfig): Promise<SessionInfo[]> {
   const deps = getBridgeDeps();
   const checkExists = deps.existsSync ?? existsSync;
-  const sessionManagerModulePath = resolveSessionManagerModulePath(config.packageRoot, checkExists);
+  const sessionRuntimeSelectionModulePath = resolveSessionRuntimeSelectionModulePath(config.packageRoot, checkExists);
 
   const script = [
     'const { pathToFileURL } = await import("node:url");',
-    'const mod = await import(pathToFileURL(process.env.GSD_SESSION_MANAGER_MODULE).href);',
-    'const sessions = await mod.SessionManager.list(process.env.GSD_SESSION_BROWSER_CWD, process.env.GSD_SESSION_BROWSER_DIR);',
+    'const mod = await import(pathToFileURL(process.env.GSD_SESSION_RUNTIME_SELECTION_MODULE).href);',
+    'const factory = await mod.createSelectedSessionRuntimeFactory({ cwd: process.env.GSD_SESSION_BROWSER_CWD, sessionsRoot: process.env.GSD_SESSION_BROWSER_ROOT });',
+    'const sessions = await factory.list({ cwd: process.env.GSD_SESSION_BROWSER_CWD, sessionDir: process.env.GSD_SESSION_BROWSER_DIR });',
     'process.stdout.write(JSON.stringify(sessions.map((session) => ({ ...session, created: session.created.toISOString(), modified: session.modified.toISOString() }))));',
   ].join(" ");
 
@@ -721,9 +730,10 @@ async function loadSessionBrowserSessionsViaChildProcess(config: BridgeRuntimeCo
           ]
             .filter(Boolean)
             .join(" "),
-          GSD_SESSION_MANAGER_MODULE: sessionManagerModulePath,
+          GSD_SESSION_RUNTIME_SELECTION_MODULE: sessionRuntimeSelectionModulePath,
           GSD_SESSION_BROWSER_CWD: config.projectCwd,
           GSD_SESSION_BROWSER_DIR: config.projectSessionsDir,
+          GSD_SESSION_BROWSER_ROOT: dirname(config.projectSessionsDir),
         },
         maxBuffer: 1024 * 1024,
         windowsHide: true,
@@ -762,13 +772,13 @@ async function appendSessionInfoViaChildProcess(
 ): Promise<void> {
   const deps = getBridgeDeps();
   const checkExists = deps.existsSync ?? existsSync;
-  const sessionManagerModulePath = resolveSessionManagerModulePath(config.packageRoot, checkExists);
+  const sessionRuntimeSelectionModulePath = resolveSessionRuntimeSelectionModulePath(config.packageRoot, checkExists);
 
   const script = [
     'const { pathToFileURL } = await import("node:url");',
-    'const mod = await import(pathToFileURL(process.env.GSD_SESSION_MANAGER_MODULE).href);',
-    'const manager = mod.SessionManager.open(process.env.GSD_TARGET_SESSION_PATH, process.env.GSD_SESSION_BROWSER_DIR);',
-    'manager.appendSessionInfo(process.env.GSD_TARGET_SESSION_NAME);',
+    'const mod = await import(pathToFileURL(process.env.GSD_SESSION_RUNTIME_SELECTION_MODULE).href);',
+    'const factory = await mod.createSelectedSessionRuntimeFactory({ cwd: process.env.GSD_SESSION_BROWSER_CWD, sessionsRoot: process.env.GSD_SESSION_BROWSER_ROOT });',
+    'await factory.rename(process.env.GSD_TARGET_SESSION_PATH, process.env.GSD_TARGET_SESSION_NAME);',
   ].join(" ");
 
   await new Promise<void>((resolveResult, reject) => {
@@ -785,8 +795,10 @@ async function appendSessionInfoViaChildProcess(
           ]
             .filter(Boolean)
             .join(" "),
-          GSD_SESSION_MANAGER_MODULE: sessionManagerModulePath,
+          GSD_SESSION_RUNTIME_SELECTION_MODULE: sessionRuntimeSelectionModulePath,
+          GSD_SESSION_BROWSER_CWD: config.projectCwd,
           GSD_SESSION_BROWSER_DIR: config.projectSessionsDir,
+          GSD_SESSION_BROWSER_ROOT: dirname(config.projectSessionsDir),
           GSD_TARGET_SESSION_PATH: sessionPath,
           GSD_TARGET_SESSION_NAME: name,
         },
@@ -2371,7 +2383,10 @@ export async function collectSelectiveLiveStatePayload(
   }
 
   if (uniqueDomains.includes("resumable_sessions")) {
-    const sessions = await (deps.listSessions ?? (async (dir: string) => listProjectSessions(dir)))(config.projectSessionsDir);
+    const sessions = await (deps.listSessions ?? (async (dir: string) => listProjectSessions(dir)))(
+      config.projectSessionsDir,
+      config.projectCwd,
+    );
     payload.resumableSessions = sessions.map((session) => toBootResumableSession(session, bridgeSnapshot.activeSessionFile));
   }
 
@@ -2438,7 +2453,7 @@ export async function collectBootPayload(projectCwd?: string): Promise<BridgeBoo
     async () => await (deps.indexWorkspace ?? fallbackWorkspaceIndex)(config.projectCwd),
   );
   const autoPromise = Promise.resolve(getAutoDashboardData());
-  const sessionsPromise = listSessions(config.projectSessionsDir);
+  const sessionsPromise = listSessions(config.projectSessionsDir, config.projectCwd);
 
   try {
     await bridge.ensureStarted();

@@ -64,6 +64,13 @@ describe("production session-manager runtime factory", () => {
 
 		const recent = requireLegacySessionManager(await factory.prepare({ kind: "continue-recent", cwd: root, sessionDir: sessions }));
 		assert.equal(recent.getSessionId(), created.getSessionId());
+		await factory.rename(path!, "Legacy catalog");
+		const catalog = await factory.list({ cwd: root, sessionDir: sessions });
+		assert.equal(catalog.length, 1);
+		assert.equal(catalog[0]?.id, created.getSessionId());
+		assert.equal(catalog[0]?.name, "Legacy catalog");
+		assert.equal(catalog[0]?.firstMessage, "hello");
+		assert.equal(catalog[0]?.messageCount, 2);
 
 		const memory = requireLegacySessionManager(await factory.prepare({ kind: "memory", cwd: root }));
 		assert.equal(memory.isPersisted(), false);
@@ -188,6 +195,20 @@ describe("production session-manager runtime factory", () => {
 		assert.equal(opened.snapshot.getSessionId(), source.snapshot.getSessionId());
 		const recent = await factory.prepare({ kind: "continue-recent", cwd });
 		assert.equal(recent.snapshot.getSessionId(), forked.snapshot.getSessionId());
+		await factory.rename(sourcePath!, "V4 catalog");
+		const localCatalog = await factory.list({ cwd });
+		assert.equal(localCatalog.length, 2);
+		const sourceCatalog = localCatalog.find((session) => session.id === source.snapshot.getSessionId());
+		assert.equal(sourceCatalog?.name, "V4 catalog");
+		assert.equal(sourceCatalog?.firstMessage, "keep");
+		assert.equal(sourceCatalog?.messageCount, 2);
+		assert.match(sourceCatalog?.allMessagesText ?? "", /keep done/);
+
+		const otherCwd = join(root, "other-project");
+		mkdirSync(otherCwd, { recursive: true });
+		await factory.prepare({ kind: "create", cwd: otherCwd });
+		assert.equal((await factory.list({ cwd })).length, 2);
+		assert.equal((await factory.list({ all: true })).length, 3);
 
 		const memory = await factory.prepare({ kind: "memory", cwd });
 		const memoryEntryId = await memory.capabilities.appendMessage({ role: "user", content: "memory", timestamp: 3 });
