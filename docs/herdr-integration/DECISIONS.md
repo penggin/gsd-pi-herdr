@@ -704,3 +704,24 @@ existing file.
 This is a root GSD composition policy. It does not change subagent runtime
 selection, GSD workflow authority, Herdr terminal authority, or the
 legacy-v3-only standalone `@gsd/agent-modes` entry.
+
+---
+
+## ADR-H038 — Defer optional v3-to-v4 transcript migration
+
+**Status:** Accepted
+**Date:** 2026-09-03
+
+Do not add a session transcript conversion command while `legacy-v3` remains
+the supported default and `harness-v4` is an explicit opt-in. Users can create
+new v4 sessions and retain or reopen v3 sessions with the matching backend, so
+conversion is not required for availability or rollback.
+
+A correct converter would need to preserve branch topology, custom entries,
+compaction boundaries and retained tails, usage, labels, names, timestamps,
+and downstream opaque records while publishing a new file only after semantic
+comparison. That is a new mutation and validation surface with no present
+cutover requirement. Reconsider P3.8 only when a future default-cutover plan or
+a concrete user workflow demonstrates value that format-bound reopen cannot
+provide. Any future implementation remains copy-only, preview-first, and must
+never delete or overwrite its v3 source.

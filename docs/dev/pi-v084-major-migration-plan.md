@@ -426,7 +426,12 @@ cutover or automatic migration was added.
 
 ### P3.8 — Optional explicit migration tooling
 
-This slice is optional and comes after cutover.
+This slice is optional and comes after cutover. It is deferred while
+`legacy-v3` remains a supported/default backend and `harness-v4` is opt-in:
+there is no operational requirement to convert a file, while implementing a
+semantic transcript converter would add a second high-risk write boundary.
+Reconsider only for a future default cutover or a concrete user need that
+cannot be served by keeping the original v3 session.
 
 - Preview source path, destination path, entry counts, and unsupported records.
 - Copy into a new v4 file, fsync, reopen, compare semantic snapshots, and only

@@ -2850,6 +2850,14 @@ this session does not merge, push, tag, or publish.
   and semantic comparison, and remain independent from the default backend.
   If that user value does not justify the added mutation surface, record the
   decision to defer it and move to the next upstream adoption slice instead.
+- P3.8 evaluation: deferred by ADR-H038. With v3 still supported/default and v4
+  explicitly selectable, format-bound reopen provides availability and
+  rollback without conversion. A converter would introduce a second writer
+  that must preserve branch, compaction, usage, metadata, and opaque downstream
+  semantics; no current workflow requires that risk. The next task is a fresh
+  read-only upstream impact audit that ranks missing behavior against the now
+  completed P3 session boundary. Do not combine a provider/compaction import
+  with a session-format default change.
 
 ## 11. Working-session protocol
 
