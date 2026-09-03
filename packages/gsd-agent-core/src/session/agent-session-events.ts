@@ -67,7 +67,7 @@ export class AgentSessionEventsModule {
 			// Check if this is a custom message from extensions
 			if (event.message.role === "custom") {
 				// Persist as CustomMessageEntry
-				this.host.sessionManager.appendCustomMessageEntry(
+				await this.host.sessionCapabilities.appendCustomMessageEntry(
 					event.message.customType,
 					event.message.content,
 					event.message.display,
@@ -79,7 +79,7 @@ export class AgentSessionEventsModule {
 				event.message.role === "toolResult"
 			) {
 				// Regular LLM message - persist as SessionMessageEntry
-				this.host.sessionManager.appendMessage(event.message);
+				await this.host.sessionCapabilities.appendMessage(event.message);
 			}
 			// Other message types (bashExecution, compactionSummary, branchSummary) are persisted elsewhere
 
@@ -109,7 +109,7 @@ export class AgentSessionEventsModule {
 		// turn_end follows persistence of the assistant message and every tool
 		// result, making this the first replay-safe insertion point.
 		if (event.type === "turn_end") {
-			this.host.flushPendingCustomMessages();
+			await this.host.flushPendingCustomMessages();
 		}
 	};
 

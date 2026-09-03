@@ -20,6 +20,7 @@ import type { ModelRegistry } from "@gsd/pi-coding-agent/core/model-registry.js"
 import type { ResourceLoader } from "@gsd/pi-coding-agent/core/resource-loader.js";
 import type { SessionManager } from "@gsd/pi-coding-agent/core/session-manager.js";
 import type { SettingsManager } from "@gsd/pi-coding-agent/core/settings-manager.js";
+import type { SessionCapabilityAdapter } from "../session-capability-adapter.js";
 import type { SourceInfo } from "@gsd/pi-coding-agent/core/source-info.js";
 import type { SessionStartEvent } from "@gsd/pi-coding-agent/core/extensions/index.js";
 import type { CompactionResult } from "../compaction/index.js";
@@ -141,6 +142,8 @@ export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
 export interface AgentSessionConfig {
 	agent: Agent;
 	sessionManager: SessionManager;
+	/** Internal awaitable persistence seam. Harness-v4 remains fail-closed until P3.5c completes. */
+	sessionCapabilities?: SessionCapabilityAdapter;
 	settingsManager: SettingsManager;
 	cwd: string;
 	/** Models to cycle through with Ctrl+P (from --models flag) */

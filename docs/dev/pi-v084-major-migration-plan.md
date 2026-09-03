@@ -2,7 +2,7 @@
 
 Date: 2026-09-03
 
-Status: P3.0–P3.4, P3.5a–P3.5b, and P3.5c1 complete; P3.5c runtime adoption in progress; no v4 cutover
+Status: P3.0–P3.4, P3.5a–P3.5b, and P3.5c1–P3.5c2a complete; P3.5c runtime adoption in progress; no v4 cutover
 
 Upstream reference: `refs/pi-upstream/v0.84.4`
 
@@ -217,10 +217,19 @@ The parity work also corrected v4 label projection to preserve the established
 legacy behavior for non-empty labels instead of silently trimming them. Session
 name trimming remains unchanged in both formats.
 
-P3.5c2 must adopt this boundary in the asynchronous AgentSession mutation/read
-paths and define the compatibility surface for synchronous extension callbacks.
-The only production backend remains `legacy-v3`; no v4 preference, write
-cutover, or automatic migration is exposed.
+P3.5c2a adopts this boundary for Agent lifecycle message persistence, deferred
+custom messages, model changes, and manual/automatic compaction. Agent listener
+promises already participate in run settlement, so message writes now complete
+before their events settle; compaction writes complete before rebuilt entries
+and context are read. Harness-only lane movement records are hidden from the
+legacy-compatible entry facade. The AgentSession constructor explicitly rejects
+a harness-v4 capability adapter while synchronous bash, thinking, navigation,
+and extension callback paths remain.
+
+P3.5c2b must move those remaining synchronous surfaces onto an explicit
+compatibility contract without fire-and-forget writes. The only production
+backend remains `legacy-v3`; no v4 preference, write cutover, or automatic
+migration is exposed.
 
 ### P3.6 — Integrate GSD, web, and Assessment Gates
 

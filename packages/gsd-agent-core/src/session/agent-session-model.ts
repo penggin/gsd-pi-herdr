@@ -70,7 +70,7 @@ export class AgentSessionModelModule {
 		const previousModel = this.host.model;
 		const thinkingLevel = this.getThinkingLevelForModelSwitch();
 		this.host.agent.state.model = model;
-		this.host.sessionManager.appendModelChange(model.provider, model.id);
+		await this.host.sessionCapabilities.appendModelChange(model.provider, model.id);
 		if (options?.persist !== false) {
 			this.host.settingsManager.setDefaultModelAndProvider(model.provider, model.id);
 		}
@@ -103,7 +103,7 @@ export class AgentSessionModelModule {
 
 		// Apply model
 		this.host.agent.state.model = next.model;
-		this.host.sessionManager.appendModelChange(next.model.provider, next.model.id);
+		await this.host.sessionCapabilities.appendModelChange(next.model.provider, next.model.id);
 		this.host.settingsManager.setDefaultModelAndProvider(next.model.provider, next.model.id);
 
 		// Apply thinking level.
@@ -131,7 +131,7 @@ export class AgentSessionModelModule {
 
 		const thinkingLevel = this.getThinkingLevelForModelSwitch();
 		this.host.agent.state.model = nextModel;
-		this.host.sessionManager.appendModelChange(nextModel.provider, nextModel.id);
+		await this.host.sessionCapabilities.appendModelChange(nextModel.provider, nextModel.id);
 		this.host.settingsManager.setDefaultModelAndProvider(nextModel.provider, nextModel.id);
 
 		// Re-clamp thinking level for new model's capabilities

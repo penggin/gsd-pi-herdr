@@ -47,7 +47,7 @@ export class AgentSessionCompactionModule {
 
 			const { apiKey, headers } = await this.host.getCompactionRequestAuth(this.host.model);
 
-			const pathEntries = this.host.sessionManager.getBranch();
+			const pathEntries = await this.host.sessionCapabilities.getBranch();
 			const settings = this.host.settingsManager.getCompactionSettings();
 
 			const preparation = prepareCompaction(pathEntries, settings);
@@ -119,9 +119,16 @@ export class AgentSessionCompactionModule {
 				throw new Error("Compaction cancelled");
 			}
 
-			this.host.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension, usage);
-			const newEntries = this.host.sessionManager.getEntries();
-			const sessionContext = this.host.sessionManager.buildSessionContext();
+			await this.host.sessionCapabilities.appendCompaction(
+				summary,
+				firstKeptEntryId,
+				tokensBefore,
+				details,
+				fromExtension,
+				usage,
+			);
+			const newEntries = await this.host.sessionCapabilities.getEntries();
+			const sessionContext = await this.host.sessionCapabilities.buildSessionContext();
 			this.host.agent.state.messages = sessionContext.messages;
 
 			// Get the saved compaction entry for the extension event
@@ -208,7 +215,7 @@ export class AgentSessionCompactionModule {
 		// Skip compaction checks if this assistant message is older than the latest
 		// compaction boundary. This prevents a stale pre-compaction usage/error
 		// from retriggering compaction on the first prompt after compaction.
-		const compactionEntry = getLatestCompactionEntry(this.host.sessionManager.getBranch());
+		const compactionEntry = getLatestCompactionEntry(await this.host.sessionCapabilities.getBranch());
 		const assistantIsFromBeforeCompaction =
 			compactionEntry !== null && assistantMessage.timestamp <= new Date(compactionEntry.timestamp).getTime();
 		if (assistantIsFromBeforeCompaction) {
@@ -318,7 +325,7 @@ export class AgentSessionCompactionModule {
 				({ apiKey, headers } = await this.host.getCompactionRequestAuth(this.host.model));
 			}
 
-			const pathEntries = this.host.sessionManager.getBranch();
+			const pathEntries = await this.host.sessionCapabilities.getBranch();
 
 			const preparation = prepareCompaction(pathEntries, settings);
 			if (!preparation) {
@@ -418,9 +425,16 @@ export class AgentSessionCompactionModule {
 				return false;
 			}
 
-			this.host.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension, usage);
-			const newEntries = this.host.sessionManager.getEntries();
-			const sessionContext = this.host.sessionManager.buildSessionContext();
+			await this.host.sessionCapabilities.appendCompaction(
+				summary,
+				firstKeptEntryId,
+				tokensBefore,
+				details,
+				fromExtension,
+				usage,
+			);
+			const newEntries = await this.host.sessionCapabilities.getEntries();
+			const sessionContext = await this.host.sessionCapabilities.buildSessionContext();
 			this.host.agent.state.messages = sessionContext.messages;
 
 			// Get the saved compaction entry for the extension event

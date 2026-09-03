@@ -74,6 +74,18 @@ describe("session capability adapter", () => {
 		assert.deepEqual((await v4.getMetadata()).parent, { kind: "session-id", value: "parent" });
 	});
 
+	it("does not leak harness-v4 lane movement records through the legacy-compatible entry facade", async () => {
+		const backend = new V4MemorySessionRepository().create({ id: "v4-lanes" });
+		const harness = new Session(new V4HarnessSessionStorageAdapter(backend));
+		const adapter = await createHarnessV4SessionCapabilityAdapter(harness);
+		const rootId = await adapter.appendMessage({ role: "user", content: "root", timestamp: 1 });
+		await adapter.appendMessage({ role: "user", content: "old branch", timestamp: 2 });
+		await adapter.moveTo(rootId);
+
+		assert.equal((await adapter.getEntries()).some((entry) => entry.type === "leaf"), false);
+		assert.deepEqual((await adapter.getBranch()).map((entry) => entry.id), [rootId]);
+	});
+
 	it("rejects a session whose metadata is not harness-v4", async () => {
 		const incompatible = {
 			getMetadata: async () => ({ id: "legacy", createdAt: new Date().toISOString(), format: "legacy-v3" }),

@@ -39,7 +39,7 @@ export class AgentSessionPromptModule {
 		} finally {
 			this.host.agent.latencyMark = previousLatencyMark;
 			this.host.flushPendingBashMessages();
-			this.host.flushPendingCustomMessages();
+			await this.host.flushPendingCustomMessages();
 			await this.host._extensionRunner.emit({ type: "agent_settled" });
 			this.host.emit({ type: "agent_settled" });
 		}
@@ -152,7 +152,7 @@ export class AgentSessionPromptModule {
 
 			// Flush messages retained from a previously interrupted/settled run.
 			this.host.flushPendingBashMessages();
-			this.host.flushPendingCustomMessages();
+			await this.host.flushPendingCustomMessages();
 			this.host.markTurnLatency("session.pending_bash_flushed");
 
 			// Validate model
@@ -423,13 +423,13 @@ export class AgentSessionPromptModule {
 			// replay, so wait until the current turn has fully settled.
 			this.host._pendingCustomMessages.push(appMessage);
 		} else {
-			this.appendCustomMessage(appMessage);
+			await this.appendCustomMessage(appMessage);
 		}
 	}
 
-	private appendCustomMessage(appMessage: CustomMessage): void {
+	private async appendCustomMessage(appMessage: CustomMessage): Promise<void> {
 		this.host.agent.state.messages.push(appMessage);
-		this.host.sessionManager.appendCustomMessageEntry(
+		await this.host.sessionCapabilities.appendCustomMessageEntry(
 			appMessage.customType,
 			appMessage.content,
 			appMessage.display,
@@ -439,11 +439,11 @@ export class AgentSessionPromptModule {
 		this.host.emit({ type: "message_end", message: appMessage });
 	}
 
-	flushPendingCustomMessages(): void {
+	async flushPendingCustomMessages(): Promise<void> {
 		if (this.host._pendingCustomMessages.length === 0) return;
 		const pending = this.host._pendingCustomMessages;
 		this.host._pendingCustomMessages = [];
-		for (const appMessage of pending) this.appendCustomMessage(appMessage);
+		for (const appMessage of pending) await this.appendCustomMessage(appMessage);
 	}
 
 	async sendUserMessage(

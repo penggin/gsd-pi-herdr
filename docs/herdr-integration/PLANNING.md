@@ -2342,6 +2342,22 @@ this session does not merge, push, tag, or publish.
   the only selectable production backend until CLI/headless parity is complete.
   Independently, retry the immutable `penglab` deployment only after the
   configured private endpoint becomes reachable.
+- Completed P3.5c2a adoption for the already-asynchronous production paths.
+  Awaited Agent listeners now persist ordinary/custom message-end events before
+  settlement; deferred custom messages, model changes, and manual/automatic
+  compaction also await the shared capability adapter. Compaction reads its
+  saved entries and rebuilt context only after the durable append completes.
+  Harness lane-movement records are filtered from the legacy-compatible facade.
+- Runtime selection remains deliberately fail-closed: constructing an
+  AgentSession with a harness-v4 adapter throws until synchronous bash,
+  thinking, navigation, and extension-context persistence have a truthful
+  compatibility contract. The focused combined suite passes **24/24**, the
+  agent-core suite passes **149/149**, agent-core build and extension typecheck
+  pass, and `git diff --check` passes.
+- Exact next task: implement P3.5c2b for the remaining synchronous surfaces,
+  beginning with bash flush and thinking-level mutation boundaries, then
+  navigation and extension callbacks. Do not remove the harness-v4 fail-closed
+  guard until all mutation paths and CLI/headless characterization pass.
 
 ## 11. Working-session protocol
 

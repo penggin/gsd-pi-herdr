@@ -1,11 +1,10 @@
 import type {
 	Session as HarnessSession,
 	SessionContext,
-	SessionTreeEntry,
 	V4HarnessSessionMetadata,
 } from "@gsd/pi-agent-core";
 import type { Usage } from "@gsd/pi-ai";
-import type { SessionManager } from "@gsd/pi-coding-agent/core/session-manager.js";
+import type { SessionEntry, SessionManager } from "@gsd/pi-coding-agent/core/session-manager.js";
 
 export type SessionCapabilityFormat = "legacy-v3" | "harness-v4";
 
@@ -41,9 +40,9 @@ export interface SessionCapabilityAdapter {
 	readonly format: SessionCapabilityFormat;
 	getMetadata(): Promise<SessionCapabilityMetadata>;
 	getLeafId(): Promise<string | null>;
-	getEntry(id: string): Promise<SessionTreeEntry | undefined>;
-	getEntries(): Promise<SessionTreeEntry[]>;
-	getBranch(fromId?: string): Promise<SessionTreeEntry[]>;
+	getEntry(id: string): Promise<SessionEntry | undefined>;
+	getEntries(): Promise<SessionEntry[]>;
+	getBranch(fromId?: string): Promise<SessionEntry[]>;
 	buildSessionContext(): Promise<SessionContext>;
 	getLabel(id: string): Promise<string | undefined>;
 	getSessionName(): Promise<string | undefined>;
@@ -99,16 +98,16 @@ export class LegacyV3SessionCapabilityAdapter implements SessionCapabilityAdapte
 		return this.manager.getLeafId();
 	}
 
-	async getEntry(id: string): Promise<SessionTreeEntry | undefined> {
-		return this.manager.getEntry(id) as SessionTreeEntry | undefined;
+	async getEntry(id: string): Promise<SessionEntry | undefined> {
+		return this.manager.getEntry(id);
 	}
 
-	async getEntries(): Promise<SessionTreeEntry[]> {
-		return this.manager.getEntries() as SessionTreeEntry[];
+	async getEntries(): Promise<SessionEntry[]> {
+		return this.manager.getEntries();
 	}
 
-	async getBranch(fromId?: string): Promise<SessionTreeEntry[]> {
-		return this.manager.getBranch(fromId) as SessionTreeEntry[];
+	async getBranch(fromId?: string): Promise<SessionEntry[]> {
+		return this.manager.getBranch(fromId);
 	}
 
 	async buildSessionContext(): Promise<SessionContext> {
@@ -199,16 +198,21 @@ class HarnessV4SessionCapabilityAdapter implements SessionCapabilityAdapter {
 		return this.session.getLeafId();
 	}
 
-	getEntry(id: string): Promise<SessionTreeEntry | undefined> {
-		return this.session.getEntry(id);
+	async getEntry(id: string): Promise<SessionEntry | undefined> {
+		const entry = await this.session.getEntry(id);
+		return entry?.type === "leaf" ? undefined : (entry as SessionEntry | undefined);
 	}
 
-	getEntries(): Promise<SessionTreeEntry[]> {
-		return this.session.getEntries();
+	async getEntries(): Promise<SessionEntry[]> {
+		return (await this.session.getEntries()).filter(
+			(entry): entry is SessionEntry => entry.type !== "leaf",
+		);
 	}
 
-	getBranch(fromId?: string): Promise<SessionTreeEntry[]> {
-		return this.session.getBranch(fromId);
+	async getBranch(fromId?: string): Promise<SessionEntry[]> {
+		return (await this.session.getBranch(fromId)).filter(
+			(entry): entry is SessionEntry => entry.type !== "leaf",
+		);
 	}
 
 	buildSessionContext(): Promise<SessionContext> {

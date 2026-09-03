@@ -45,6 +45,7 @@ import type {
 	TurnLatencyStatus,
 	TurnLatencyVisibleKind,
 } from "../turn-latency.js";
+import type { SessionCapabilityAdapter } from "../session-capability-adapter.js";
 
 /**
  * Internal surface shared by AgentSession submodule classes.
@@ -53,6 +54,7 @@ import type {
 export interface AgentSessionHost {
 	readonly agent: Agent;
 	readonly sessionManager: SessionManager;
+	readonly sessionCapabilities: SessionCapabilityAdapter;
 	readonly settingsManager: SettingsManager;
 	readonly modelRegistry: ModelRegistry;
 	readonly resourceLoader: ResourceLoader;
@@ -131,7 +133,7 @@ export interface AgentSessionHost {
 	runAgentPrompt(messages: AgentMessage | AgentMessage[]): Promise<void>;
 	handlePostAgentRun(): Promise<boolean>;
 	flushPendingBashMessages(): void;
-	flushPendingCustomMessages(): void;
+	flushPendingCustomMessages(): Promise<void>;
 	checkCompaction(assistantMessage: AssistantMessage, skipAbortedCheck?: boolean): Promise<boolean>;
 	getCompactionRequestAuth(model: Model<any>): Promise<{ apiKey?: string; headers?: Record<string, string> }>;
 	getRequiredRequestAuth(model: Model<any>): Promise<{ apiKey: string; headers?: Record<string, string> }>;

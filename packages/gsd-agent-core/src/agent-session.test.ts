@@ -2,7 +2,7 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { SessionManager } from "@gsd/pi-coding-agent/core/session-manager.js";
 import { resolvePath } from "@gsd/pi-coding-agent/utils/paths.js";
-import { parseSkillBlock } from "./agent-session.ts";
+import { AgentSession, parseSkillBlock } from "./agent-session.ts";
 import { AgentSessionExtensionsModule } from "./session/agent-session-extensions.ts";
 import { AgentSessionModelModule } from "./session/agent-session-model.ts";
 import { AgentSessionNavigationModule } from "./session/agent-session-navigation.ts";
@@ -64,6 +64,17 @@ describe("AgentSessionCompactionModule", () => {
 });
 
 describe("AgentSessionEventsModule", () => {
+  test("keeps harness-v4 fail-closed until every AgentSession persistence path is awaitable", () => {
+    assert.throws(
+      () => new AgentSession({
+        agent: {},
+        sessionManager: SessionManager.inMemory("/workspace"),
+        sessionCapabilities: { format: "harness-v4" },
+      } as any),
+      /Harness-v4 AgentSession selection is not available/,
+    );
+  });
+
   test("dispose aborts all active work before disconnecting listeners", () => {
     const calls: string[] = [];
     const host = {
@@ -82,6 +93,35 @@ describe("AgentSessionEventsModule", () => {
 
     assert.deepEqual(calls, ["retry", "compaction", "branch", "bash", "agent", "invalidate", "disconnect"]);
     assert.deepEqual(host._eventListeners, []);
+  });
+
+  test("awaits session persistence before a message-end event settles", async () => {
+    let releaseWrite: (() => void) | undefined;
+    let settled = false;
+    const writeBlocked = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+    const host = {
+      _extensionRunner: { emitMessageEnd: async () => undefined },
+      _eventListeners: [],
+      sessionCapabilities: {
+        appendMessage: async () => {
+          await writeBlocked;
+          return "entry";
+        },
+      },
+    };
+    const pending = new AgentSessionEventsModule(host as any)
+      .handleAgentEvent({ type: "message_end", message: { role: "user", content: "hello", timestamp: 1 } })
+      .then(() => {
+        settled = true;
+      });
+
+    await Promise.resolve();
+    assert.equal(settled, false);
+    releaseWrite?.();
+    await pending;
+    assert.equal(settled, true);
   });
 });
 
@@ -476,8 +516,11 @@ describe("AgentSessionPromptModule", () => {
         steer: () => assert.fail("context-only message must not steer"),
         followUp: () => assert.fail("context-only message must not follow up"),
       },
-      sessionManager: {
-        appendCustomMessageEntry: (customType: string) => persisted.push(customType),
+      sessionCapabilities: {
+        appendCustomMessageEntry: async (customType: string) => {
+          persisted.push(customType);
+          return "entry";
+        },
       },
       emit: (event: { type: string }) => emitted.push(event.type),
     };
@@ -492,7 +535,7 @@ describe("AgentSessionPromptModule", () => {
     assert.deepEqual(host.agent.state.messages.map((message) => message.role), ["toolResult"]);
     assert.deepEqual(persisted, []);
 
-    mod.flushPendingCustomMessages();
+    await mod.flushPendingCustomMessages();
     assert.deepEqual(host.agent.state.messages.map((message) => message.role), ["toolResult", "custom"]);
     assert.deepEqual(persisted, ["context-only"]);
     assert.deepEqual(emitted, ["message_start", "message_end"]);
@@ -520,8 +563,11 @@ function makeModelModuleHost() {
     thinkingLevel: "off",
     agent: { state: { model: undefined, thinkingLevel: "off" } },
     modelRegistry: { hasConfiguredAuth: () => true },
-    sessionManager: {
-      appendModelChange: (provider: string, id: string) => sessionModels.push([provider, id]),
+    sessionCapabilities: {
+      appendModelChange: async (provider: string, id: string) => {
+        sessionModels.push([provider, id]);
+        return "entry";
+      },
     },
     settingsManager: {
       getDefaultThinkingLevel: () => "off",

@@ -81,6 +81,10 @@ import { AgentSessionCompactionModule } from "./session/agent-session-compaction
 import { AgentSessionNavigationModule } from "./session/agent-session-navigation.js";
 import { AgentSessionExtensionsModule } from "./session/agent-session-extensions.js";
 import { AgentSessionBashModule } from "./session/agent-session-bash.js";
+import {
+	LegacyV3SessionCapabilityAdapter,
+	type SessionCapabilityAdapter,
+} from "./session-capability-adapter.js";
 
 export type {
 	AgentSessionConfig,
@@ -98,6 +102,7 @@ export { parseSkillBlock } from "./session/agent-session-types.js";
 export class AgentSession implements AgentSessionHost {
 	readonly agent: Agent;
 	readonly sessionManager: SessionManager;
+	readonly sessionCapabilities: SessionCapabilityAdapter;
 	readonly settingsManager: SettingsManager;
 
 	_scopedModels: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>;
@@ -164,6 +169,13 @@ export class AgentSession implements AgentSessionHost {
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
 		this.sessionManager = config.sessionManager;
+		this.sessionCapabilities =
+			config.sessionCapabilities ?? new LegacyV3SessionCapabilityAdapter(config.sessionManager);
+		if (this.sessionCapabilities.format !== "legacy-v3") {
+			throw new Error(
+				"Harness-v4 AgentSession selection is not available until every persistence and extension path is awaitable",
+			);
+		}
 		this.settingsManager = config.settingsManager;
 		this._scopedModels = config.scopedModels ?? [];
 		this._resourceLoader = config.resourceLoader;
@@ -378,8 +390,8 @@ export class AgentSession implements AgentSessionHost {
 		this._bash.flushPendingBashMessages();
 	}
 
-	flushPendingCustomMessages(): void {
-		this._prompt.flushPendingCustomMessages();
+	flushPendingCustomMessages(): Promise<void> {
+		return this._prompt.flushPendingCustomMessages();
 	}
 
 	checkCompaction(assistantMessage: AssistantMessage, skipAbortedCheck?: boolean): Promise<boolean> {
