@@ -119,3 +119,23 @@ should not be mixed with Herdr live-E2E fixes or Assessment Gate delivery.
   failed code or dependency test; neither local native artifact was deleted.
 - No root dependency or lockfile change was introduced, and no GStack- or
   provider-specific runtime dependency was added.
+
+## Freshness recheck — 2026-09-03
+
+- A new read-only `pnpm run audit:pi-upstream` guard separates the reproducible
+  vendor pin (`v0.75.5`) from the newest behavior review. It calls only
+  `git ls-remote`; it does not fetch, check out, vendor, or rewrite source.
+- The live check observed stable `v0.84.4` at
+  `b79e4cc834970cca69daebffab7df1da7d1e52c4` and main at
+  `4e69b0c28060f0f02fbe38bfa7c21a2e2eb25057`, exactly matching the recorded
+  baseline. A changed stable tag or main commit produces `current=false` and
+  exit status 2 so another review cannot be skipped silently.
+- The three post-release correctness commits that were not previously named by
+  hash are already present downstream with focused regressions: proxy EOF
+  settlement (`ebc374490`), parallel preflight abort (`afda4d620`), and active
+  turn settlement before an in-memory fork (`56c6fb33`). No duplicate port is
+  required.
+- The remaining main commits are either already recorded selective ports,
+  downstream-equivalent behavior, or upstream-only metadata/changelog changes.
+  There is no missing stable Pi behavior to import at this checkpoint, and no
+  provider, compaction, or session-default change is bundled with this audit.

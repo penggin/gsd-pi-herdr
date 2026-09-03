@@ -3,6 +3,14 @@
   "npmScope": "@earendil-works",
   "pinnedRef": "v0.75.5",
   "pinnedCommit": null,
+  "upstreamAudit": {
+    "reviewedStableRef": "v0.84.4",
+    "reviewedStableCommit": "b79e4cc834970cca69daebffab7df1da7d1e52c4",
+    "reviewedMainRef": "refs/heads/main",
+    "reviewedMainCommit": "4e69b0c28060f0f02fbe38bfa7c21a2e2eb25057",
+    "reviewedAt": "2026-09-03",
+    "auditDocument": "docs/dev/pi-upstream-audit-2026-09-02.md"
+  },
   "packageMap": {
     "packages/agent": "packages/pi-agent-core",
     "packages/ai": "packages/pi-ai",

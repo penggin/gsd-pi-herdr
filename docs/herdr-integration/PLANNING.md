@@ -2859,6 +2859,37 @@ this session does not merge, push, tag, or publish.
   completed P3 session boundary. Do not combine a provider/compaction import
   with a session-format default change.
 
+### 2026-09-03 — Pi upstream freshness gate
+
+- Rechecked the official `earendil-works/pi` refs read-only. Latest stable is
+  still `v0.84.4` at `b79e4cc834970cca69daebffab7df1da7d1e52c4`; main is still
+  `4e69b0c28060f0f02fbe38bfa7c21a2e2eb25057`. There is no new stable or main
+  delta beyond the already completed selective compatibility ports.
+- Verified current downstream source and focused tests already contain the
+  three correctness changes whose upstream hashes were not called out in the
+  earlier audit: terminal proxy EOF settlement (`ebc374490`), stop-all behavior
+  after a parallel tool preflight abort (`afda4d620`), and active-turn
+  settlement before in-memory fork mutation (`56c6fb33`). Re-importing them
+  would create duplicate ownership rather than new behavior.
+- Added `upstreamAudit` metadata beside, but explicitly separate from, the
+  `v0.75.5` vendor pin. `pnpm run audit:pi-upstream` uses only
+  `git ls-remote`, reports the observed stable/main objects, and exits 2 if
+  either moves. It never fetches, checks out, vendors, or edits upstream code.
+  Five deterministic tests cover semantic tag ordering, annotated tags,
+  current state, both drift types, and malformed baselines.
+- Validation evidence: audit tests **5/5**, live remote audit `current`, Pi
+  patch inventory clean, and `git diff --check` clean. No runtime dependency,
+  provider behavior, compaction path, session format, or Herdr authority
+  changed, so no remote runtime deployment is required for this operator-only
+  repository audit command.
+- Exact next task: keep `legacy-v3` as the default until explicit harness-v4
+  usage supplies a burn-in record. The next runtime change should be selected
+  only from a newly detected upstream ref or a concrete production failure;
+  do not invent a speculative provider/session migration while this audit is
+  current. When either upstream ref moves, run the fail-closed audit, classify
+  the new commits, and import only behavior missing from current downstream
+  code with focused parity tests.
+
 ## 11. Working-session protocol
 
 For every Herdr session:

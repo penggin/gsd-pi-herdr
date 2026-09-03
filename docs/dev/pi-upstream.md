@@ -15,6 +15,7 @@ GSD vendors the [earendil-works/pi](https://github.com/earendil-works/pi) monore
 | Build | `npm run build:pi` |
 | Boundary | `npm run verify:pi-boundary` (also in `scripts/ci-fast-gates.sh`) |
 | Patch inventory CI | `npm run verify:pi-patches` |
+| Read-only freshness audit | `pnpm run audit:pi-upstream` |
 | Claude tool schemas | `npm run test:pi-claude-schemas` |
 
 Phase 2 used **GSD shim restoration** (incremental compat on upstream v0.75.5 APIs) rather than a full upstream modes sync. `@gsd/agent-modes` was migrated from the old GSD fork and reconciled via shims in pi-tui, pi-coding-agent, pi-ai, and agent-core.
@@ -31,6 +32,14 @@ See [`scripts/pi-upstream.json`](../../scripts/pi-upstream.json):
 | `packages/coding-agent` | `@gsd/pi-coding-agent` |
 
 Protected from vendor overwrite: `packages/gsd-agent-core`, `packages/gsd-agent-modes`.
+
+`pinnedRef` is the reproducible vendor baseline, not the newest reviewed
+upstream version. `upstreamAudit` records the latest stable tag and main commit
+whose behavior has been classified for selective import. Keep these two
+concepts separate: updating the audit baseline must never vendor or overwrite
+downstream code. Run `pnpm run audit:pi-upstream`; it performs only
+`git ls-remote`, reports `current` when both refs match, and exits 2 when a new
+stable release or main commit requires review.
 
 `patchAllowlist` in the same JSON file lists every path GSD may diverge from upstream under `packages/pi-*`. CI (`verify:pi-patches`) fails if you change other pi-* files without updating the allowlist. By default the script checks **working tree** changes only; set `VERIFY_PI_PATCHES_BRANCH=1` to include the full branch diff vs main (vendor bumps).
 

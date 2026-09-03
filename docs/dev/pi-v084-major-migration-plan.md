@@ -2,9 +2,15 @@
 
 Date: 2026-09-03
 
-Status: P3.0–P3.7 complete with an explicit v4 opt-in; legacy-v3 remains default
+Status: P3.0–P3.7 complete with an explicit v4 opt-in; legacy-v3 remains default; upstream current through `4e69b0c28060f0f02fbe38bfa7c21a2e2eb25057`
 
 Upstream reference: `refs/pi-upstream/v0.84.4`
+
+The independent read-only freshness gate (`pnpm run audit:pi-upstream`) was
+green on 2026-09-03: latest stable remains `v0.84.4` and upstream main remains
+the commit above. The vendor baseline intentionally remains `v0.75.5`; the
+fork continues to adopt reviewed behavior through compatibility slices rather
+than overwriting its GSD/Herdr seams.
 
 ## Purpose
 
