@@ -3126,6 +3126,38 @@ this session does not merge, push, tag, or publish.
   respond to a concrete Codex/GLM production failure or a moved upstream audit
   ref; Cursor, Gemini, and Antigravity remain out of scope.
 
+### 2026-09-03 — Targeted native deployment artifact workflow
+
+- Closed the remaining remote deployment rough edge exposed by the hosted
+  search release: a tarball packed on macOS contains only the local release
+  addon, while the Linux server needs a current Linux x64 artifact. The existing
+  manual `build-native.yml` did build Linux x64, but only as part of an
+  unconditional five-platform matrix.
+- Dispatched run `33726574975` with publishing disabled. Its Linux x64 job
+  completed against branch commit `5261f3629` and produced an ELF x86-64 addon
+  with SHA-256
+  `b1d5b33b59cc1578eed207544a4020699f0c9d123c0247481df1914002b51da7`.
+  Atomically replaced the temporary prior-build addon in the active immutable
+  prefix with this exact CI artifact. It loads with `nativeLoaded=true`; fresh
+  installed Codex and GLM turns returned `CODEX_CI_NATIVE_OK` and
+  `GLM_CI_NATIVE_OK` without fallback warnings. Evidence is under
+  `/srv/penglab/gsd-runs/private/native-ci-smoke.O1413W`.
+- Cancelled only the still-waiting Linux ARM job after all four other build jobs,
+  including the required Linux x64 upload, had completed. No package was
+  published and the deployed runtime remained available throughout.
+- Added a validated `platform` choice to the manual native workflow. A small
+  deterministic matrix planner emits either all five entries or exactly one
+  selected platform; publishing with a partial matrix fails closed. This lets a
+  Linux server deployment request only `linux-x64-gnu` without allocating
+  unrelated macOS, Windows, or ARM jobs.
+- Focused workflow and runner-contract tests pass **15/15**, including exact
+  single-platform output, publish/all-platform enforcement, approved runner
+  selection, and the Linux ARM Rust target mapping.
+- Exact next task: commit and push the targeted matrix change, dispatch
+  `build-native.yml` with `platform=linux-x64-gnu` and `publish=false`, and
+  require a one-job successful run plus matching downloaded artifact before
+  treating the deployment path as closed.
+
 ## 11. Working-session protocol
 
 For every Herdr session:

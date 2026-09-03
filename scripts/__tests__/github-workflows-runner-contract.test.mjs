@@ -6,6 +6,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import YAML from "yaml";
+import { NATIVE_BUILD_PLATFORMS } from "../native-build-matrix.mjs";
 
 const WORKFLOW_DIR = ".github/workflows";
 const APPROVED_RUNNERS = new Set([
@@ -135,10 +136,9 @@ test("node22 smoke installs the strictest workspace engine floor", () => {
 });
 
 test("native Linux ARM64 build matrix uses a Rust target triple", () => {
-  const workflow = YAML.parse(readFileSync(".github/workflows/build-native.yml", "utf8"));
-  const entries = workflow.jobs.build.strategy.matrix.include;
-  const linuxArm64 = entries.find((entry) => entry.platform === "linux-arm64-gnu");
+  const linuxArm64 = NATIVE_BUILD_PLATFORMS.find((entry) => entry.platform === "linux-arm64-gnu");
 
+  assert.ok(linuxArm64);
   assert.equal(linuxArm64.target, "aarch64-unknown-linux-gnu");
   assert.equal(linuxArm64.os, "blacksmith-4vcpu-ubuntu-2404-arm");
 });

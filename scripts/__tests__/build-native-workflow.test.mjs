@@ -5,11 +5,40 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import YAML from "yaml";
+import { buildNativeMatrix } from "../native-build-matrix.mjs";
 
 const workflow = YAML.parse(
   readFileSync(".github/workflows/build-native.yml", "utf8"),
 );
 const publishJob = workflow.jobs.publish;
+
+test("build-native can select one platform for non-publishing deployment artifacts", () => {
+  const input = workflow.on.workflow_dispatch.inputs.platform;
+  const planJob = workflow.jobs.plan;
+  const buildJob = workflow.jobs.build;
+
+  assert.equal(input.default, "all");
+  assert.deepEqual(input.options, [
+    "all",
+    "darwin-arm64",
+    "darwin-x64",
+    "linux-x64-gnu",
+    "linux-arm64-gnu",
+    "win32-x64-msvc",
+  ]);
+  assert.equal(planJob.outputs.matrix, "${{ steps.matrix.outputs.matrix }}");
+  assert.equal(planJob.steps.find((step) => step.id === "matrix").run, "node scripts/native-build-matrix.mjs");
+  assert.equal(buildJob.needs, "plan");
+  assert.equal(buildJob.strategy.matrix, "${{ fromJSON(needs.plan.outputs.matrix) }}");
+
+  assert.deepEqual(buildNativeMatrix({ selected: "linux-x64-gnu" }), {
+    include: [{ os: "ubuntu-latest", target: "x86_64-unknown-linux-gnu", platform: "linux-x64-gnu" }],
+  });
+  assert.throws(
+    () => buildNativeMatrix({ selected: "linux-x64-gnu", publish: true }),
+    /publish requires platform=all/,
+  );
+});
 
 test("build-native publish uses GitHub-hosted runners for npm provenance", () => {
   assert.equal(publishJob["runs-on"], "ubuntu-latest");
