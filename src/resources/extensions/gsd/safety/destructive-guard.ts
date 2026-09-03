@@ -36,6 +36,15 @@ function stripQuotedAndComments(command: string): string {
     .replace(/(^|\s)#.*$/g, "$1");
 }
 
+function extractShellCommandPayloads(command: string): string[] {
+  const payloads: string[] = [];
+  const pattern = /\b(?:bash|sh|zsh)\s+-[A-Za-z]*c[A-Za-z]*\s+(["'])([\s\S]*?)\1/g;
+  for (const match of command.matchAll(pattern)) {
+    if (match[2]) payloads.push(match[2]);
+  }
+  return payloads;
+}
+
 // ─── Public API ─────────────────────────────────────────────────────────────
 
 export interface CommandClassification {
@@ -48,12 +57,14 @@ export interface CommandClassification {
  * Returns the list of matched destructive pattern labels.
  */
 export function classifyCommand(command: string): CommandClassification {
-  const commandToClassify = stripQuotedAndComments(command);
+  const commandsToClassify = [stripQuotedAndComments(command), ...extractShellCommandPayloads(command)];
   const labels: string[] = [];
-  for (const { pattern, label } of DESTRUCTIVE_PATTERNS) {
-    if (pattern.test(commandToClassify)) {
-      // Deduplicate labels (e.g., two force-push patterns)
-      if (!labels.includes(label)) labels.push(label);
+  for (const commandToClassify of commandsToClassify) {
+    for (const { pattern, label } of DESTRUCTIVE_PATTERNS) {
+      if (pattern.test(stripQuotedAndComments(commandToClassify))) {
+        // Deduplicate labels (e.g., two force-push patterns)
+        if (!labels.includes(label)) labels.push(label);
+      }
     }
   }
   return { destructive: labels.length > 0, labels };

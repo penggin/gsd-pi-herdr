@@ -87,6 +87,12 @@ import {
 import { resolveUokFlags } from "../gsd/uok/flags.js";
 import { hasBrowserContractPrefix } from "../shared/browser-contract.js";
 import { showInterviewRound, type Question, type RoundResult } from "../shared/tui.js";
+import { classifyCommand } from "../gsd/safety/destructive-guard.js";
+import {
+	BLOCKED_WRITE_ERROR,
+	isBashWriteToStateFile,
+	isBlockedStateFile,
+} from "../gsd/write-intercept.js";
 import type {
 	SDKAssistantMessage,
 	SDKMessage,
@@ -1257,6 +1263,108 @@ type CanUseToolPermissionResult =
 	| { behavior: "allow"; updatedInput?: Record<string, unknown>; updatedPermissions?: Array<Record<string, unknown>>; toolUseID?: string }
 	| { behavior: "deny"; message: string; interrupt?: boolean; toolUseID?: string };
 
+export type ClaudeCodePreToolUsePolicyDecision =
+	| { action: "continue" }
+	| { action: "deny"; reason: string }
+	| { action: "ask"; reason: string };
+
+interface ClaudeCodePreToolUseInput {
+	hook_event_name: "PreToolUse";
+	tool_name: string;
+	tool_input: unknown;
+	tool_use_id: string;
+}
+
+interface ClaudeCodePreToolUseOutput {
+	continue?: boolean;
+	hookSpecificOutput?: {
+		hookEventName: "PreToolUse";
+		permissionDecision: "deny" | "ask";
+		permissionDecisionReason: string;
+	};
+}
+
+const DESTRUCTIVE_COMMAND_APPROVAL_REASON =
+	"This destructive Bash command requires an explicit one-time user approval. Persistent allow rules cannot authorize it.";
+
+/**
+ * Host policy for Claude Code's real pre-execution hook.
+ *
+ * GSD's ordinary `tool_call` hook is native-engine-only: Claude Code executes
+ * its tools inside the SDK and reports them to Pi afterwards. This policy must
+ * therefore run in the SDK's `PreToolUse` hook, including when
+ * `permissionMode=bypassPermissions`, or the single-writer and destructive
+ * command guards would be post-hoc observations rather than enforcement.
+ */
+export function evaluateClaudeCodePreToolUsePolicy(
+	toolName: string,
+	input: Record<string, unknown>,
+): ClaudeCodePreToolUsePolicyDecision {
+	if (toolName === "Write" || toolName === "Edit" || toolName === "NotebookEdit") {
+		const path = typeof input.file_path === "string"
+			? input.file_path
+			: (typeof input.path === "string" ? input.path : undefined);
+		if (path && isBlockedStateFile(path)) return { action: "deny", reason: BLOCKED_WRITE_ERROR };
+	}
+
+	if (toolName !== "Bash" || typeof input.command !== "string") return { action: "continue" };
+	if (isBashWriteToStateFile(input.command)) return { action: "deny", reason: BLOCKED_WRITE_ERROR };
+
+	const classification = classifyCommand(input.command);
+	if (classification.destructive) {
+		return {
+			action: "ask",
+			reason: `${DESTRUCTIVE_COMMAND_APPROVAL_REASON} Detected: ${classification.labels.join(", ")}.`,
+		};
+	}
+	return { action: "continue" };
+}
+
+export function createClaudeCodePreToolUsePolicyHook(): (
+	input: ClaudeCodePreToolUseInput,
+	toolUseId: string | undefined,
+	options: { signal: AbortSignal },
+) => Promise<ClaudeCodePreToolUseOutput> {
+	return async (input, _toolUseId, options) => {
+		if (options.signal.aborted) {
+			return {
+				hookSpecificOutput: {
+					hookEventName: "PreToolUse",
+					permissionDecision: "deny",
+					permissionDecisionReason: "Operation aborted before tool execution.",
+				},
+			};
+		}
+		const toolInput = isRecord(input.tool_input) ? input.tool_input : {};
+		const decision = evaluateClaudeCodePreToolUsePolicy(input.tool_name, toolInput);
+		if (decision.action === "continue") return { continue: true };
+		return {
+			hookSpecificOutput: {
+				hookEventName: "PreToolUse",
+				permissionDecision: decision.action,
+				permissionDecisionReason: decision.reason,
+			},
+		};
+	};
+}
+
+export function createClaudeCodeHeadlessCanUseToolHandler(): (
+	toolName: string,
+	input: Record<string, unknown>,
+	options: CanUseToolOptions,
+) => Promise<CanUseToolPermissionResult> {
+	return async (toolName, input, options) => {
+		if (options.signal.aborted) {
+			return { behavior: "deny", message: "Aborted", toolUseID: options.toolUseID };
+		}
+		const decision = evaluateClaudeCodePreToolUsePolicy(toolName, input);
+		if (decision.action === "continue") {
+			return { behavior: "allow", updatedInput: input, toolUseID: options.toolUseID };
+		}
+		return { behavior: "deny", message: decision.reason, toolUseID: options.toolUseID };
+	};
+}
+
 /**
  * Known CLI tools where the subcommand verb changes the risk profile.
  * Value = number of subcommand tokens (beyond the executable) to capture
@@ -1523,9 +1631,9 @@ function formatToolInput(toolName: string, input: Record<string, unknown>): stri
  * Follows the same pattern as {@link createClaudeCodeElicitationHandler}:
  * takes an optional UI context and returns the callback or undefined.
  *
- * When UI is unavailable (headless / auto-mode sub-agents), returns a handler
- * that always approves — replacing the old GSD_AUTO_MODE → bypassPermissions
- * workaround.
+ * When UI is unavailable this function returns undefined; the stream installs
+ * the separate policy-aware headless fallback so ordinary tools remain
+ * autonomous while state mutations and destructive commands fail closed.
  */
 export function createClaudeCodeCanUseToolHandler(
 	ui: ExtensionUIContext | undefined,
@@ -1536,6 +1644,26 @@ export function createClaudeCodeCanUseToolHandler(
 		// Abort early if the signal is already fired
 		if (options.signal.aborted) {
 			return { behavior: "deny", message: "Aborted", toolUseID: options.toolUseID };
+		}
+
+		const policyDecision = evaluateClaudeCodePreToolUsePolicy(toolName, _input);
+		if (policyDecision.action === "deny") {
+			return { behavior: "deny", message: policyDecision.reason, toolUseID: options.toolUseID };
+		}
+		if (policyDecision.action === "ask") {
+			try {
+				const choice = await ui.select(
+					`Destructive command — allow this invocation once?\n${String(_input.command ?? "")}\n${policyDecision.reason}`,
+					["Allow once", "Deny"],
+					{ signal: options.signal },
+				);
+				if (options.signal.aborted || choice !== "Allow once") {
+					return { behavior: "deny", message: "User denied", toolUseID: options.toolUseID };
+				}
+				return { behavior: "allow", updatedInput: _input, toolUseID: options.toolUseID };
+			} catch {
+				return { behavior: "deny", message: "Aborted", toolUseID: options.toolUseID };
+			}
 		}
 
 		// For Bash compound commands (e.g. "cd /path && gh pr list"),
@@ -1843,9 +1971,10 @@ export function makeAbortedMessage(model: string, lastTextContent: string): Assi
  * user sees a prompt instead of a silent refusal that Claude Code mistakes
  * for user rejection (#4383).
  *
- * Set `GSD_CLAUDE_CODE_PERMISSION_MODE` to `bypassPermissions` to restore
- * the old always-approve behaviour, or to `default` / `plan` for stricter
- * modes.
+ * Set `GSD_CLAUDE_CODE_PERMISSION_MODE` to `bypassPermissions` to skip normal
+ * SDK permission prompts, or to `default` / `plan` for stricter modes. The
+ * GSD-installed PreToolUse policy remains active in every mode and cannot be
+ * disabled by this setting.
  *
  * When `GSD_HEADLESS=1` is set (auto-mode / non-interactive runs), the
  * default flips to `bypassPermissions` because there is no UI to approve
@@ -2550,11 +2679,10 @@ async function pumpSdkMessages(
 		autoInitClaudeCodeWorkflowMcp(cwd);
 		const gsdPhase = resolveGsdPhaseForSdk(context, projectRoot);
 		const canUseToolHandler = createClaudeCodeCanUseToolHandler(uiContext);
-		// When no UI is available (headless / auto-mode), auto-approve all
-		// tool requests. This replaces the old bypassPermissions workaround.
-		const canUseToolFallback = canUseToolHandler
-			?? (async (_toolName: string, _input: Record<string, unknown>, opts: CanUseToolOptions): Promise<CanUseToolPermissionResult> =>
-				({ behavior: "allow", toolUseID: opts.toolUseID }));
+		// When no UI is available (headless / auto-mode), preserve autonomous
+		// ordinary tools while failing closed for the same hard PreToolUse policy.
+		const canUseToolFallback = canUseToolHandler ?? createClaudeCodeHeadlessCanUseToolHandler();
+		const preToolUsePolicyHook = createClaudeCodePreToolUsePolicyHook();
 		const sdkOpts = buildSdkOptions(
 			modelId,
 			"",
@@ -2564,6 +2692,9 @@ async function pumpSdkMessages(
 				gsdPhase,
 				reasoning: options?.reasoning,
 				canUseTool: canUseToolFallback,
+				hooks: {
+					PreToolUse: [{ hooks: [preToolUsePolicyHook] }],
+				},
 				...(uiContext
 					? {
 							onElicitation: createClaudeCodeElicitationHandler(uiContext),

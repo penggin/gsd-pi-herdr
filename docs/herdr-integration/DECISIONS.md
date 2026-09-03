@@ -725,3 +725,32 @@ cutover requirement. Reconsider P3.8 only when a future default-cutover plan or
 a concrete user workflow demonstrates value that format-bound reopen cannot
 provide. Any future implementation remains copy-only, preview-first, and must
 never delete or overwrite its v3 source.
+
+---
+
+## ADR-H039 — Enforce hard GSD safety policy inside external-engine pre-execution hooks
+
+**Status:** Accepted
+**Date:** 2026-09-03
+
+Pi's `tool_call` hook is not an enforcement boundary for Claude Code SDK tools:
+the SDK executes those tools before returning their result to the Pi agent
+loop. Likewise, the universal Pi `tool_execution_start` event is useful for
+observation but cannot undo an external side effect. Hard policy for an
+external engine must therefore run in that engine's own pre-execution contract.
+
+The Claude adapter installs an SDK `PreToolUse` hook on every query, including
+`permissionMode=bypassPermissions`. Direct Write/Edit/NotebookEdit or Bash
+mutation of `.gsd/STATE.md`, `.gsd/gsd.db`, WAL, or SHM is always denied before
+execution. Destructive Bash is changed to an explicit permission request:
+interactive runs offer only one-time approval or denial, never a persistent
+allow rule; headless and auto-mode runs deny because no human is present.
+Ordinary source edits and verification commands remain autonomous.
+
+This adapter policy supplements, rather than replaces, the native engine's
+existing `tool_call` guards. The same decision function feeds both the
+PreToolUse hook and the SDK permission callback, preventing saved Claude rules
+or headless auto-approval from bypassing the hard decision. The remaining
+loop, gate, queue, planning, worktree, and context-depth policies need a shared
+pre-execution extraction before they can be declared universal across all
+external engines.

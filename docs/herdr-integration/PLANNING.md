@@ -2890,6 +2890,38 @@ this session does not merge, push, tag, or publish.
   the new commits, and import only behavior missing from current downstream
   code with focused parity tests.
 
+### 2026-09-03 — External-engine hard safety preflight
+
+- Audited ADR-041's recorded external-engine gap against current source. Phase
+  tool presentation already narrows Claude Code's native and MCP surface for
+  `run-uat`, `complete-slice`, and strict GSD units, but the native Pi
+  `tool_call` guards still cannot block a Claude SDK tool that has already run.
+- Added a real Claude SDK `PreToolUse` policy hook to every query, including
+  `bypassPermissions`. It denies direct Write/Edit/NotebookEdit and Bash
+  mutation of the authoritative `.gsd/STATE.md`/`gsd.db` family before the SDK
+  executes it. This preserves the DB/projection single-writer invariant under
+  both interactive and headless external execution.
+- Destructive Bash now requests explicit one-time permission before execution.
+  The interactive UI exposes only `Allow once` and `Deny`, so SDK suggestions
+  and saved `Always Allow` rules cannot authorize future destructive calls.
+  Headless/auto-mode has no approving human and therefore denies fail-closed;
+  ordinary source edits and verification commands remain autonomous.
+- The same pure policy decision is applied by both PreToolUse and canUseTool.
+  Native-engine guards remain unchanged, and no lifecycle, session, provider,
+  compaction, or Herdr authority moved into the Claude adapter. ADR-H039 records
+  the boundary; ADR-041 now distinguishes the closed hard-safety subset from
+  the remaining shared-policy extraction.
+- Focused Claude adapter coverage is **218/218** and the combined adapter plus
+  destructive-classifier suite is **222/222**, including state-write,
+  shell-wrapper destructive commands, headless behavior, one-time approval,
+  and real query-option hook wiring. Extension typecheck and changed-source
+  verification pass.
+- Exact next task: extract the remaining loop, pending/deferred gate, queue,
+  planning, worktree, and context-depth decisions into one shared
+  pre-execution evaluator, then consume it from native `tool_call` and external
+  SDK hooks without duplicating lifecycle side effects. Add parity tests before
+  enabling the shared evaluator for a second external engine.
+
 ## 11. Working-session protocol
 
 For every Herdr session:

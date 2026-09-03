@@ -53,6 +53,14 @@ test("destructive guard does not classify force-only rm as recursive delete", ()
   }
 });
 
-test("destructive guard treats quoted interpreter payloads as literals", () => {
-  assert.deepEqual(classifyCommand('bash -c "rm -rf /"'), { destructive: false, labels: [] });
+test("destructive guard inspects executable shell -c payloads without flagging quoted prose inside them", () => {
+  assert.deepEqual(classifyCommand('bash -c "rm -rf /"'), {
+    destructive: true,
+    labels: ["recursive delete"],
+  });
+  assert.deepEqual(classifyCommand("zsh -lc 'git reset --hard HEAD~1'"), {
+    destructive: true,
+    labels: ["hard reset"],
+  });
+  assert.deepEqual(classifyCommand(`sh -c 'echo "rm -rf /"'`), { destructive: false, labels: [] });
 });

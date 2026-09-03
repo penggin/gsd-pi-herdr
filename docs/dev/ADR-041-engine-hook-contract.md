@@ -23,5 +23,16 @@ Under the external claude-code-cli engine, `tool_call`/`tool_result` hooks never
 ## Consequences
 
 - "Does this fire under claude-code-cli?" is answered at import time; a new engine updates one contract.
-- Recorded follow-up (not fixed here): nine `tool_call`-only guards have no `tool_execution_start` mirror and are silently dead under external engines — loop guard, deferred approval-gate block, pending-gate blocking, queue-mode execution guard, planning-unit tools-policy, worktree-isolation write gate, STATE.md single-writer blocks, context-write depth gate, and the destructive-command hard gate (the last is structurally impossible to mirror post-execution). Mirroring or pre-execution alternatives need their own design pass.
+- The original nine-guard follow-up is being closed at the correct external
+  execution boundary rather than by pretending `tool_execution_start` is
+  pre-execution. Phase-specific Claude tool presentation already removes native
+  mutation tools from `run-uat` and `complete-slice` and narrows workflow MCP
+  tools for other GSD units. As of 2026-09-03, the Claude SDK adapter also owns
+  a real `PreToolUse` hook for the two hard safety invariants: direct writes to
+  `.gsd/STATE.md`/`gsd.db` are denied in every permission mode, and destructive
+  Bash requires one-time interactive approval while headless execution denies
+  it. Saved allow rules cannot bypass either decision. Loop, approval/depth,
+  queue, planning, and worktree policy still require a separate shared
+  pre-execution-policy extraction before this follow-up can be considered fully
+  closed across every external engine.
 - Complements ADR-036 (Tool Surface Readiness): same spirit, applied to the hook surface instead of the tool surface.

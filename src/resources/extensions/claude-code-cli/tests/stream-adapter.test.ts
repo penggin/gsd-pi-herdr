@@ -24,6 +24,9 @@ import {
 	CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS_ENV,
 	resolveClaudeCodeCwd,
 	createClaudeCodeCanUseToolHandler,
+	createClaudeCodeHeadlessCanUseToolHandler,
+	createClaudeCodePreToolUsePolicyHook,
+	evaluateClaudeCodePreToolUsePolicy,
 	buildBashPermissionPattern,
 	buildBashPermissionPatternOptions,
 	bashCommandMatchesSavedRules,
@@ -3643,7 +3646,7 @@ describe("stream-adapter — permission mode (F10)", () => {
 		}
 	}
 
-	test("buildSdkOptions defaults to bypassPermissions (globally unblocks all tools)", () => {
+	test("buildSdkOptions defaults to bypassPermissions for ordinary SDK prompts", () => {
 		clearWorkflowMcpEnv();
 		const opts = buildSdkOptions("claude-sonnet-4-6", "test");
 		assert.equal(opts.permissionMode, "bypassPermissions");
@@ -3665,7 +3668,7 @@ describe("stream-adapter — permission mode (F10)", () => {
 		);
 	});
 
-	test("resolveClaudePermissionMode defaults to bypassPermissions when no env var is set (globally unblocks all tools)", async () => {
+	test("resolveClaudePermissionMode defaults to bypassPermissions while hard policy stays in PreToolUse", async () => {
 		const mode = await resolveClaudePermissionMode({});
 		assert.equal(mode, "bypassPermissions");
 	});
@@ -3875,6 +3878,110 @@ describe("stream-adapter — canUseTool handler", () => {
 	test("returns undefined when no UI context is provided", () => {
 		const handler = createClaudeCodeCanUseToolHandler(undefined);
 		assert.equal(handler, undefined);
+	});
+
+	test("pre-tool policy denies authoritative GSD state writes before SDK execution", async () => {
+		for (const [toolName, input] of [
+			["Write", { file_path: "/project/.gsd/STATE.md" }],
+			["Edit", { file_path: "/project/.gsd/gsd.db" }],
+			["NotebookEdit", { path: "/project/.gsd/gsd.db-wal" }],
+			["Bash", { command: "sqlite3 .gsd/gsd.db 'delete from tasks'" }],
+		] as const) {
+			const decision = evaluateClaudeCodePreToolUsePolicy(toolName, input);
+			assert.equal(decision.action, "deny", `${toolName} must be denied`);
+			if (decision.action === "deny") assert.match(decision.reason, /Direct writes to \.gsd\/STATE\.md and \.gsd\/gsd\.db/);
+		}
+
+		const hook = createClaudeCodePreToolUsePolicyHook();
+		const output = await hook({
+			hook_event_name: "PreToolUse",
+			tool_name: "Write",
+			tool_input: { file_path: "/project/.gsd/STATE.md" },
+			tool_use_id: "toolu_state",
+		}, "toolu_state", { signal: new AbortController().signal });
+		assert.equal(output.hookSpecificOutput?.permissionDecision, "deny");
+	});
+
+	test("pre-tool policy asks for one-time approval for destructive Bash and allows safe commands", async () => {
+		const destructive = evaluateClaudeCodePreToolUsePolicy("Bash", { command: "git reset --hard HEAD~1" });
+		assert.equal(destructive.action, "ask");
+		if (destructive.action === "ask") {
+			assert.match(destructive.reason, /explicit one-time user approval/);
+			assert.match(destructive.reason, /hard reset/);
+		}
+		assert.deepEqual(evaluateClaudeCodePreToolUsePolicy("Bash", { command: "pnpm test" }), { action: "continue" });
+		assert.deepEqual(evaluateClaudeCodePreToolUsePolicy("Write", { file_path: "/project/src/index.ts" }), { action: "continue" });
+		assert.equal(evaluateClaudeCodePreToolUsePolicy("Bash", { command: "bash -c 'rm -rf build'" }).action, "ask");
+
+		const hook = createClaudeCodePreToolUsePolicyHook();
+		const output = await hook({
+			hook_event_name: "PreToolUse",
+			tool_name: "Bash",
+			tool_input: { command: "rm -rf build" },
+			tool_use_id: "toolu_rm",
+		}, "toolu_rm", { signal: new AbortController().signal });
+		assert.equal(output.hookSpecificOutput?.permissionDecision, "ask");
+	});
+
+	test("headless permission fallback fails closed for destructive and state-mutating tools", async () => {
+		const handler = createClaudeCodeHeadlessCanUseToolHandler();
+		const destructive = await handler("Bash", { command: "git push origin main --force" }, makeOptions());
+		assert.equal(destructive.behavior, "deny");
+		assert.match((destructive as any).message, /one-time user approval/);
+
+		const stateWrite = await handler("Write", { file_path: ".gsd/STATE.md" }, makeOptions());
+		assert.equal(stateWrite.behavior, "deny");
+
+		const safe = await handler("Bash", { command: "pnpm test" }, makeOptions());
+		assert.equal(safe.behavior, "allow");
+	});
+
+	test("interactive destructive approval is one-time and cannot create an Always Allow rule", async () => {
+		let optionsShown: string[] = [];
+		const ui = {
+			select: async (_prompt: string, options: string[]) => {
+				optionsShown = options;
+				return "Allow once";
+			},
+		};
+		const handler = createClaudeCodeCanUseToolHandler(ui as any);
+		const result = await handler!("Bash", { command: "rm -rf build" }, makeOptions({
+			suggestions: [{ type: "addRules", rules: [{ toolName: "Bash", ruleContent: "rm:*" }] }],
+		}));
+		assert.deepEqual(optionsShown, ["Allow once", "Deny"]);
+		assert.equal(result.behavior, "allow");
+		assert.equal((result as any).updatedPermissions, undefined);
+	});
+
+	test("streamViaClaudeCode installs the universal SDK PreToolUse policy hook", async () => {
+		const cwd = mkdtempSync(join(tmpdir(), "claude-pretool-policy-"));
+		let capturedHooks: any;
+		try {
+			const stream = streamViaClaudeCode(
+				{ id: "claude-sonnet-4-6" } as any,
+				{ messages: [{ role: "user", content: "Continue." } as Message] },
+				{
+					cwd,
+					_skipWorkflowMcpPreflightForTest: true,
+					async *_sdkQueryForTest(args: { options?: Record<string, unknown> }) {
+						capturedHooks = args.options?.hooks;
+						yield makeSdkSuccessResult("finished");
+					},
+				} as any,
+			);
+			await stream.result();
+			assert.equal(capturedHooks.PreToolUse.length, 1);
+			assert.equal(capturedHooks.PreToolUse[0].hooks.length, 1);
+			const output = await capturedHooks.PreToolUse[0].hooks[0]({
+				hook_event_name: "PreToolUse",
+				tool_name: "Bash",
+				tool_input: { command: "git clean -fdx" },
+				tool_use_id: "toolu_clean",
+			}, "toolu_clean", { signal: new AbortController().signal });
+			assert.equal(output.hookSpecificOutput.permissionDecision, "ask");
+		} finally {
+			rmSync(cwd, { recursive: true, force: true });
+		}
 	});
 
 	test("shows select dialog with Allow/Always Allow/Deny and returns allow", async () => {
