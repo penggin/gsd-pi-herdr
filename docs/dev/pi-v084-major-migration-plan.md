@@ -383,6 +383,11 @@ legacy-v3 and the v4 selector remains internal-only.
 
 ### P3.7 — Herdr live E2E and controlled cutover
 
+- Run `pnpm run herdr:session-v4-live-preflight` from the candidate root pane
+  before dispatching work. The preflight fails closed outside Herdr, from a
+  child agent, when the internal v4 selector is absent, when inherited/current
+  pane identity differs, or when the pinned v0.8.2/protocol-20 capability
+  contract is not present. Use `--output <path>` to retain its JSON evidence.
 - Run a real root GSD session under the pinned Herdr version.
 - Dispatch single, affinity reuse, parallel >4, cancellation, and pane-loss
   subagents against the v4 opt-in backend.

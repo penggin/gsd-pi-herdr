@@ -192,3 +192,16 @@ A Herdr integration release is not production-ready because it visually works on
 6. security/path/env tests pass;
 7. detach/reconnect/pane-loss scenarios pass for the supported stability tier;
 8. `PLANNING.md` records the exact evidence.
+
+For the session-v4 P3.7 gate, start in the candidate root pane with
+`GSD_INTERNAL_SESSION_BACKEND=harness-v4` and run:
+
+```bash
+pnpm run herdr:session-v4-live-preflight -- --output /absolute/evidence/preflight.json
+```
+
+The preflight is evidence preparation, not E2E completion. It refuses to run
+outside a Herdr-managed pane, from a subagent child, against a non-v4 root, with
+mismatched inherited/current pane identity, or without the pinned Herdr
+v0.8.2/protocol-20 capability contract. A passing report still requires every
+worker scenario in section 8 before cutover.

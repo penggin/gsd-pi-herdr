@@ -2637,6 +2637,18 @@ this session does not merge, push, tag, or publish.
   `gsd-mcp-server` links now target this prefix; `703d07f5`, `ec14fbb1`, and
   older immutable prefixes remain available for rollback. Running processes
   were not killed and require their normal pane/process restart to acquire it.
+- Added a fail-closed P3.7 session-v4 live preflight. It requires a real root
+  pane with the complete Herdr identity, rejects `GSD_SUBAGENT_CHILD=1`,
+  requires the internal `harness-v4` selector, compares inherited identity to
+  `pane current --current`, runs the pinned v0.8.2/protocol-20 capability
+  contract, and verifies downstream build identity. It can atomically retain a
+  bounded JSON report without logging the socket path or credentials. Offline
+  evaluation and refusal coverage passes **6/6**; the combined Herdr integration
+  suite passes **25/25**, extension typecheck and `build:core` pass, and package
+  validation confirms the new script plus its shared capability helpers are in
+  the installable tarball (`Package is installable. Safe to publish.`). The
+  current non-Herdr shell correctly exits 2 before issuing any pane command.
+  This removes setup ambiguity but does not count as live P3.7 evidence.
 - Exact next task: from an actual Herdr-managed root pane (`HERDR_ENV=1`), run
   the pinned-Herdr P3.7 root/worker matrix with an internal harness-v4 root
   session: single dispatch, affinity reuse, parallel >4, cancellation, pane
