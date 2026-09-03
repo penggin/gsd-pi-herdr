@@ -762,17 +762,31 @@ try {
       process.exit(1);
     }
 
-    // Workspace packages ship under packages/*/dist and are symlinked into
-    // node_modules by the postinstall script, which `--ignore-scripts` skipped.
-    // Run it explicitly to mirror what the real installer does first.
-    const linkScript = join(globalRoot, 'scripts', 'link-workspace-packages.cjs');
-    execFileSync(process.execPath, [linkScript], {
+    // Workspace packages ship under packages/*/dist and are normally linked by
+    // postinstall, which `--ignore-scripts` skipped. The public binary must heal
+    // that exact installation on first launch without an operator running a
+    // private script. This is the installed-tarball regression for bootstrap's
+    // canonical @gsd/* + @opengsd/* link recovery.
+    const globalBootstrap = join(globalRoot, 'dist', 'bootstrap.js');
+    execFileSync(process.execPath, [globalBootstrap, '--build-info'], {
       cwd: globalRoot,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],
       timeout: 30000,
       maxBuffer: DEFAULT_MAX_BUFFER,
+      env: cleanNpmEnv({
+        GSD_HOME: join(globalPrefix, '.gsd-bootstrap-smoke'),
+      }),
     });
+    for (const pkg of getLinkablePackages()) {
+      const linkedPath = join(globalRoot, 'node_modules', pkg.scope, pkg.name);
+      if (!existsSync(linkedPath)) {
+        console.log(`ERROR: First-launch bootstrap did not repair ${pkg.packageName} after --ignore-scripts.`);
+        console.log(`    Expected: ${linkedPath}`);
+        process.exit(1);
+      }
+    }
+    console.log(`    First-launch bootstrap repaired all ${getLinkablePackages().length} linkable packages.`);
     // External (registry) deps are no longer bundled. In a real `--ignore-scripts`
     // install the installer's `npm install --ignore-scripts` repair materializes
     // them from the registry; here we seed them from the local tarball install

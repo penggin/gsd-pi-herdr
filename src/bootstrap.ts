@@ -2,25 +2,37 @@
 // GSD Bootstrap
 //
 // Installs made with --ignore-scripts never run the workspace-package link
-// step. Restore the shipped @gsd/* packages before loading the real CLI.
+// step. Restore every canonically linkable shipped package before loading the
+// real CLI, including both @gsd/* and @opengsd/* scopes.
 
 import {
   cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
-  readdirSync,
-  readFileSync,
   readlinkSync,
   realpathSync,
   rmSync,
   symlinkSync,
 } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const distDir = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(distDir, "..");
+const require = createRequire(import.meta.url);
+
+interface LinkableWorkspacePackage {
+  path: string;
+  scope: "@gsd" | "@opengsd";
+  name: string;
+  packageName: string;
+}
+
+const workspaceManifest = require(join(packageRoot, "scripts", "lib", "workspace-manifest.cjs")) as {
+  getLinkablePackages(root?: string): LinkableWorkspacePackage[];
+};
 
 export interface EnsureWorkspaceLinksOptions {
   symlinkImpl?: typeof symlinkSync;
@@ -34,29 +46,17 @@ export function ensureWorkspaceLinks(
   const repaired: string[] = [];
   const failed: string[] = [];
   const packagesDir = join(root, "packages");
-  const scopeDir = join(root, "node_modules", "@gsd");
   if (!existsSync(packagesDir)) return { repaired, failed };
 
-  for (const entry of readdirSync(packagesDir, { withFileTypes: true })) {
-    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
-    const manifestPath = join(packagesDir, entry.name, "package.json");
-    if (!existsSync(manifestPath)) continue;
-
-    let packageName: string | undefined;
-    try {
-      packageName = JSON.parse(readFileSync(manifestPath, "utf8")).name;
-    } catch {
-      continue;
-    }
-    if (typeof packageName !== "string" || !packageName.startsWith("@gsd/")) continue;
-
-    const target = join(scopeDir, packageName.slice("@gsd/".length));
+  for (const workspacePackage of workspaceManifest.getLinkablePackages(root)) {
+    const scopeDir = join(root, "node_modules", workspacePackage.scope);
+    const target = join(scopeDir, workspacePackage.name);
     if (existsSync(target)) {
       try {
         const stat = lstatSync(target);
         if (stat.isSymbolicLink()) {
           const linkTarget = readlinkSync(target);
-          const intended = join(packagesDir, entry.name);
+          const intended = workspacePackage.path;
           const resolvedLink = resolve(dirname(target), linkTarget);
           if (resolvedLink === intended) continue;
           rmSync(target, { force: true });
@@ -72,15 +72,15 @@ export function ensureWorkspaceLinks(
 
     try {
       mkdirSync(scopeDir, { recursive: true });
-      (options.symlinkImpl ?? symlinkSync)(join(packagesDir, entry.name), target, "junction");
-      repaired.push(packageName);
+      (options.symlinkImpl ?? symlinkSync)(workspacePackage.path, target, "junction");
+      repaired.push(workspacePackage.packageName);
     } catch {
       try {
         mkdirSync(scopeDir, { recursive: true });
-        (options.cpSyncImpl ?? cpSync)(join(packagesDir, entry.name), target, { recursive: true });
-        repaired.push(packageName);
+        (options.cpSyncImpl ?? cpSync)(workspacePackage.path, target, { recursive: true });
+        repaired.push(workspacePackage.packageName);
       } catch (err) {
-        failed.push(`${packageName}: ${err instanceof Error ? err.message : String(err)}`);
+        failed.push(`${workspacePackage.packageName}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   }

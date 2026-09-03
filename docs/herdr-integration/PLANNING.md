@@ -2953,6 +2953,41 @@ this session does not merge, push, tag, or publish.
   `tool_call` plus external SDK hooks without duplicating lifecycle side effects.
   Add parity tests before enabling it for a second external engine.
 
+### 2026-09-03 — First-launch canonical workspace-link repair
+
+- Reproduced the remote deployment failure as a focused red test: the
+  `--ignore-scripts` bootstrap restored `@gsd/pi-coding-agent` and
+  `@gsd/pi-tui` but omitted a shipped `@opengsd/contracts` fixture. This
+  matched the installed candidate, where first launch reported seven repairs
+  and importing the Claude adapter failed until the private link script was
+  run manually.
+- Extended the canonical `scripts/lib/workspace-manifest.cjs` query with an
+  explicit root parameter and made `src/bootstrap.ts` consume that same
+  manifest. First launch now discovers every package carrying validated
+  `gsd.linkable` metadata and creates its declared `@gsd` or `@opengsd` scope;
+  it no longer maintains a second scope-specific package scanner.
+- Replaced the masking global-install check in `validate-pack`: after
+  `npm install --global --ignore-scripts`, the test now invokes the public
+  bootstrap as the first process and then requires all ten canonical links.
+  The packaged private link script is no longer called by the test before this
+  assertion.
+- Verification is green: bootstrap and manifest focused tests **11/11**,
+  changed-source tests **3/3**, validate-pack script tests **2/2**, extension
+  and root TypeScript checks, `build:core`, Herdr integration **30/30**,
+  `git diff --check`, and full package installation validation. The decisive
+  tarball evidence is `First-launch bootstrap repaired all 10 linkable
+  packages` followed by `Package is installable. Safe to publish.`
+- No architecture decision changed: this closes the documented deployment gap
+  by making bootstrap obey the already-canonical package manifest. Remaining
+  risk is limited to platforms where both junction creation and recursive copy
+  are unavailable; the existing fail-closed startup diagnostic remains in
+  force for that case.
+- Exact next task: extract the remaining loop, pending/deferred gate, queue,
+  planning, worktree, and context-depth decisions into one shared
+  pre-execution evaluator. Consume it from native `tool_call` and external SDK
+  pre-execution hooks without duplicating lifecycle side effects, then add
+  parity coverage before enabling it for a second external engine.
+
 ## 11. Working-session protocol
 
 For every Herdr session:

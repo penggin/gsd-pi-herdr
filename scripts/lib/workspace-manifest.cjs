@@ -1,4 +1,4 @@
-// gsd-pi + scripts/lib/workspace-manifest.cjs — single source of truth for linkable @gsd/* packages
+// gsd-pi + scripts/lib/workspace-manifest.cjs — single source of truth for linkable workspace packages
 'use strict'
 
 const { readdirSync, readFileSync, existsSync, statSync } = require('fs')
@@ -23,16 +23,17 @@ const PACKAGES_DIR = join(REPO_ROOT, 'packages')
  *
  * Used by:
  *   - scripts/link-workspace-packages.cjs (node_modules linkage)
- *   - src/loader.ts (via scripts/generate-ws-packages.cjs)
+ *   - src/bootstrap.ts (first-run recovery after --ignore-scripts)
  *   - scripts/validate-pack.js (pack-install smoke checks)
  *   - scripts/verify-workspace-coverage.cjs (CI coverage gate)
  */
-function getLinkablePackages() {
-	if (!existsSync(PACKAGES_DIR)) return []
-	const entries = readdirSync(PACKAGES_DIR)
+function getLinkablePackages(root = REPO_ROOT) {
+	const packagesDir = join(resolve(root), 'packages')
+	if (!existsSync(packagesDir)) return []
+	const entries = readdirSync(packagesDir)
 	const out = []
 	for (const dir of entries) {
-		const pkgPath = join(PACKAGES_DIR, dir)
+		const pkgPath = join(packagesDir, dir)
 		if (!statSync(pkgPath).isDirectory()) continue
 		const pkgJsonPath = join(pkgPath, 'package.json')
 		if (!existsSync(pkgJsonPath)) continue
@@ -74,8 +75,8 @@ function getLinkablePackages() {
 }
 
 /** Returns only packages in the `@gsd` scope (excludes `@opengsd`). */
-function getCorePackages() {
-	return getLinkablePackages().filter((p) => p.scope === '@gsd')
+function getCorePackages(root = REPO_ROOT) {
+	return getLinkablePackages(root).filter((p) => p.scope === '@gsd')
 }
 
 module.exports = {
