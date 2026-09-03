@@ -520,3 +520,28 @@ session backend remains canonical, GSD owns workflow state, and Herdr owns
 terminal runtime. A harness-v4 production opt-in remains forbidden until
 new/open/fork construction and CLI/headless parity use the same capability-
 backed runtime object.
+
+---
+
+## ADR-H031 — Keep session creation and fork semantics inside the selected runtime factory
+
+**Status:** Accepted
+**Date:** 2026-09-03
+
+New-session parentage and forks are backend operations, not AgentSession or UI
+operations. Parent identity is therefore typed as either a legacy file path or
+a harness-v4 session ID, and the selected runtime factory must reject the wrong
+identity kind. The factory owns create/open/continue/memory and source-to-leaf
+fork construction and returns one prepared capability/snapshot bundle.
+
+The harness-v4 test factory uses the validated v4 JSONL and memory repositories
+directly; it does not translate v4 writes through `SessionManager`. Legacy-v3
+persisted forks are prepared without mutating the active source. The exceptional
+legacy in-memory fork still reuses its manager, so runtime teardown must precede
+that mutation to preserve shutdown callback semantics.
+
+Providing this factory does not enable v4 production selection. `AgentSession`
+construction and the extension `newSession({ setup(sessionManager) })` callback
+still require an explicit backend-neutral compatibility decision and full
+CLI/headless parity. Until then, selection remains fail-closed and legacy-v3 is
+the only deployed backend.

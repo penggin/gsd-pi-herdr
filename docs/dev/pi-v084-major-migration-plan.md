@@ -2,7 +2,7 @@
 
 Date: 2026-09-03
 
-Status: P3.0–P3.4, P3.5a–P3.5b, and P3.5c1–P3.5c4 complete; P3.5c v4 composition in progress; no v4 cutover
+Status: P3.0–P3.4, P3.5a–P3.5b, and P3.5c1–P3.5c5 complete; P3.5c v4 AgentSession composition in progress; no v4 cutover
 
 Upstream reference: `refs/pi-upstream/v0.84.4`
 
@@ -274,6 +274,19 @@ memory/JSONL repositories, then replace the centralized legacy construction
 bridge and extension `newSession({ setup })` compatibility surface with an
 explicit backend-aware contract. Keep v4 unselectable until both changes and
 CLI/headless parity are complete.
+
+P3.5c5 adds that harness-v4 factory without making it selectable. It provisions,
+opens, resumes, and forks the validated v4 JSONL repository and provides an
+isolated v4 memory repository for no-session runs. Both return the same prepared
+capability/snapshot shape as legacy-v3, never expose a legacy manager, preserve
+session-ID parentage, and reject legacy path parents. A cwd metadata override on
+the v4 harness storage adapter gives memory sessions and explicit open overrides
+the same runtime cwd semantics without modifying durable headers.
+
+Next: remove `AgentSession` construction's mandatory legacy manager and define
+how the backward-compatible extension setup callback behaves on non-legacy
+backends. Then run the same AgentSession lifecycle suite over prepared legacy
+and v4 memory runtimes before exposing any preference or CLI selector.
 
 ### P3.6 — Integrate GSD, web, and Assessment Gates
 

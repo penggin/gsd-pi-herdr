@@ -2470,6 +2470,22 @@ this session does not merge, push, tag, or publish.
   v4 memory/JSONL repositories, then design the backend-aware replacement for
   the centralized legacy construction bridge and extension setup callback.
   Keep the harness-v4 runtime selection guard intact until CLI/headless parity.
+- Added the P3.5c5 harness-v4 prepared-runtime factory over the already validated
+  v4 JSONL and memory repositories. It performs create/open/continue/fork with
+  session-ID parent binding, returns the same capability/snapshot bundle as the
+  legacy factory, and never creates or exposes a legacy manager. Cross-format
+  parent mismatches fail before construction. Memory and cwd-override sessions
+  receive an adapter-level cwd view without rewriting durable metadata.
+- Added ADR-H031 to keep parent/fork authority in the selected factory. Focused
+  runtime/capability tests pass **18/18**, including real v4 JSONL open,
+  continue-recent, persisted fork, and memory fork evidence. Production remains
+  legacy-v3 because the AgentSession construction bridge and extension setup
+  callback are not yet backend-neutral.
+- Exact next task: remove `AgentSession`'s mandatory legacy-manager construction
+  dependency and specify a fail-closed, backward-compatible policy for
+  `newSession({ setup(sessionManager) })` on harness-v4. Prove the common
+  lifecycle suite on prepared legacy and v4 memory sessions before adding any
+  runtime preference or CLI selector.
 
 ## 11. Working-session protocol
 

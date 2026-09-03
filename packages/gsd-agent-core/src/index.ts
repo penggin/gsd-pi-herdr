@@ -70,6 +70,7 @@ export {
 	createAgentSession,
 } from "./sdk.js";
 export {
+	createHarnessV4SessionManagerRuntimeFactory,
 	createLegacyPreparedSessionRuntime,
 	createLegacySessionManagerRuntimeFactory,
 	legacySessionManagerRuntimeFactory,

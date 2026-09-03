@@ -1,5 +1,16 @@
 import { SessionManager } from "@gsd/pi-coding-agent/core/session-manager.js";
 import {
+	type FileSystem,
+	JsonlV4SessionRepository,
+	type JsonlV4SessionMetadata,
+	readJsonlV4Session,
+	Session as HarnessSession,
+	V4HarnessSessionStorageAdapter,
+	type V4HarnessSessionMetadata,
+	V4MemorySessionRepository,
+} from "@gsd/pi-agent-core";
+import {
+	createHarnessV4SessionCapabilityAdapter,
 	LegacyV3SessionCapabilityAdapter,
 	type SessionCapabilityAdapter,
 	SessionCapabilityReadSnapshot,
@@ -8,10 +19,10 @@ import {
 /**
  * Session storage backend selected by the production composition root.
  *
- * Only the proven legacy backend is selectable today. `harness-v4` is
- * intentionally absent until it can satisfy the same lifecycle contract.
+ * A harness-v4 construction factory exists for parity testing, but production
+ * selection remains blocked by AgentSession's lifecycle guard.
  */
-export type ProductionSessionBackend = "legacy-v3";
+export type ProductionSessionBackend = "legacy-v3" | "harness-v4";
 
 export type SessionManagerTarget =
 	| {
@@ -31,6 +42,8 @@ export interface PreparedSessionRuntime {
 	readonly snapshot: SessionCapabilityReadSnapshot;
 	/** Present only while legacy-v3 remains available to unconverted construction paths. */
 	readonly legacyManager?: SessionManager;
+	/** Present for harness-v4 runtimes; never exposed as a legacy manager. */
+	readonly harnessSession?: HarnessSession<V4HarnessSessionMetadata>;
 }
 
 export async function createLegacyPreparedSessionRuntime(manager: SessionManager): Promise<PreparedSessionRuntime> {
@@ -48,6 +61,22 @@ export function requireLegacySessionManager(runtime: PreparedSessionRuntime): Se
 		throw new Error(`Session backend ${runtime.backend} does not expose a legacy SessionManager`);
 	}
 	return runtime.legacyManager;
+}
+
+async function createHarnessPreparedSessionRuntime(
+	storage: ConstructorParameters<typeof V4HarnessSessionStorageAdapter>[0],
+	cwdOverride?: string,
+): Promise<PreparedSessionRuntime> {
+	const session = new HarnessSession(
+		new V4HarnessSessionStorageAdapter(storage, cwdOverride === undefined ? {} : { cwd: cwdOverride }),
+	);
+	const capabilities = await createHarnessV4SessionCapabilityAdapter(session);
+	return {
+		backend: "harness-v4",
+		capabilities,
+		snapshot: await SessionCapabilityReadSnapshot.create(capabilities),
+		harnessSession: session,
+	};
 }
 
 /**
@@ -105,6 +134,83 @@ export function createLegacySessionManagerRuntimeFactory(): SessionManagerRuntim
 				: manager;
 			forkManager.createBranchedSession(target.leafId);
 			return createLegacyPreparedSessionRuntime(forkManager);
+		},
+	};
+}
+
+export function createHarnessV4SessionManagerRuntimeFactory(options: {
+	fs: FileSystem;
+	sessionsRoot: string;
+}): SessionManagerRuntimeFactory {
+	const jsonl = new JsonlV4SessionRepository(options);
+	const memory = new V4MemorySessionRepository();
+
+	return {
+		backend: "harness-v4",
+		async prepare(target): Promise<PreparedSessionRuntime> {
+			switch (target.kind) {
+				case "create": {
+					if (target.parent?.kind === "legacy-path") {
+						throw new Error("harness-v4 sessions require a session-id parent reference");
+					}
+					return createHarnessPreparedSessionRuntime(
+						await jsonl.create({
+							cwd: target.cwd,
+							...(target.parent ? { parentSessionId: target.parent.value } : {}),
+						}),
+					);
+				}
+				case "open": {
+					const metadata = (await readJsonlV4Session(options.fs, target.path, {
+						sessionsRoot: options.sessionsRoot,
+					})).metadata;
+					const source = await jsonl.open(metadata);
+					return createHarnessPreparedSessionRuntime(source, target.cwdOverride);
+				}
+				case "continue-recent": {
+					const recent = (await jsonl.list({ cwd: target.cwd }))[0];
+					return recent
+						? createHarnessPreparedSessionRuntime(await jsonl.open(recent))
+						: createHarnessPreparedSessionRuntime(await jsonl.create({ cwd: target.cwd }));
+				}
+				case "memory":
+					return createHarnessPreparedSessionRuntime(memory.create(), target.cwd);
+			}
+		},
+		async fork(source, target): Promise<PreparedSessionRuntime> {
+			if (!source.harnessSession) {
+				throw new Error(`Session backend ${source.backend} does not expose a harness-v4 session`);
+			}
+			const metadata = await source.harnessSession.getMetadata();
+			if (target.leafId === null) {
+				return metadata.path
+					? createHarnessPreparedSessionRuntime(
+							await jsonl.create({ cwd: target.cwd, parentSessionId: metadata.id }),
+						  )
+					: createHarnessPreparedSessionRuntime(
+							memory.create({ parentSessionId: metadata.id }),
+							target.cwd,
+						  );
+			}
+			if (metadata.path) {
+				const raw = (await readJsonlV4Session(options.fs, metadata.path, {
+					sessionsRoot: options.sessionsRoot,
+				})).metadata as JsonlV4SessionMetadata;
+				return createHarnessPreparedSessionRuntime(
+					await jsonl.fork(raw, { cwd: target.cwd, entryId: target.leafId, position: "at" }),
+				);
+			}
+			return createHarnessPreparedSessionRuntime(
+				memory.fork(
+					{
+						id: metadata.id,
+						createdAt: Date.parse(metadata.createdAt),
+						...(metadata.parentSessionId ? { parentSessionId: metadata.parentSessionId } : {}),
+					},
+					{ entryId: target.leafId, position: "at" },
+				),
+				target.cwd,
+			);
 		},
 	};
 }

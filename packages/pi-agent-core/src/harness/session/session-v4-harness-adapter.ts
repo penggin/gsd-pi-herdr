@@ -168,7 +168,10 @@ function normalizeLegacyJson<T>(value: T): T {
  * never rewrites a legacy-v3 file.
  */
 export class V4HarnessSessionStorageAdapter implements SessionStorage<V4HarnessSessionMetadata> {
-	constructor(private readonly backend: V4HarnessStorageBackend) {}
+	constructor(
+		private readonly backend: V4HarnessStorageBackend,
+		private readonly metadataOverride: { cwd?: string } = {},
+	) {}
 
 	private async appendV4(entry: V4ProvisionedEntry): Promise<JsonlV4Entry> {
 		return this.backend.appendEntry(normalizeLegacyJson(entry));
@@ -192,7 +195,9 @@ export class V4HarnessSessionStorageAdapter implements SessionStorage<V4HarnessS
 			createdAt: new Date(metadata.createdAt).toISOString(),
 			format: "harness-v4",
 			storageCreatedAt: metadata.createdAt,
-			...(metadata.cwd === undefined ? {} : { cwd: metadata.cwd }),
+			...((this.metadataOverride.cwd ?? metadata.cwd) === undefined
+				? {}
+				: { cwd: this.metadataOverride.cwd ?? metadata.cwd }),
 			...(metadata.path === undefined ? {} : { path: metadata.path }),
 			...(metadata.parentSessionId === undefined ? {} : { parentSessionId: metadata.parentSessionId }),
 		};

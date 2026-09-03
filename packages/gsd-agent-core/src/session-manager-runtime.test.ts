@@ -6,10 +6,12 @@ import { afterEach, describe, it } from "node:test";
 import { AgentSessionRuntime } from "./agent-session-runtime.js";
 import { createAgentSession } from "./sdk.js";
 import {
+	createHarnessV4SessionManagerRuntimeFactory,
 	createLegacySessionManagerRuntimeFactory,
 	requireLegacySessionManager,
 } from "./session-manager-runtime.js";
 import { SessionManager } from "@gsd/pi-coding-agent/core/session-manager.js";
+import { NodeExecutionEnv } from "../../pi-agent-core/src/harness/env/nodejs.js";
 
 describe("production session-manager runtime factory", () => {
 	const roots: string[] = [];
@@ -139,6 +141,73 @@ describe("production session-manager runtime factory", () => {
 				parent: { kind: "session-id", value: "v4-parent" },
 			}),
 			/legacy-path parent reference/,
+		);
+	});
+
+	it("prepares and forks harness-v4 JSONL and memory sessions without a legacy manager", async () => {
+		const root = makeRoot();
+		const cwd = join(root, "project");
+		const sessionsRoot = join(root, "sessions-v4");
+		mkdirSync(cwd, { recursive: true });
+		const factory = createHarnessV4SessionManagerRuntimeFactory({
+			fs: new NodeExecutionEnv({ cwd: root }),
+			sessionsRoot,
+		});
+		const source = await factory.prepare({ kind: "create", cwd });
+		assert.equal(source.backend, "harness-v4");
+		assert.equal(source.legacyManager, undefined);
+		assert.ok(source.harnessSession);
+		const userId = await source.capabilities.appendMessage({ role: "user", content: "keep", timestamp: 1 });
+		await source.capabilities.appendMessage({
+			role: "assistant",
+			content: [{ type: "text", text: "done" }],
+			api: "test",
+			provider: "test",
+			model: "test",
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "stop",
+			timestamp: 2,
+		});
+
+		const forked = await factory.fork(source, { cwd, leafId: userId });
+		assert.deepEqual(forked.snapshot.getBranch().map((entry) => entry.id), [userId]);
+		assert.deepEqual((await forked.capabilities.getMetadata()).parent, {
+			kind: "session-id",
+			value: source.snapshot.getSessionId(),
+		});
+		const sourcePath = (await source.capabilities.getMetadata()).path;
+		assert.ok(sourcePath);
+		const opened = await factory.prepare({ kind: "open", path: sourcePath! });
+		assert.equal(opened.snapshot.getSessionId(), source.snapshot.getSessionId());
+		const recent = await factory.prepare({ kind: "continue-recent", cwd });
+		assert.equal(recent.snapshot.getSessionId(), forked.snapshot.getSessionId());
+
+		const memory = await factory.prepare({ kind: "memory", cwd });
+		const memoryEntryId = await memory.capabilities.appendMessage({ role: "user", content: "memory", timestamp: 3 });
+		const memoryFork = await factory.fork(memory, { cwd, leafId: memoryEntryId });
+		assert.equal(memoryFork.snapshot.getCwd(), cwd);
+		assert.deepEqual(memoryFork.snapshot.getBranch().map((entry) => entry.id), [memoryEntryId]);
+	});
+
+	it("rejects a legacy parent identity at the harness-v4 factory boundary", async () => {
+		const root = makeRoot();
+		await assert.rejects(
+			createHarnessV4SessionManagerRuntimeFactory({
+				fs: new NodeExecutionEnv({ cwd: root }),
+				sessionsRoot: join(root, "sessions-v4"),
+			}).prepare({
+				kind: "create",
+				cwd: root,
+				parent: { kind: "legacy-path", value: "/legacy/session.jsonl" },
+			}),
+			/session-id parent reference/,
 		);
 	});
 
