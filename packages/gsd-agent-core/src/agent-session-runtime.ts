@@ -227,23 +227,28 @@ export class AgentSessionRuntime {
 		parentSession?: string;
 		setup?: (sessionManager: SessionManager) => Promise<void>;
 		withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
+		workspaceRoot?: string;
+		abortSignal?: AbortSignal;
 	}): Promise<{ cancelled: boolean }> {
 		const beforeResult = await this.emitBeforeSwitch("new");
 		if (beforeResult.cancelled) {
 			return beforeResult;
 		}
 
+		if (options?.abortSignal?.aborted) return { cancelled: true };
 		const previousSessionFile = this.session.sessionFile;
 		const sessionDir = this.session.sessionManager.getSessionDir();
-		const sessionManager = await this.sessionManagers.prepare({ kind: "create", cwd: this.cwd, sessionDir });
+		const targetCwd = options?.workspaceRoot ?? this.cwd;
+		const sessionManager = await this.sessionManagers.prepare({ kind: "create", cwd: targetCwd, sessionDir });
 		if (options?.parentSession) {
 			sessionManager.newSession({ parentSession: options.parentSession });
 		}
+		if (options?.abortSignal?.aborted) return { cancelled: true };
 
 		await this.teardownCurrent("new", sessionManager.getSessionFile());
 		this.apply(
 			await this.createRuntime({
-				cwd: this.cwd,
+				cwd: targetCwd,
 				agentDir: this.services.agentDir,
 				sessionManager,
 				sessionStartEvent: { type: "session_start", reason: "new", previousSessionFile },

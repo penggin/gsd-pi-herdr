@@ -92,7 +92,7 @@ export function setupAutocomplete(host: InteractiveModeDelegateHost): void {
 
 	host.autocompleteProvider = new CombinedAutocompleteProvider(
 		[...slashCommands, ...templateCommands, ...extensionCommands, ...skillCommandList],
-		process.cwd(),
+		host.sessionManager.getCwd(),
 		fdPath,
 	);
 	host.autocompleteProvider.setRespectGitignore(host.settingsManager.getRespectGitignoreInPicker());

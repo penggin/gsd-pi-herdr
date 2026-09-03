@@ -189,6 +189,24 @@ test("buildResourceLoader includes caller-provided additional extension paths", 
   );
 });
 
+test("buildResourceLoader honors the effective session cwd", async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "gsd-resource-loader-cwd-"));
+  const fakeAgentDir = join(tmp, ".gsd", "agent");
+  const sessionCwd = join(tmp, "worktree");
+  const restoreHomeEnv = overrideHomeEnv(tmp);
+
+  t.after(() => {
+    restoreHomeEnv();
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  mkdirSync(sessionCwd, { recursive: true });
+  const { buildResourceLoader } = await import("../resource-loader.ts");
+  const loader = await buildResourceLoader(fakeAgentDir, { cwd: sessionCwd }) as { cwd?: string };
+
+  assert.equal(loader.cwd, sessionCwd);
+});
+
 test("buildResourceLoader loads user-installed extensions and lets them shadow bundled IDs", async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), "gsd-resource-loader-installed-"));
   const fakeAgentDir = join(tmp, ".gsd", "agent");

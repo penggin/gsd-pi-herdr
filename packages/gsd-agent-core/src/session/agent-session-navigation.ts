@@ -571,7 +571,7 @@ export class AgentSessionNavigationModule {
 	exportToJsonl(outputPath?: string): string {
 		const filePath = resolvePath(
 			outputPath ?? `session-${new Date().toISOString().replace(/[:.]/g, "-")}.jsonl`,
-			process.cwd(),
+			this.host.sessionManager.getCwd(),
 		);
 		const dir = dirname(filePath);
 		if (!existsSync(dir)) {

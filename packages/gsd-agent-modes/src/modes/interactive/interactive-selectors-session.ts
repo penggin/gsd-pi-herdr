@@ -39,7 +39,7 @@ export function showUserMessageSelector(host: InteractiveModeDelegateHost): void
 			const selector = new UserMessageSelectorComponent(
 				userMessages.map((m) => ({ id: m.entryId, text: m.text })),
 				async (entryId) => {
-					const result = await host.session.fork(entryId);
+					const result = await host.forkSession(entryId);
 					if (result.cancelled) {
 						// Extension cancelled the fork
 						done();
@@ -242,7 +242,7 @@ export async function handleResumeSession(host: InteractiveModeDelegateHost, ses
 		host.clearBlockingError();
 
 		// Switch session via AgentSession (emits extension session events)
-		await host.session.switchSession(sessionPath);
+		await host.resumeSession(sessionPath);
 
 		// Clear and re-render the chat
 		host.chatContainer.clear();

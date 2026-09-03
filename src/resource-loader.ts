@@ -889,6 +889,8 @@ interface BuildResourceLoaderOptions {
   additionalExtensionPaths?: string[]
   /** --bare: minimal context (see bareResourceLoaderOptions) */
   bare?: boolean
+  /** Effective session cwd. Defaults to the invocation cwd. */
+  cwd?: string
 }
 
 export async function buildResourceLoader(
@@ -905,7 +907,7 @@ export async function buildResourceLoader(
 
   return new DefaultResourceLoader({
     agentDir,
-    cwd: process.cwd(),
+    cwd: options.cwd ?? process.cwd(),
     additionalExtensionPaths,
     bundledExtensionKeys: bundledKeys,
     ...bareResourceLoaderOptions(options.bare),

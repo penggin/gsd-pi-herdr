@@ -17,7 +17,13 @@ import {
 	TUI,
 } from "@gsd/pi-tui";
 import { VERSION } from "@gsd/pi-coding-agent/config.js";
-import { type AgentSession, type AgentSessionEvent, createInitialTranscriptState, type TranscriptState } from "@gsd/agent-core";
+import {
+	type AgentSession,
+	type AgentSessionEvent,
+	type AgentSessionRuntime,
+	createInitialTranscriptState,
+	type TranscriptState,
+} from "@gsd/agent-core";
 import type { ExtensionRunner } from "@gsd/pi-coding-agent/core/extensions/index.js";
 import { FooterDataProvider } from "@gsd/pi-coding-agent/core/footer-data-provider.js";
 import { KeybindingsManager } from "@gsd/agent-core";
@@ -72,6 +78,8 @@ export {
 } from "./interactive-notify-render.js";
 
 export interface InteractiveModeOptions {
+	/** Optional owner for atomic session replacement and asynchronous storage preparation. */
+	sessionRuntime?: AgentSessionRuntime;
 	/** Providers that were migrated to auth.json (shows warning) */
 	migratedProviders?: string[];
 	/** Warning message if session model couldn't be restored */
@@ -96,6 +104,7 @@ export interface InteractiveModeOptions {
 
 export class InteractiveMode {
 	private session: AgentSession;
+	private readonly sessionRuntime?: AgentSessionRuntime;
 	private ui: TUI;
 	private chatContainer: Container;
 	private pendingMessagesContainer: Container;
@@ -188,6 +197,12 @@ export class InteractiveMode {
 		private options: InteractiveModeOptions = {},
 	) {
 		this.session = session;
+		this.sessionRuntime = options.sessionRuntime;
+		if (this.sessionRuntime && this.sessionRuntime.session !== session) {
+			throw new Error("InteractiveMode session must match sessionRuntime.session");
+		}
+		this.sessionRuntime?.setBeforeSessionInvalidate(() => this.prepareForSessionRebind());
+		this.sessionRuntime?.setRebindSession(async (nextSession) => this.rebindSession(nextSession));
 		this.version = VERSION;
 		this.ui = new TUI(options.terminal ?? new ProcessTerminal(), this.settingsManager.getShowHardwareCursor());
 		this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
@@ -201,7 +216,7 @@ export class InteractiveMode {
 			gsdPhase: this.gsdProgressState?.phase ?? this.pendingWorkingMessage ?? undefined,
 			lastError: this.lastBlockingError,
 			sessionName: this.sessionManager.getSessionName(),
-			cwd: this.gsdProgressState?.path ?? process.cwd(),
+			cwd: this.gsdProgressState?.path ?? this.sessionManager.getCwd(),
 			manuallyExpanded: this.gsdStatusExpanded,
 			gsdProgress: this.gsdProgressState,
 			isStreaming: this.session.isStreaming,
@@ -221,13 +236,13 @@ export class InteractiveMode {
 		this.editor = this.defaultEditor;
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor as import("@gsd/pi-tui").Component);
-		this.footerDataProvider = new FooterDataProvider(process.cwd());
+		this.footerDataProvider = new FooterDataProvider(this.sessionManager.getCwd());
 		this.footer = new FooterComponent(session, this.footerDataProvider, () => ({
 			override: this.settingsManager.getAdaptiveMode(),
 			activeToolCount: this.pendingTools.size,
 			gsdPhase: this.gsdProgressState?.phase ?? this.pendingWorkingMessage ?? undefined,
 			lastError: this.lastBlockingError,
-			cwd: this.gsdProgressState?.path ?? process.cwd(),
+			cwd: this.gsdProgressState?.path ?? this.sessionManager.getCwd(),
 			manuallyExpanded: this.gsdStatusExpanded,
 			gsdProgress: this.gsdProgressState,
 		}));
@@ -379,6 +394,68 @@ export class InteractiveMode {
 		});
 	}
 
+	private prepareForSessionRebind(): void {
+		this.unsubscribe?.();
+		this.unsubscribe = undefined;
+		if (this.isInitialized) this.resetExtensionUI();
+	}
+
+	private rebindFooterDataProvider(session: AgentSession): void {
+		this._branchChangeUnsub?.();
+		this._branchChangeUnsub = undefined;
+		this.footerDataProvider.dispose();
+		this.footerDataProvider = new FooterDataProvider(session.sessionManager.getCwd());
+		this.footer.setFooterData(this.footerDataProvider);
+		if (this.isInitialized) {
+			this._branchChangeUnsub = this.footerDataProvider.onBranchChange(() => this.ui.requestRender());
+		}
+	}
+
+	private async rebindSession(session: AgentSession): Promise<void> {
+		this.session = session;
+		this.footer.setSession(session);
+		this.rebindFooterDataProvider(session);
+		this.footer.setAutoCompactEnabled(session.autoCompactionEnabled);
+		setRegisteredThemes(session.resourceLoader.getThemes().themes);
+		this.setupAutocomplete();
+		if (!this.isInitialized) return;
+		await this.initExtensions();
+		this.subscribeToAgent();
+		for (const diagnostic of this.sessionRuntime?.diagnostics ?? []) {
+			if (diagnostic.type === "error") {
+				this.showError(diagnostic.message);
+			} else if (diagnostic.type === "warning") {
+				this.showWarning(diagnostic.message);
+			} else {
+				this.showTip(diagnostic.message);
+			}
+		}
+		if (this.sessionRuntime?.modelFallbackMessage) {
+			this.showWarning(this.sessionRuntime.modelFallbackMessage);
+		}
+		modeInit.updateTerminalTitle(this);
+		this.footer.invalidate();
+		this.ui.requestRender();
+	}
+
+	async startNewSession(options?: Parameters<AgentSession["newSession"]>[0]): Promise<boolean> {
+		if (!this.sessionRuntime) return this.session.newSession(options);
+		const result = await this.sessionRuntime.newSession(options);
+		return !result.cancelled;
+	}
+
+	async forkSession(entryId: string): Promise<{ selectedText: string; cancelled: boolean }> {
+		if (!this.sessionRuntime) return this.session.fork(entryId);
+		const result = await this.sessionRuntime.fork(entryId);
+		return { selectedText: result.selectedText ?? "", cancelled: result.cancelled };
+	}
+
+	async resumeSession(sessionPath: string): Promise<boolean> {
+		if (!this.sessionRuntime) return this.session.switchSession(sessionPath);
+		const result = await this.sessionRuntime.switchSession(sessionPath);
+		return !result.cancelled;
+	}
+
 	private async handleEvent(event: AgentSessionEvent): Promise<void> {
 		this.transcriptState = applyAgentEventToTranscript(this.transcriptState, event);
 		await handleAgentEvent(this as any, event);
@@ -430,6 +507,8 @@ export class InteractiveMode {
 	}
 
 	stop(): void {
+		this.sessionRuntime?.setBeforeSessionInvalidate(undefined);
+		this.sessionRuntime?.setRebindSession(undefined);
 		if (this.loadingAnimation) {
 			this.loadingAnimation.stop();
 			this.loadingAnimation = undefined;

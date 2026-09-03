@@ -41,7 +41,7 @@ export function setupExtensionShortcuts(host: InteractiveModeDelegateHost, exten
 	const createContext = (): ExtensionContext => ({
 		ui: host.createExtensionUIContext(),
 		hasUI: true,
-		cwd: process.cwd(),
+		cwd: host.sessionManager.getCwd(),
 		sessionManager: host.sessionManager,
 		modelRegistry: host.session.modelRegistry,
 		model: host.session.model,

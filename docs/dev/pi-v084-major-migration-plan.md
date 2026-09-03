@@ -2,7 +2,7 @@
 
 Date: 2026-09-03
 
-Status: P3.0–P3.4 and P3.5a complete; P3.5b requires interactive runtime rebinding; no v4 cutover
+Status: P3.0–P3.4 and P3.5a–P3.5b complete; P3.5c requires a functional v4 manager adapter; no v4 cutover
 
 Upstream reference: `refs/pi-upstream/v0.84.4`
 
@@ -184,10 +184,28 @@ and legacy v3 remains the default.
   disposed.
 
 This establishes the I/O completion boundary required by ADR-H028 but does not
-make the legacy `AgentSession` navigation module asynchronous. P3.5b must move
-the interactive composition root onto `AgentSessionRuntime` and rebind the TUI
-and extension contexts when a replacement session is applied. Only after that
-may a functional `harness-v4` manager adapter be connected.
+make the legacy `AgentSession` navigation module asynchronous.
+
+#### P3.5b — Interactive runtime ownership and rebinding (complete 2026-09-03)
+
+- Moved the interactive composition root onto `AgentSessionRuntime`; `/new`,
+  `/resume`, and `/fork` now use its replacement boundary while legacy direct
+  calls remain available only when an embedding host does not provide a runtime.
+- Added an explicit pre-invalidation/rebind contract: unsubscribe and remove old
+  extension UI before disposal, then bind the replacement session, footer,
+  branch watcher, autocomplete, themes, extensions, and agent subscription.
+- Recreate cwd-bound settings and resources for the replacement workspace while
+  preserving the selected model, thinking level, scoped models, and active tool
+  set.
+- Surface replacement extension errors/warnings and model fallback diagnostics
+  in the rebound TUI instead of losing them on the asynchronous construction
+  path.
+- Proved replacement preparation precedes teardown and successful replacement
+  follows prepare → abort → UI invalidation → dispose → create → rebind order.
+
+P3.5c must now implement the version-neutral `SessionManager` capability adapter
+over the validated async v4 stores. The only production backend remains
+`legacy-v3`; no v4 preference, write cutover, or automatic migration is exposed.
 
 ### P3.6 — Integrate GSD, web, and Assessment Gates
 

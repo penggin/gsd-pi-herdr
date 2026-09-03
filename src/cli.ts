@@ -149,6 +149,25 @@ function printExtensionWarnings(warnings: ReadonlyArray<{ message: string }> | u
   }
 }
 
+function collectExtensionDiagnostics(
+  errors: ReadonlyArray<{ error: string }>,
+  warnings: ReadonlyArray<{ message: string }> | undefined,
+): Array<{ type: 'warning' | 'error'; message: string }> {
+  return [
+    ...errors.map(({ error }) => {
+      const isConflict = error.includes('supersedes') || error.includes('conflicts with')
+      return {
+        type: isConflict ? ('warning' as const) : ('error' as const),
+        message: `${isConflict ? 'Extension conflict' : 'Extension load error'}: ${error}`,
+      }
+    }),
+    ...(warnings ?? []).map(({ message }) => ({
+      type: 'warning' as const,
+      message: `Extension warning: ${message}`,
+    })),
+  ]
+}
+
 /**
  * Re-apply the validated model to the session when `createAgentSession()`
  * reports that it had to use a fallback. Prevents silently overriding the
@@ -659,7 +678,7 @@ const {
   ModelRegistry,
   SettingsManager,
 } = await loadPiCodingAgentModule()
-const { createAgentSession, legacySessionManagerRuntimeFactory } = await loadAgentCoreModule()
+const { AgentSessionRuntime, createAgentSession, legacySessionManagerRuntimeFactory } = await loadAgentCoreModule()
 markStartup('loadPiCodingAgent')
 
 // Pi's tool bootstrap can mis-detect already-installed fd/rg on some systems
@@ -944,6 +963,7 @@ markStartup('initResources')
 const resourceLoader = await buildResourceLoader(agentDir, {
   additionalExtensionPaths: cliFlags.extensions.length > 0 ? cliFlags.extensions : undefined,
   bare: cliFlags.bare,
+  cwd,
 })
 const resourceLoadPromise = resourceLoader.reload()
 
@@ -974,6 +994,86 @@ const { session, extensionsResult, modelFallbackMessage: interactiveFallbackMsg 
   resourceLoader,
 })
 markStartup('createAgentSession')
+
+let sessionRuntime: import('@gsd/agent-core').AgentSessionRuntime
+const createInteractiveRuntime = async ({
+  cwd: runtimeCwd,
+  sessionManager: nextSessionManager,
+  sessionStartEvent,
+}: {
+  cwd: string
+  agentDir: string
+  sessionManager: typeof sessionManager
+  sessionStartEvent?: import('@gsd/pi-coding-agent').SessionStartEvent
+}) => {
+  const nextSettingsManager = SettingsManager.create(runtimeCwd, agentDir)
+  applySecurityOverrides(nextSettingsManager)
+  const nextResourceLoader = await buildResourceLoader(agentDir, {
+    additionalExtensionPaths: cliFlags.extensions.length > 0 ? cliFlags.extensions : undefined,
+    bare: cliFlags.bare,
+    cwd: runtimeCwd,
+  })
+  await nextResourceLoader.reload()
+  flushPendingProviderRegistrations(nextResourceLoader, modelRegistry)
+  migrateAnthropicDefaultToClaudeCode({
+    authStorage,
+    isClaudeCodeReady: () => modelRegistry.isProviderRequestReady('claude-code'),
+    settingsManager: nextSettingsManager,
+    modelRegistry,
+  })
+  migrateGeminiCliDefaultToAntigravity({
+    authStorage,
+    isAntigravityReady: () => modelRegistry.isProviderRequestReady('google-antigravity'),
+    settingsManager: nextSettingsManager,
+    modelRegistry,
+  })
+  const previousSession = sessionRuntime?.session ?? session
+  const result = await createAgentSession({
+    cwd: runtimeCwd,
+    agentDir,
+    authStorage,
+    modelRegistry,
+    settingsManager: nextSettingsManager,
+    sessionManager: nextSessionManager,
+    resourceLoader: nextResourceLoader,
+    sessionStartEvent,
+    model: previousSession.model,
+    thinkingLevel: previousSession.thinkingLevel,
+    scopedModels: [...previousSession.scopedModels],
+    tools: previousSession.getActiveToolNames(),
+  })
+  const diagnostics = collectExtensionDiagnostics(result.extensionsResult.errors, result.extensionsResult.warnings)
+  return {
+    ...result,
+    services: {
+      cwd: runtimeCwd,
+      agentDir,
+      authStorage,
+      settingsManager: nextSettingsManager,
+      modelRegistry,
+      resourceLoader: nextResourceLoader,
+      diagnostics,
+    },
+    diagnostics,
+  }
+}
+
+sessionRuntime = new AgentSessionRuntime(
+  session,
+  {
+    cwd,
+    agentDir,
+    authStorage,
+    settingsManager,
+    modelRegistry,
+    resourceLoader,
+    diagnostics: [],
+  },
+  createInteractiveRuntime,
+  [],
+  interactiveFallbackMsg,
+  legacySessionManagerRuntimeFactory,
+)
 
 // Validate configured model AFTER extensions have registered their models (#2626).
 // Before this, extension-provided models (e.g. claude-code/*) were not yet in the
@@ -1039,7 +1139,7 @@ if (!process.stdin.isTTY || !process.stdout.isTTY) {
 }
 
 const { InteractiveMode } = await loadInteractiveModeModule()
-const interactiveMode = new InteractiveMode(session)
+const interactiveMode = new InteractiveMode(session, { sessionRuntime })
 markStartup('InteractiveMode')
 printStartupTimings()
 await interactiveMode.run()

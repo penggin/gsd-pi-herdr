@@ -97,7 +97,7 @@ export async function handleClearCommand(host: InteractiveModeDelegateHost): Pro
 		host.statusContainer.clear();
 
 		// New session via session (emits extension session events)
-		await host.session.newSession();
+		await host.startNewSession();
 
 		// Clear UI state
 		host.headerContainer.clear();
@@ -179,7 +179,7 @@ export async function handleBashCommand(host: InteractiveModeDelegateHost, comma
 					type: "user_bash",
 					command,
 					excludeFromContext,
-					cwd: process.cwd(),
+					cwd: host.sessionManager.getCwd(),
 				})
 			: undefined;
 

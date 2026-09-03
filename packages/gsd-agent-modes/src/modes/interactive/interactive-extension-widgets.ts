@@ -35,7 +35,7 @@ export async function initExtensions(host: InteractiveModeDelegateHost): Promise
 						host.statusContainer.clear();
 
 						// Delegate to AgentSession (handles setup + agent state sync)
-						const success = await host.session.newSession(options);
+						const success = await host.startNewSession(options);
 						if (!success) {
 							return { cancelled: true };
 						}
@@ -56,7 +56,7 @@ export async function initExtensions(host: InteractiveModeDelegateHost): Promise
 						return { cancelled: false };
 					},
 					fork: async (entryId) => {
-						const result = await host.session.fork(entryId);
+						const result = await host.forkSession(entryId);
 						if (result.cancelled) {
 							return { cancelled: true };
 						}

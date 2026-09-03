@@ -103,6 +103,14 @@ export class FooterComponent implements Component {
 		private readonly getGsdStatus?: () => GsdStatusWidgetState,
 	) {}
 
+	setSession(session: AgentSession): void {
+		this.session = session;
+	}
+
+	setFooterData(footerData: ReadonlyFooterDataProvider): void {
+		this.footerData = footerData;
+	}
+
 	setAutoCompactEnabled(enabled: boolean): void {
 		this.autoCompactEnabled = enabled;
 	}
@@ -191,7 +199,7 @@ export class FooterComponent implements Component {
 			secondaryExtText ? theme.fg("dim", secondaryExtText) : undefined,
 		].filter((segment): segment is string => !!segment);
 
-		const cwd = gsdState?.cwd ?? process.cwd();
+		const cwd = gsdState?.cwd ?? this.session.sessionManager.getCwd();
 		const sessionName = this.session.sessionManager.getSessionName() ?? gsdState?.sessionName;
 		const centerSource = gsdWidgetVisible
 			? primaryStatus?.text

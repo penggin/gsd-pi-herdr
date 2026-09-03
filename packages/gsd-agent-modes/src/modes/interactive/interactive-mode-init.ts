@@ -70,7 +70,7 @@ export function dismissStartupHeader(host: InteractiveModeDelegateHost): void {
 }
 
 export function updateTerminalTitle(host: InteractiveModeDelegateHost): void {
-	const cwdBasename = path.basename(process.cwd());
+	const cwdBasename = path.basename(host.sessionManager.getCwd());
 	const sessionName = host.sessionManager.getSessionName();
 	if (sessionName) {
 		host.ui.terminal.setTitle(`π - ${sessionName} - ${cwdBasename}`);
