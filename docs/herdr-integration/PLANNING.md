@@ -3465,10 +3465,34 @@ this session does not merge, push, tag, or publish.
   initially read the operator's global `thinking: max` preference; rerunning
   with an isolated `GSD_HOME` passed and confirmed this was test-environment
   contamination rather than a product regression.
-- Exact next task: complete build/package gates for the hook-surface fix,
-  install the clean candidate locally and remotely, acknowledge only the new
-  wedge `W-45e1a282`, and require `complete-slice M013/S03` to pass model/tool
-  hook selection and advance without replaying finalized T09.
+- Clean commit `5b882c67c` passed `typecheck:extensions`, `build:core`,
+  `validate-pack`, and `git diff --check`; package validation ended with
+  **Package is installable. Safe to publish.** The explicit tarball SHA-256 is
+  `4e943a427fa7da40ef810f1c23f81e02ae4e2b72f0dcaabab1e531eb4a51d2c5`.
+  `test:changed:src` found no uncommitted source because the focused changes
+  were already committed; the explicit 170/170 and 207/207 matrices above are
+  the source-level regression evidence.
+- Installed the clean candidate globally on the Mac and restarted only the
+  blocked local GSD process so the new agent-core replacement factory was
+  loaded. `/gsd doctor` reported zero issues. Wedge `W-45e1a282` was
+  acknowledged, `complete-slice M013/S03` passed model selection and the
+  tool-adjustment hook, dispatched once, and finalized with
+  `lastProgressKind=finalize-success`. Orchestration advanced to `run-uat`
+  without replaying finalized T09 or reproducing `emitAdjustToolSet`.
+- Deployed the same artifact remotely as
+  `/srv/penglab/gsd-runs/artifacts/gsd-pi-herdr-1.16.2-5b882c67-4e943a42.tgz`
+  and immutable prefix
+  `/srv/penglab/gsd-runs/toolchains/gsd-pi-herdr-1.16.2-5b882c67-4e943a42`.
+  The copied Linux x64 addon retains SHA-256
+  `b1d5b33b59cc1578eed207544a4020699f0c9d123c0247481df1914002b51da7`
+  and 98 exports. Shared links were switched atomically; remote PID 948361
+  remained unchanged and the `2ae4a78b-48eeee0f` prefix remains rollback-ready.
+- Residual/next task: the repaired workflow is now paused at a separate,
+  expected capability gate: its `browser-executable` UAT requests browser
+  tools, while the `run-uat` tool profile exposes none. Decide whether to
+  enable a bounded browser tool profile or convert this UAT to the already
+  supported runtime-executable Playwright form; do not reopen either
+  replacement-session incident for that policy decision.
 
 ## 11. Working-session protocol
 
