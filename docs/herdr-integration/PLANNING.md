@@ -2555,6 +2555,39 @@ this session does not merge, push, tag, or publish.
   Assessment Gate, and browser session command regressions. Custom legacy
   `sessionDir` parity remains a known adapter limitation. Keep v4 internal-only,
   then proceed to P3.7's real Herdr worker E2E before any cutover decision.
+- Completed P3.6a's common command/bootstrap coverage. Both internal backends
+  run `/gsd status`, `/gsd gate list`, and `/gsd gate status` through the built
+  JSON CLI without provider access; the expanded two-backend matrix passes
+  **12/12**. Assessment Gate and lifecycle authority remain in GSD's canonical
+  stores rather than the selected transcript backend.
+- Added real harness-v4 web inactive-rename coverage. Browser lookup finds the
+  v4 record through the selected catalog, the inactive mutation uses the v4
+  repository, and reopening the session observes the new name. The combined web
+  bridge/session/command contract set passes.
+- Focused Assessment Gate, auto-recovery, quick, validation, verdict, ship, and
+  read-only forensics regressions pass **145/145**. No GSD lifecycle authority
+  moved into the session runtime.
+- Exact next task: prove custom entries and compaction survive persisted v4
+  reload, cover the remaining debug/recovery/browser command surfaces, then run
+  P3.7's real Herdr root/worker matrix. Keep the selector internal and legacy-v3
+  as the deployed default.
+- Completed P3.6b and the P3.6 integration gate. Persisted harness-v4 reopen now
+  proves ordinary custom entries, displayed custom messages, and compaction
+  records survive with their GSD-owned data intact; agent-core remains
+  **162/162**.
+- The built matrix now exercises nine GSD command variants per backend:
+  status, Assessment Gate list/status, debug list, noninteractive forensics,
+  quick usage, validation, verdict, and recovery. Both backend groups pass, and
+  none requires a provider request. The combined browser contract set also
+  passes with v4 list and inactive rename coverage.
+- P3.7 is ready for live validation, not cutover. Remaining risk: an extension-
+  selected custom legacy `sessionDir` does not yet have a defined v4 repository
+  mapping. Until that is resolved or explicitly rejected at selection time,
+  harness-v4 stays internal and the deployed default stays legacy-v3.
+- Exact next task: execute the real pinned-Herdr root/worker matrix with the
+  internal harness-v4 root session: single dispatch, affinity reuse, parallel
+  >4, cancellation, pane loss, detach/reattach, and restart. Record artifact
+  evidence and deploy only to `penglab:/srv/penglab` when SSH is reachable.
 
 ## 11. Working-session protocol
 

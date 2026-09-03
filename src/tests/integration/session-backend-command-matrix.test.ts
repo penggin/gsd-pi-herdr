@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   assertNoCrashMarkers,
   createTempDir,
+  createTempWithGsd,
   ensureBuiltLoader,
   runGsd,
   stripAnsi,
@@ -32,7 +33,11 @@ function jsonLines(output: string): Array<Record<string, unknown>> {
 for (const backend of backends) {
   test(`${backend.name} supports print, JSON, RPC, and headless catalog startup`, async (t) => {
     const gsdHome = createTempDir(`gsd-${backend.name}-command-matrix-`);
-    t.after(() => rmSync(gsdHome, { recursive: true, force: true }));
+    const project = createTempWithGsd(`gsd-${backend.name}-command-project-`);
+    t.after(() => {
+      rmSync(gsdHome, { recursive: true, force: true });
+      rmSync(project, { recursive: true, force: true });
+    });
     const env = {
       GSD_HOME: gsdHome,
       GSD_INTERNAL_SESSION_BACKEND: backend.name,
@@ -79,6 +84,27 @@ for (const backend of backends) {
       assert.equal(result.code, 1);
       assert.match(stripAnsi(result.stderr), /No session matching/);
       assertNoCrashMarkers(stripAnsi(result.stdout + result.stderr));
+    });
+
+    await t.test("GSD lifecycle and Assessment Gate commands", async () => {
+      for (const command of [
+        "/gsd status",
+        "/gsd gate list",
+        "/gsd gate status",
+        "/gsd debug list",
+        "/gsd forensics",
+        "/gsd quick",
+        "/gsd validation",
+        "/gsd verdict",
+        "/gsd recover",
+      ]) {
+        const result = await runGsd(["--mode", "json", "--no-session", command], 30_000, env, project);
+        assert.equal(result.timedOut, false, command);
+        assert.equal(result.code, 0, `${command}: ${result.stderr}`);
+        const header = jsonLines(result.stdout).find((line) => line.type === "session");
+        assert.equal(header?.version, backend.version, command);
+        assertNoCrashMarkers(stripAnsi(result.stdout + result.stderr));
+      }
     });
   });
 }

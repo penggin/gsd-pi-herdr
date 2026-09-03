@@ -182,6 +182,19 @@ describe("production session-manager runtime factory", () => {
 			stopReason: "stop",
 			timestamp: 2,
 		});
+		await source.capabilities.appendCustomEntry("assessment-run", { runId: "GAR-001", verdict: "pass" });
+		await source.capabilities.appendCustomMessageEntry(
+			"workflow-note",
+			"persisted custom message",
+			true,
+			{ owner: "gsd" },
+		);
+		await source.capabilities.appendCompaction(
+			"persisted compaction summary",
+			userId,
+			42,
+			{ checkpoint: "test" },
+		);
 
 		const forked = await factory.fork(source, { cwd, leafId: userId });
 		assert.deepEqual(forked.snapshot.getBranch().map((entry) => entry.id), [userId]);
@@ -193,6 +206,26 @@ describe("production session-manager runtime factory", () => {
 		assert.ok(sourcePath);
 		const opened = await factory.prepare({ kind: "open", path: sourcePath! });
 		assert.equal(opened.snapshot.getSessionId(), source.snapshot.getSessionId());
+		const reopenedEntries = opened.snapshot.getEntries();
+		const assessmentEntry = reopenedEntries.find(
+			(entry) => entry.type === "custom" && entry.customType === "assessment-run",
+		);
+		assert.deepEqual(
+			assessmentEntry && {
+				type: assessmentEntry.type,
+				customType: assessmentEntry.customType,
+				data: assessmentEntry.data,
+			},
+			{ type: "custom", customType: "assessment-run", data: { runId: "GAR-001", verdict: "pass" } },
+		);
+		assert.match(
+			String(reopenedEntries.find((entry) => entry.type === "custom_message")?.content),
+			/persisted custom message/,
+		);
+		assert.equal(
+			reopenedEntries.find((entry) => entry.type === "compaction")?.summary,
+			"persisted compaction summary",
+		);
 		const recent = await factory.prepare({ kind: "continue-recent", cwd });
 		assert.equal(recent.snapshot.getSessionId(), forked.snapshot.getSessionId());
 		await factory.rename(sourcePath!, "V4 catalog");

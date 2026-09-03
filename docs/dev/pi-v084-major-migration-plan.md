@@ -2,7 +2,7 @@
 
 Date: 2026-09-03
 
-Status: P3.0–P3.4, P3.5a–P3.5b, and P3.5c1–P3.5c9 complete; P3.6 GSD/web integration next; no v4 cutover
+Status: P3.0–P3.4, P3.5a–P3.5b, P3.5c1–P3.5c9, and P3.6 complete; P3.7 live validation ready; no v4 cutover
 
 Upstream reference: `refs/pi-upstream/v0.84.4`
 
@@ -347,6 +347,31 @@ legacy default until P3.7 supplies real Herdr worker evidence.
 
 Exit: auto, quick, debug, forensics, verdict, validation, ship, recovery,
 assessment-gate commands, and browser session surfaces pass with both formats.
+
+P3.6a proves the common command/bootstrap boundary. Both internal backends run
+`/gsd status`, `/gsd gate list`, and `/gsd gate status` through the built JSON
+CLI without a provider request. Browser boot lists v4 sessions and inactive
+rename now reopens and mutates the selected v4 repository rather than assuming
+legacy records. The focused GSD authority suite for Assessment Gates, auto
+recovery, quick, validation, verdict, ship, and read-only forensics remains
+green, confirming those domains still use their canonical DB/state paths.
+
+Next: validate persisted custom/compaction records across v4 reload and run the
+remaining debug/recovery/browser command surfaces. Then proceed to the real
+Herdr worker matrix; no public backend preference is added in P3.6.
+
+P3.6b completes that integration gate. A persisted harness-v4 session now has
+explicit reopen coverage for ordinary custom entries, displayed custom
+messages, and compaction records. The built two-backend command matrix also
+runs status, Assessment Gate list/status, debug list, noninteractive forensics,
+quick usage, validation, verdict, and recovery surfaces without provider
+access. The focused GSD authority suite and combined browser contracts remain
+green, including inactive v4 rename.
+
+P3.7 is now the active gate. Custom extension-selected legacy `sessionDir`
+semantics remain a cutover limitation and must either gain an explicit v4
+mapping or remain fail-closed before any public preference. The production
+default is still legacy-v3.
 
 ### P3.7 — Herdr live E2E and controlled cutover
 

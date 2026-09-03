@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process"
 import { EventEmitter } from "node:events"
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join, resolve } from "node:path"
+import { dirname, join, resolve } from "node:path"
 import { PassThrough } from "node:stream"
 import { StringDecoder } from "node:string_decoder"
 
@@ -563,6 +563,98 @@ test("/api/session/manage renames inactive sessions via authoritative session-fi
   assert.equal(outsidePayload.success, false)
   assert.equal(outsidePayload.code, "not_found")
   assert.equal(getLatestSessionName(outsidePath), "Outside Session")
+})
+
+test("/api/session/manage renames an inactive harness-v4 session through its selected repository", async (t) => {
+  const fixture = makeWorkspaceFixture()
+  const { createHarnessV4SessionManagerRuntimeFactory } = await import("@gsd/agent-core")
+  const { NodeExecutionEnv } = await import("../../../packages/pi-agent-core/src/harness/env/nodejs.ts")
+  const factory = createHarnessV4SessionManagerRuntimeFactory({
+    fs: new NodeExecutionEnv({ cwd: fixture.projectCwd }),
+    sessionsRoot: fixture.sessionsDir,
+  })
+  const active = await factory.prepare({ kind: "create", cwd: fixture.projectCwd })
+  const inactive = await factory.prepare({ kind: "create", cwd: fixture.projectCwd })
+  await active.capabilities.appendSessionName("Active V4")
+  await inactive.capabilities.appendSessionName("Before V4 Rename")
+  const activePath = active.snapshot.getSessionFile()
+  const inactivePath = inactive.snapshot.getSessionFile()
+  assert.ok(activePath)
+  assert.ok(inactivePath)
+
+  const harness = createHarness((command, current) => {
+    if (command.type === "get_state") {
+      current.emit({
+        id: command.id,
+        type: "response",
+        command: "get_state",
+        success: true,
+        data: {
+          sessionId: active.snapshot.getSessionId(),
+          sessionFile: activePath,
+          sessionName: "Active V4",
+          thinkingLevel: "off",
+          isStreaming: false,
+          isCompacting: false,
+          steeringMode: "all",
+          followUpMode: "all",
+          autoCompactionEnabled: false,
+          autoRetryEnabled: false,
+          retryInProgress: false,
+          retryAttempt: 0,
+          messageCount: 0,
+          pendingMessageCount: 0,
+        },
+      })
+      return
+    }
+    if (command.type === "set_session_name") {
+      assert.fail("inactive v4 rename should not target the active RPC session")
+    }
+    assert.fail(`unexpected command: ${command.type}`)
+  })
+
+  bridge.configureBridgeServiceForTests({
+    env: {
+      ...process.env,
+      GSD_INTERNAL_SESSION_BACKEND: "harness-v4",
+      GSD_WEB_PROJECT_CWD: fixture.projectCwd,
+      GSD_WEB_PROJECT_SESSIONS_DIR: dirname(inactivePath),
+      GSD_WEB_PACKAGE_ROOT: repoRoot,
+    },
+    spawn: harness.spawn,
+  })
+  onboarding.configureOnboardingServiceForTests({
+    authStorage: AuthStorage.inMemory({
+      openai: { type: "api_key", key: "sk-v4-inactive-rename" },
+    } as any),
+  })
+
+  t.after(async () => {
+    await bridge.resetBridgeServiceForTests()
+    onboarding.resetOnboardingServiceForTests()
+    fixture.cleanup()
+  })
+
+  const response = await manageRoute.POST(
+    new Request("http://localhost/api/session/manage", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "rename",
+        sessionPath: inactivePath,
+        name: "V4 Inactive Renamed",
+      }),
+    }),
+  )
+  const payload = await response.json() as any
+
+  assert.equal(response.status, 200)
+  assert.equal(payload.success, true)
+  assert.equal(payload.isActiveSession, false)
+  assert.equal(payload.mutation, "session_file")
+  const reopened = await factory.prepare({ kind: "open", path: inactivePath })
+  assert.equal(reopened.snapshot.getSessionName(), "V4 Inactive Renamed")
+  assert.equal(harness.commands.some((command) => command.type === "set_session_name"), false)
 })
 
 test("/api/git returns a current-project-scoped repo summary and ignores changes outside the current project subtree", async (t) => {
