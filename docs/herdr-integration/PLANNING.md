@@ -3157,6 +3157,22 @@ this session does not merge, push, tag, or publish.
   `build-native.yml` with `platform=linux-x64-gnu` and `publish=false`, and
   require a one-job successful run plus matching downloaded artifact before
   treating the deployment path as closed.
+- Committed and pushed the targeted workflow as
+  `927c798a9615d236dbdaa012a0b53ce8e7a2bbad`. Live run `33727412908`
+  succeeded with exactly the planner and one `Build linux-x64-gnu` job; no
+  macOS, Windows, or ARM build job was created, and publishing was skipped.
+  The native job completed in 51 seconds.
+- Downloaded `native-linux-x64-gnu` from that run and verified it is an ELF
+  x86-64 shared object with the same SHA-256
+  `b1d5b33b59cc1578eed207544a4020699f0c9d123c0247481df1914002b51da7`
+  already installed from the first CI run. The remote runtime therefore uses
+  the reproducible artifact built from the current branch, not the earlier
+  temporary binary.
+- The targeted Linux deployment path is closed. Exact next task: keep the
+  upstream freshness gate and concrete Codex/GLM production evidence as the
+  triggers for further runtime changes. Re-run the single-platform native job
+  whenever native source changes before remote promotion; do not reintroduce
+  Cursor, Gemini, or Antigravity work under the current provider scope.
 
 ## 11. Working-session protocol
 
