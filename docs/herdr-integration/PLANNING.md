@@ -3297,6 +3297,53 @@ this session does not merge, push, tag, or publish.
   no speculative provider change unless the read-only upstream audit moves or
   a concrete Codex/GLM/Herdr production failure is reproduced.
 
+### 2026-09-03 — Retry-closeout verification prose hardening
+
+- Investigated the live local `M013/S03/T08` liveness stop against canonical
+  DB, Attempt, Result, verification, and executor evidence. The executor and
+  its final browser/focused checks had succeeded; host verification alone
+  failed because the Task Verify field combined a real `rtk` prefix with
+  acceptance prose (`twice on a quiet machine ... plus rtk ... green`). The
+  command heuristic treated its flags as executable and Bash rejected the
+  unquoted parenthesis in 25 ms. Provider timeout and the implementation test
+  matrix were eliminated as causes.
+- Added quote-aware recognition for repeated-run/result prose and a bare
+  English `plus <command>` join. Existing stored contracts now route to
+  `task-plan-prose`, so qualifying structured Task evidence remains the host
+  authority and no prose is spawned in a shell. The shared plan/replan guard
+  rejects new mixed contracts with instructions to use `&&` between runnable
+  commands or keep the acceptance criterion as prose. Quoted examples such as
+  `node -e '... plus rtk ...'` remain accepted.
+- The exact production input first failed both new regressions, then passed.
+  Focused verification-gate tests pass **138/138**; the combined verification,
+  verdict, plan, and replan regression passes **194/194**; changed-source tests
+  pass **138/138**. `typecheck:extensions`, `build:core`, `validate-pack`, and
+  `git diff --check` pass, with package validation ending in **Package is
+  installable. Safe to publish.** The fix is committed as `1c9568347`.
+- Installed the clean release candidate locally because the reported incident
+  was in the Mac runtime. Build info reports commit `1c9568347`, `dirty=false`;
+  the installed compiled classifier returns exactly
+  `{commands: [], source: "task-plan-prose"}` for the T08 input. The already
+  running root was not terminated: `/reload` completed in pane `w5:p1`, then
+  canonical `/gsd auto` created retry Attempt 2 and resumed T08.
+- Also deployed the same clean tarball to the standing remote runtime policy:
+  artifact
+  `/srv/penglab/gsd-runs/artifacts/gsd-pi-herdr-1.16.2-1c956834-ea63decb.tgz`
+  (`sha256:ea63decb2c4f8a43016121a37841c39dfac115473f1a4f66fddd33e4068e9a25`)
+  and immutable prefix
+  `/srv/penglab/gsd-runs/toolchains/gsd-pi-herdr-1.16.2-1c956834-ea63decb`.
+  The unchanged CI-built Linux x64 addon retains SHA-256
+  `b1d5b33b59cc1578eed207544a4020699f0c9d123c0247481df1914002b51da7`
+  and reports `nativeLoaded=true` with 98 exports. Direct-prefix and shared-link
+  classifier smokes pass. Shared `gsd` and `gsd-mcp-server` links were switched
+  atomically; the prior `9e09e779-426cc709` prefix remains for rollback and the
+  running remote GSD process was not restarted.
+- Remaining live evidence: local retry Attempt 2 is currently running. Exact
+  next task is to observe its closeout and require T08 to become complete
+  without a new shell-parse verdict or liveness stop. Do not edit the DB or
+  projections directly; if a distinct failure appears, preserve its new
+  evidence and diagnose that failure independently.
+
 ## 11. Working-session protocol
 
 For every Herdr session:
