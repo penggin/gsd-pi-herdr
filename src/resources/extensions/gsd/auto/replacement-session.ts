@@ -17,7 +17,7 @@ export type AutoReplacementContext = ExtensionCommandContext & Pick<
   | "getActiveTools"
   | "getVisibleSkills"
   | "setVisibleSkills"
->;
+> & Partial<Pick<ExtensionAPI, "getAllTools" | "setActiveTools">>;
 
 /**
  * Pi invalidates the ExtensionAPI and command context that initiated a session

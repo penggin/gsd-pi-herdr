@@ -198,6 +198,7 @@ describe("AgentSessionExtensionsModule", () => {
 	test("replacement context exposes session-bound model and skill controls", async () => {
 		const model = { provider: "test-provider", id: "test-model" };
 		const modelCalls: Array<{ model: typeof model; options?: { persist?: boolean } }> = [];
+		const activeToolCalls: string[][] = [];
 		const host = {
 			_cwd: "/tmp/project",
 			_extensionRunner: {
@@ -217,7 +218,11 @@ describe("AgentSessionExtensionsModule", () => {
 			setThinkingLevel: (level: string) => {
 				host.thinkingLevel = level;
 			},
-			getActiveToolNames: () => [],
+			getActiveToolNames: () => activeToolCalls.at(-1) ?? [],
+			getAllTools: () => [{ name: "gsd_exec" }, { name: "gsd_task_complete" }],
+			setActiveToolsByName: (toolNames: string[]) => {
+				activeToolCalls.push([...toolNames]);
+			},
 			sendCustomMessage: async () => {},
 			sendUserMessage: async () => {},
 			resourceLoader: {
@@ -231,11 +236,13 @@ describe("AgentSessionExtensionsModule", () => {
 		const replacement = new AgentSessionExtensionsModule(host as any).createReplacedSessionContext();
 		assert.equal(await replacement.setModel(model as any, { persist: false }), true);
 		replacement.setThinkingLevel("high");
+		replacement.setActiveTools(["gsd_exec", "gsd_task_complete"]);
 		replacement.setVisibleSkills(["task-skill"]);
 
 		assert.deepEqual(modelCalls, [{ model, options: { persist: false } }]);
 		assert.equal(replacement.getThinkingLevel(), "high");
-		assert.deepEqual(replacement.getActiveTools(), []);
+		assert.deepEqual(replacement.getAllTools().map((tool) => tool.name), ["gsd_exec", "gsd_task_complete"]);
+		assert.deepEqual(replacement.getActiveTools(), ["gsd_exec", "gsd_task_complete"]);
 		assert.deepEqual(replacement.getVisibleSkills(), ["task-skill"]);
 	});
 

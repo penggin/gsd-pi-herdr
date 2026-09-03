@@ -49,6 +49,8 @@ import type { GSDState } from "../types.ts";
 import { refreshRecoveryDbForArtifact } from "../auto-recovery.ts";
 import { withCommandCwd } from "../commands/context.ts";
 import { handleOpsCommand } from "../commands/handlers/ops.ts";
+import { checkEngineHealth } from "../doctor-engine-checks.ts";
+import type { DoctorIssue } from "../doctor-types.ts";
 
 const tempDirs = new Set<string>();
 
@@ -1001,7 +1003,7 @@ afterEach(() => {
   tempDirs.clear();
 });
 
-test("ready pending Task can authorize its current agent-owned abort (#2020)", () => {
+test("ready pending Task can authorize its current agent-owned abort (#2020)", async () => {
   const failed = seedFailedAttempt();
   const aborted = recordFailureAndSelectRecovery({
     invocation: invocation("recovery/ready-pending/abort"),
@@ -1062,6 +1064,17 @@ test("ready pending Task can authorize its current agent-owned abort (#2020)", (
     recoveryActionId: aborted.recoveryActionId,
   });
 
+  const blockedDoctorIssues: DoctorIssue[] = [];
+  await checkEngineHealth(failed.basePath, blockedDoctorIssues, []);
+  assert.equal(blockedDoctorIssues[0]?.code, "task_recovery_aborted");
+  assert.equal(blockedDoctorIssues[0]?.unitId, "M001/S01/T01");
+  assert.match(blockedDoctorIssues[0]?.message ?? "", new RegExp(aborted.recoveryActionId));
+  assert.match(
+    blockedDoctorIssues[0]?.message ?? "",
+    new RegExp(`/gsd recover ${aborted.recoveryActionId}`),
+  );
+  assert.equal(blockedDoctorIssues[0]?.fixable, false);
+
   const resumed = resumeTaskRecovery({
     invocation: invocation("recovery/ready-pending/resume"),
     recoveryActionId: aborted.recoveryActionId,
@@ -1071,6 +1084,13 @@ test("ready pending Task can authorize its current agent-owned abort (#2020)", (
   assert.equal(resumed.status, "committed");
   assert.equal(readTaskRecoveryRoute(failed.attemptId)?.resumeAuthorized, true);
   assert.equal(readTerminalTaskRecoveryAbort("M001", "S01", "T01"), null);
+
+  const resumedDoctorIssues: DoctorIssue[] = [];
+  await checkEngineHealth(failed.basePath, resumedDoctorIssues, []);
+  assert.equal(
+    resumedDoctorIssues.some((issue) => issue.code === "task_recovery_aborted"),
+    false,
+  );
 
   const claimed = claimTaskAttempt({
     invocation: invocation("recovery/ready-pending/claim"),

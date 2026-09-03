@@ -100,6 +100,8 @@ export type DoctorIssueCode =
   | "validation_source_revision_mismatch"
   // Orphaned execution Attempts (#1749)
   | "orphaned_running_attempt"
+  // Terminal Task recovery fences that require explicit operator evidence
+  | "task_recovery_aborted"
   // Pre-#1659 legacy import remediation (#1661)
   | "lifecycle_projection_wrong_kind"
   // Milestone filesystem/DB drift (#4996)

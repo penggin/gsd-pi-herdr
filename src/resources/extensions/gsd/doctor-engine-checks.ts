@@ -35,6 +35,7 @@ import { parseProjectionPlan } from "./schemas/parsers.js";
 import { LAYOUT_SEGMENTS } from "./layout-policy.js";
 import { resolveCanonicalMilestoneRoot } from "./worktree-manager.js";
 import { isCanonicalStagedTaskSummaryProjection } from "./task-summary-projection-classification.js";
+import { readTerminalTaskRecoveryAbort } from "./artifact-verification.js";
 import { isMilestoneLifecycleAdopted, readMilestoneCloseoutAuthorization } from "./db/milestone-closeout-readiness.js";
 import { loadEffectiveGSDPreferences } from "./preferences.js";
 import {
@@ -144,6 +145,43 @@ function reportOrphanedRunningAttempts(
       fixable: false,
     });
   }
+}
+
+/**
+ * Surface the same terminal Task recovery fence that execute-task dispatch
+ * enforces. Doctor must not clear this durable abort: the operator must attach
+ * repair evidence through `/gsd recover <id>`, which authorizes exactly one
+ * lineage-linked retry.
+ */
+function reportTerminalTaskRecoveryAborts(issues: DoctorIssue[]): void {
+  const recoveryIssues: DoctorIssue[] = [];
+  for (const milestone of getAllMilestones()) {
+    if (isClosedStatus(milestone.status)) continue;
+    for (const slice of getMilestoneSlices(milestone.id)) {
+      if (isClosedStatus(slice.status)) continue;
+      for (const task of getSliceTasks(milestone.id, slice.id)) {
+        if (isClosedStatus(task.status)) continue;
+        const terminalAbort = readTerminalTaskRecoveryAbort(milestone.id, slice.id, task.id);
+        if (!terminalAbort) continue;
+        const unitId = `${milestone.id}/${slice.id}/${task.id}`;
+        recoveryIssues.push({
+          severity: "error",
+          code: "task_recovery_aborted",
+          scope: "task",
+          unitId,
+          message:
+            `Task ${unitId} is fenced by terminal Recovery Action ${terminalAbort.recoveryActionId}. ` +
+            `Record the underlying repair and evidence with \`/gsd recover ${terminalAbort.recoveryActionId}\`, then re-run \`/gsd auto\`. ` +
+            "Doctor --fix will not clear or resume this abort automatically.",
+          file: ".gsd/gsd.db",
+          fixable: false,
+        });
+      }
+    }
+  }
+  // Active recovery fences are the immediate sanctioned exit. Put them before
+  // historical validation or projection diagnostics in every doctor surface.
+  issues.unshift(...recoveryIssues);
 }
 
 
@@ -700,6 +738,12 @@ export async function checkEngineHealth(
         checkLifecycleProjectionKinds(issues, fixesApplied, options?.repair === true);
       } catch {
         // Non-fatal — lifecycle projection kind check failed
+      }
+
+      try {
+        reportTerminalTaskRecoveryAborts(issues);
+      } catch {
+        // Non-fatal — terminal Task recovery diagnostic failed
       }
 
       try {

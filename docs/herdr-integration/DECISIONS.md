@@ -823,12 +823,19 @@ unit, so it must treat session replacement as an explicit ownership handoff,
 not continue through captured objects from the previous extension instance.
 
 The host's `ReplacedSessionContext` therefore exposes the session-bound model,
-thinking, active-tool, and visible-skill controls required for a dispatch in
-addition to message delivery. GSD captures that context only through
+thinking, registered-tool, active-tool, and visible-skill controls required for
+a dispatch in addition to message delivery. GSD captures that context only through
 `withSession`, binds it as the current command/runtime surface, and publishes it
 back through the mutable iteration context before verification, closeout, and
 the next iteration. The process-scoped event bus may be retained; old
 session-bound objects may not.
+
+Because a replacement runtime may preserve only a partial active-tool set, GSD
+must reconstruct the current unit's allowed tool surface from the replacement
+runtime's registered tools before sending the unit prompt. If any required
+workflow tool remains unavailable, dispatch fails closed before consuming a
+model turn. This prevents an executor from finishing source work while being
+structurally unable to publish its canonical lifecycle closeout.
 
 This contract applies to auto units, manual phase dispatch, hook dispatch, and
 workspace re-rooting. Compatibility with a host that does not invoke

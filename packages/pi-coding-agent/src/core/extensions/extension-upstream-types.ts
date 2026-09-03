@@ -449,6 +449,8 @@ export interface ReplacedSessionContext extends ExtensionCommandContext {
 
 	/** Session-bound tool/skill visibility controls for replacement-session dispatch. */
 	getActiveTools(): string[];
+	getAllTools(): ToolInfo[];
+	setActiveTools(toolNames: string[]): void;
 	getVisibleSkills(): string[] | undefined;
 	setVisibleSkills(skillNames: string[] | undefined): void;
 }

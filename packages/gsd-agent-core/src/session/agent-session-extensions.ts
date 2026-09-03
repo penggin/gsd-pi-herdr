@@ -611,6 +611,8 @@ export class AgentSessionExtensionsModule {
 		context.getThinkingLevel = () => this.host.thinkingLevel;
 		context.setThinkingLevel = (level) => this.host.setThinkingLevel(level);
 		context.getActiveTools = () => this.host.getActiveToolNames();
+		context.getAllTools = () => this.host.getAllTools();
+		context.setActiveTools = (toolNames) => this.host.setActiveToolsByName(toolNames);
 		context.getVisibleSkills = () => this.host._visibleSkillNames;
 		context.setVisibleSkills = (skillNames) => {
 			this.host._visibleSkillNames = skillNames;

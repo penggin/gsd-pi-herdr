@@ -35,6 +35,11 @@ import { resolveAutoSupervisorConfig } from "../preferences.js";
 import { readUnitRuntimeRecord, type AutoUnitRuntimeRecord } from "../unit-runtime.js";
 import { clearAutoWakeup, consumeAutoWakeup } from "./schedule-wakeup.js";
 import { applyUnitSkillVisibility } from "../skill-scope.js";
+import {
+  AUTO_UNIT_SCOPED_TOOLS,
+  getRequiredWorkflowToolsForUnit,
+} from "../unit-tool-contracts.js";
+import { mcpToolMatchesBaseName } from "../mcp-tool-name.js";
 
 const UNIT_FAILSAFE_BUFFER_MS = 30_000;
 const UNIT_FAILSAFE_RECHECK_MS = 30_000;
@@ -76,6 +81,37 @@ async function sleepForScheduledWakeup(s: AutoSession, delayMs: number): Promise
 // Tracks the latest session-switch attempt so a late timeout settlement from an
 // older runUnit() call cannot clear the guard for a newer one.
 let sessionSwitchGeneration = 0;
+
+/**
+ * A Pi session replacement builds a new extension runtime. Re-activate the
+ * current unit's registered workflow tools on that runtime before dispatch;
+ * otherwise a partially preserved active set can strand closeout without its
+ * lifecycle tool. Missing required registrations fail before the model spends
+ * a turn attempting an unavailable tool.
+ */
+export function restoreReplacementUnitToolSurface(
+  pi: Pick<ExtensionAPI, "getActiveTools"> & Partial<Pick<ExtensionAPI, "getAllTools" | "setActiveTools">>,
+  unitType: string,
+): string[] {
+  if (typeof pi.getAllTools !== "function" || typeof pi.setActiveTools !== "function") return [];
+
+  const active = pi.getActiveTools();
+  const registered = pi.getAllTools().map((tool) => tool.name);
+  const requested = AUTO_UNIT_SCOPED_TOOLS[unitType] ?? [];
+  const additions = registered.filter((registeredName) =>
+    requested.some((requestedName) =>
+      registeredName === requestedName || mcpToolMatchesBaseName(registeredName, requestedName),
+    ),
+  );
+  const next = [...new Set([...active, ...additions])];
+  pi.setActiveTools(next);
+
+  return getRequiredWorkflowToolsForUnit(unitType).filter((requiredName) =>
+    !next.some((activeName) =>
+      activeName === requiredName || mcpToolMatchesBaseName(activeName, requiredName),
+    ),
+  );
+}
 
 /**
  * Execute a single unit: create a new session, send the prompt, and await
@@ -209,6 +245,31 @@ export async function runUnit(
     typeof pi.setVisibleSkills === "function" ? pi.setVisibleSkills.bind(pi) : undefined;
   if (setVisibleSkills) {
     applyUnitSkillVisibility({ setVisibleSkills }, unitType);
+  }
+
+  let missingRequiredTools: string[] = [];
+  try {
+    missingRequiredTools = restoreReplacementUnitToolSurface(pi, unitType);
+  } catch (error) {
+    missingRequiredTools = getRequiredWorkflowToolsForUnit(unitType);
+    logError(
+      "bootstrap",
+      `Failed to restore replacement tool surface for ${unitType} ${unitId}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (missingRequiredTools.length > 0) {
+    _consumePendingSwitchCancellation();
+    const message =
+      `Replacement session is missing required workflow tool(s) for ${unitType}: ${missingRequiredTools.join(", ")}`;
+    ctx.ui.notify(`${message}. Cancelling before dispatch.`, "warning");
+    return {
+      status: "cancelled",
+      errorContext: {
+        message,
+        category: "session-failed",
+        isTransient: false,
+      },
+    };
   }
 
   // ── Create the agent_end promise (per-unit one-shot) ──

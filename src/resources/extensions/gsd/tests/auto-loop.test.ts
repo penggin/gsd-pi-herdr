@@ -1173,6 +1173,7 @@ test("runUnit hands long-lived auto dispatch to the replacement session context"
   let stale = false;
   const oldAccesses: string[] = [];
   const replacementCalls: string[] = [];
+  let replacementActiveTools = ["gsd_exec", "gsd_exec_search"];
   const throwIfStale = (label: string) => {
     oldAccesses.push(label);
     if (stale) throw new Error(`stale ${label}`);
@@ -1193,7 +1194,19 @@ test("runUnit hands long-lived auto dispatch to the replacement session context"
     },
     getThinkingLevel: () => "off",
     setThinkingLevel: () => {},
-    getActiveTools: () => [],
+    getActiveTools: () => [...replacementActiveTools],
+    getAllTools: () => [
+      { name: "gsd_exec" },
+      { name: "gsd_exec_search" },
+      { name: "gsd_resume" },
+      { name: "gsd_capture_thought" },
+      { name: "gsd_task_complete" },
+      { name: "gsd_task_recovery_resume" },
+    ],
+    setActiveTools: (toolNames: string[]) => {
+      replacementActiveTools = [...toolNames];
+      replacementCalls.push("setActiveTools");
+    },
     getVisibleSkills: () => undefined,
     setVisibleSkills: () => replacementCalls.push("setVisibleSkills"),
     sendMessage: () => {
@@ -1230,7 +1243,7 @@ test("runUnit hands long-lived auto dispatch to the replacement session context"
     return { cancelled: false };
   };
 
-  const resultPromise = runUnit(oldCtx, oldPi, s, "task", "T01", "prompt");
+  const resultPromise = runUnit(oldCtx, oldPi, s, "execute-task", "M001/S01/T01", "prompt");
   await new Promise((resolve) => setTimeout(resolve, 10));
   resolveAgentEnd(makeEvent());
 
@@ -1239,7 +1252,51 @@ test("runUnit hands long-lived auto dispatch to the replacement session context"
   assert.equal(s.cmdCtx, replacementCtx);
   assert.deepEqual(oldAccesses, []);
   assert.ok(replacementCalls.includes("setModel"));
+  assert.ok(replacementCalls.includes("setActiveTools"));
+  assert.ok(replacementActiveTools.includes("gsd_task_complete"));
   assert.ok(replacementCalls.includes("sendMessage"));
+});
+
+test("runUnit fails before dispatch when a replacement session lacks a required workflow tool", async () => {
+  _resetPendingResolve();
+
+  const replacementCtx = {
+    ...makeMockCtx(),
+    newSession: async () => ({ cancelled: false }),
+    setModel: async () => true,
+    getThinkingLevel: () => "off",
+    setThinkingLevel: () => {},
+    getActiveTools: () => ["gsd_exec", "gsd_exec_search"],
+    getAllTools: () => [{ name: "gsd_exec" }, { name: "gsd_exec_search" }],
+    setActiveTools: () => {},
+    getVisibleSkills: () => undefined,
+    setVisibleSkills: () => {},
+    sendMessage: () => Promise.reject(new Error("must not dispatch")),
+  } as any;
+  const notifications: string[] = [];
+  replacementCtx.ui.notify = (message: string) => notifications.push(message);
+
+  const s = makeMockSession();
+  s.currentUnitModel = { provider: "openai-codex", id: "gpt-5.4" };
+  s.cmdCtx.newSession = async (options: { withSession?: (ctx: any) => Promise<void> }) => {
+    await options.withSession?.(replacementCtx);
+    return { cancelled: false };
+  };
+
+  const result = await runUnit(
+    makeMockCtx(),
+    makeMockPi(),
+    s,
+    "execute-task",
+    "M001/S01/T01",
+    "prompt",
+  );
+
+  assert.equal(result.status, "cancelled");
+  assert.equal(result.errorContext?.category, "session-failed");
+  assert.match(result.errorContext?.message ?? "", /gsd_task_complete/);
+  assert.ok(notifications.some((message) => message.includes("Cancelling before dispatch")));
+  assert.equal(_hasPendingResolveForTest(), false);
 });
 
 test("runUnit re-applies the selected unit model after newSession before dispatch", async () => {
