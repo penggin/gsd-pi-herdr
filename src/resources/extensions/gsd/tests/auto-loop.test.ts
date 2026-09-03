@@ -1167,6 +1167,81 @@ test("runUnit only arms resolve after newSession completes", async () => {
   assert.equal(pi.calls.length, 1);
 });
 
+test("runUnit hands long-lived auto dispatch to the replacement session context", async () => {
+  _resetPendingResolve();
+
+  let stale = false;
+  const oldAccesses: string[] = [];
+  const replacementCalls: string[] = [];
+  const throwIfStale = (label: string) => {
+    oldAccesses.push(label);
+    if (stale) throw new Error(`stale ${label}`);
+  };
+
+  const replacementCtx = {
+    ui: {
+      notify: () => replacementCalls.push("notify"),
+      setWorkingMessage: () => replacementCalls.push("working"),
+    },
+    model: { provider: "openai-codex", id: "gpt-5.4" },
+    modelRegistry: { isProviderRequestReady: () => true },
+    sessionManager: { getEntries: () => [] },
+    newSession: async () => ({ cancelled: false }),
+    setModel: async () => {
+      replacementCalls.push("setModel");
+      return true;
+    },
+    getThinkingLevel: () => "off",
+    setThinkingLevel: () => {},
+    getActiveTools: () => [],
+    getVisibleSkills: () => undefined,
+    setVisibleSkills: () => replacementCalls.push("setVisibleSkills"),
+    sendMessage: () => {
+      replacementCalls.push("sendMessage");
+      return Promise.resolve();
+    },
+  } as any;
+  const oldCtx = {
+    ui: {
+      notify: () => throwIfStale("ctx.ui.notify"),
+      setWorkingMessage: () => throwIfStale("ctx.ui.setWorkingMessage"),
+    },
+    model: { provider: "openai-codex", id: "gpt-5.4" },
+    modelRegistry: {
+      isProviderRequestReady: () => {
+        throwIfStale("ctx.modelRegistry");
+        return true;
+      },
+    },
+  } as any;
+  const oldPi = {
+    setModel: async () => {
+      throwIfStale("pi.setModel");
+      return true;
+    },
+    setVisibleSkills: () => throwIfStale("pi.setVisibleSkills"),
+    sendMessage: () => throwIfStale("pi.sendMessage"),
+  } as any;
+  const s = makeMockSession();
+  s.currentUnitModel = replacementCtx.model;
+  s.cmdCtx.newSession = async (options: { withSession?: (ctx: any) => Promise<void> }) => {
+    stale = true;
+    await options.withSession?.(replacementCtx);
+    return { cancelled: false };
+  };
+
+  const resultPromise = runUnit(oldCtx, oldPi, s, "task", "T01", "prompt");
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  resolveAgentEnd(makeEvent());
+
+  const result = await resultPromise;
+  assert.equal(result.status, "completed");
+  assert.equal(s.cmdCtx, replacementCtx);
+  assert.deepEqual(oldAccesses, []);
+  assert.ok(replacementCalls.includes("setModel"));
+  assert.ok(replacementCalls.includes("sendMessage"));
+});
+
 test("runUnit re-applies the selected unit model after newSession before dispatch", async () => {
   _resetPendingResolve();
 
@@ -5930,6 +6005,130 @@ test("runUnitPhase pauses transient aborted cancellations instead of hard-stoppi
   assert.equal((result as any).reason, "unit-aborted-pause");
   assert.equal(deps.callLog.includes("pauseAuto"), true);
   assert.equal(deps.callLog.includes("stopAuto"), false);
+});
+
+test("runUnitPhase performs post-session closeout through the replacement bindings", async (t) => {
+  _resetPendingResolve();
+
+  const basePath = makeLoopTestBase("gsd-replacement-closeout-");
+  t.after(() => rmSync(basePath, { recursive: true, force: true }));
+
+  let stale = false;
+  const guard = (label: string) => {
+    if (stale) throw new Error(`stale binding used after newSession: ${label}`);
+  };
+  const oldCtx = {
+    ui: {
+      notify: () => guard("ctx.ui.notify"),
+      setStatus: () => guard("ctx.ui.setStatus"),
+      setWorkingMessage: () => guard("ctx.ui.setWorkingMessage"),
+    },
+    model: { provider: "openai-codex", id: "gpt-5.4" },
+    modelRegistry: {
+      getProviderAuthMode: () => {
+        guard("ctx.modelRegistry.getProviderAuthMode");
+        return undefined;
+      },
+      isProviderRequestReady: () => {
+        guard("ctx.modelRegistry.isProviderRequestReady");
+        return true;
+      },
+    },
+    sessionManager: { getEntries: () => [] },
+    isIdle: () => true,
+  } as any;
+  const oldPi = {
+    ...makeMockPi(),
+    events: { emit: () => {} },
+  } as any;
+  const replacementCtx = {
+    ...oldCtx,
+    ui: { notify: () => {}, setStatus: () => {}, setWorkingMessage: () => {} },
+    modelRegistry: {
+      getProviderAuthMode: () => undefined,
+      isProviderRequestReady: () => true,
+    },
+    sessionManager: {
+      getEntries: () => [],
+      getSessionFile: () => join(basePath, "replacement.jsonl"),
+    },
+    newSession: async () => ({ cancelled: false }),
+    setModel: async () => true,
+    getThinkingLevel: () => "off",
+    setThinkingLevel: () => {},
+    getActiveTools: () => [],
+    getVisibleSkills: () => undefined,
+    setVisibleSkills: () => {},
+    sendMessage: () => {
+      queueMicrotask(() => resolveAgentEnd(makeEvent()));
+      return Promise.resolve();
+    },
+    isIdle: () => true,
+  } as any;
+  const s = makeLoopSession({
+    basePath,
+    canonicalProjectRoot: basePath,
+    originalBasePath: basePath,
+  });
+  s.cmdCtx.newSession = async (options: { withSession?: (ctx: any) => Promise<void> }) => {
+    stale = true;
+    await options.withSession?.(replacementCtx);
+    return { cancelled: false };
+  };
+  const observedCloseoutContexts: unknown[] = [];
+  const deps = makeMockDeps({
+    getSessionFile: (receivedCtx: unknown) => {
+      observedCloseoutContexts.push(receivedCtx);
+      return join(basePath, "replacement.jsonl");
+    },
+    closeoutUnit: async (receivedCtx: unknown) => {
+      observedCloseoutContexts.push(receivedCtx);
+    },
+  });
+  let seq = 0;
+  const ic = {
+    ctx: oldCtx,
+    pi: oldPi,
+    s,
+    deps,
+    prefs: undefined,
+    iteration: 1,
+    flowId: "flow-replacement-closeout",
+    nextSeq: () => ++seq,
+  } as any;
+
+  await runUnitPhase(
+    ic,
+    {
+      unitType: "execute-task",
+      unitId: "M001/S01/T01",
+      prompt: "do work",
+      finalPrompt: "do work",
+      pauseAfterUatDispatch: false,
+      state: {
+        phase: "executing",
+        activeMilestone: { id: "M001", title: "Milestone" },
+        activeSlice: { id: "S01", title: "Slice" },
+        activeTask: { id: "T01", title: "Task" },
+        registry: [{ id: "M001", title: "Milestone", status: "active" }],
+        recentDecisions: [],
+        blockers: [],
+        nextAction: "",
+        progress: { milestones: { done: 0, total: 1 } },
+        requirements: { active: 0, validated: 0, deferred: 0, outOfScope: 0, blocked: 0, total: 0 },
+      } as any,
+      mid: "M001",
+      midTitle: "Milestone",
+      isRetry: false,
+      previousTier: undefined,
+    },
+    makeLoopState(),
+  );
+
+  assert.equal(ic.ctx, replacementCtx);
+  assert.equal(s.cmdCtx, replacementCtx);
+  assert.ok(observedCloseoutContexts.length > 0);
+  assert.ok(observedCloseoutContexts.every((received) => received === replacementCtx));
 });
 
 test("resetSessionTimeoutState gives a new auto session a fresh session-creation timeout budget", async (t) => {

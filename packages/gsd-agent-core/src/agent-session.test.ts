@@ -195,7 +195,51 @@ describe("summarization retry", () => {
 });
 
 describe("AgentSessionExtensionsModule", () => {
-  test("forwards and patches tool-result usage through extension hooks", async () => {
+	test("replacement context exposes session-bound model and skill controls", async () => {
+		const model = { provider: "test-provider", id: "test-model" };
+		const modelCalls: Array<{ model: typeof model; options?: { persist?: boolean } }> = [];
+		const host = {
+			_cwd: "/tmp/project",
+			_extensionRunner: {
+				createCommandContext: () => ({ ui: {}, sessionManager: {} }),
+			},
+			_toolRegistry: new Map(),
+			_toolPromptSnippets: new Map(),
+			_toolPromptGuidelines: new Map(),
+			_visibleSkillNames: undefined as string[] | undefined,
+			_baseSystemPrompt: "",
+			_baseSystemPromptOptions: {},
+			modelRegistry: { hasConfiguredAuth: () => true },
+			setModel: async (selectedModel: typeof model, options?: { persist?: boolean }) => {
+				modelCalls.push({ model: selectedModel, options });
+			},
+			thinkingLevel: "off",
+			setThinkingLevel: (level: string) => {
+				host.thinkingLevel = level;
+			},
+			getActiveToolNames: () => [],
+			sendCustomMessage: async () => {},
+			sendUserMessage: async () => {},
+			resourceLoader: {
+				getSystemPrompt: () => undefined,
+				getAppendSystemPrompt: () => [],
+				getAgentsFiles: () => ({ agentsFiles: [] }),
+			},
+			agent: { state: { systemPrompt: "", tools: [] } },
+		};
+
+		const replacement = new AgentSessionExtensionsModule(host as any).createReplacedSessionContext();
+		assert.equal(await replacement.setModel(model as any, { persist: false }), true);
+		replacement.setThinkingLevel("high");
+		replacement.setVisibleSkills(["task-skill"]);
+
+		assert.deepEqual(modelCalls, [{ model, options: { persist: false } }]);
+		assert.equal(replacement.getThinkingLevel(), "high");
+		assert.deepEqual(replacement.getActiveTools(), []);
+		assert.deepEqual(replacement.getVisibleSkills(), ["task-skill"]);
+	});
+
+	test("forwards and patches tool-result usage through extension hooks", async () => {
     const toolUsage = {
       input: 1,
       output: 2,

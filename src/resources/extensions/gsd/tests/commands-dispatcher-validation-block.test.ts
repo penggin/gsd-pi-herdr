@@ -41,11 +41,13 @@ function makeMockCtx(base: string): {
   widgets: Array<[string, unknown]>;
   statuses: Array<[string, string | undefined]>;
   newSessions: Array<{ workspaceRoot?: string }>;
+  replacementMessages: SentMessage[];
 } {
   const calls: NotifyCall[] = [];
   const widgets: Array<[string, unknown]> = [];
   const statuses: Array<[string, string | undefined]> = [];
   const newSessions: Array<{ workspaceRoot?: string }> = [];
+  const replacementMessages: SentMessage[] = [];
   return {
     ctx: {
       cwd: base,
@@ -60,8 +62,17 @@ function makeMockCtx(base: string): {
           statuses.push([key, value]);
         },
       },
-      newSession: async (options?: { workspaceRoot?: string }) => {
-        newSessions.push(options ?? {});
+      newSession: async (options?: {
+        workspaceRoot?: string;
+        withSession?: (ctx: any) => Promise<void>;
+      }) => {
+        newSessions.push({ workspaceRoot: options?.workspaceRoot });
+        await options?.withSession?.({
+          sendMessage: (message: SentMessage) => {
+            replacementMessages.push(message);
+            return Promise.resolve();
+          },
+        });
         return { cancelled: false };
       },
     },
@@ -69,6 +80,7 @@ function makeMockCtx(base: string): {
     widgets,
     statuses,
     newSessions,
+    replacementMessages,
   };
 }
 
@@ -205,15 +217,16 @@ test("dispatcher allows reassess dispatch while validation needs remediation", a
   const base = makeBase();
   try {
     seedValidationBlockedMilestone(base, "needs-remediation");
-    const { ctx, calls, newSessions } = makeMockCtx(base);
+    const { ctx, calls, newSessions, replacementMessages } = makeMockCtx(base);
     const { pi, messages } = makeMockPi();
 
     await handleGSDCommand("dispatch reassess", ctx, pi);
 
-    assert.equal(messages.length, 1);
-    assert.equal(messages[0].customType, "gsd-dispatch");
-    assert.equal(messages[0].display, false);
-    assert.match(messages[0].content, /UNIT: Reassess Roadmap/);
+    assert.equal(messages.length, 0, "stale initiating pi must not dispatch into the replacement session");
+    assert.equal(replacementMessages.length, 1);
+    assert.equal(replacementMessages[0].customType, "gsd-dispatch");
+    assert.equal(replacementMessages[0].display, false);
+    assert.match(replacementMessages[0].content, /UNIT: Reassess Roadmap/);
     assert.ok(
       calls.some((call) => call.kind === "info" && /Dispatching reassess-roadmap for M006\/S01/.test(call.message)),
       `expected reassess dispatch notification, got: ${JSON.stringify(calls)}`,

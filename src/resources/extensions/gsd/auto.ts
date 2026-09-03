@@ -19,6 +19,7 @@ import type {
   ExtensionCommandContext,
   SessionMessageEntry,
 } from "@gsd/pi-coding-agent";
+import { bindAutoReplacementSession } from "./auto/replacement-session.js";
 
 import { deriveState, invalidateStateCache } from "./state.js";
 import {
@@ -1447,11 +1448,24 @@ function handleLostSessionLock(
 export async function rerootCommandSession(
   cmdCtx: Pick<ExtensionCommandContext, "newSession"> | null | undefined,
   workspaceRoot: string,
-): Promise<{ status: "skipped" | "ok" | "cancelled" | "failed"; error?: string }> {
+): Promise<{
+  status: "skipped" | "ok" | "cancelled" | "failed";
+  error?: string;
+  context?: Parameters<typeof bindAutoReplacementSession>[1];
+}> {
   if (!cmdCtx || !workspaceRoot) return { status: "skipped" };
   try {
-    const result = await cmdCtx.newSession({ workspaceRoot });
-    return result.cancelled ? { status: "cancelled" } : { status: "ok" };
+    let replacementCtx: Parameters<typeof bindAutoReplacementSession>[1] | undefined;
+    const result = await cmdCtx.newSession({
+      workspaceRoot,
+      withSession: async (freshCtx) => {
+        replacementCtx = freshCtx as Parameters<typeof bindAutoReplacementSession>[1];
+      },
+    });
+    if (result.cancelled) return { status: "cancelled" };
+    return replacementCtx
+      ? { status: "ok", context: replacementCtx }
+      : { status: "ok" };
   } catch (err) {
     return {
       status: "failed",
@@ -1502,7 +1516,8 @@ export async function maybeRerootStepSessionForHighContext(
 
   const result = await rerootCommandSession(cmdCtx, workspaceRoot);
   if (result.status === "ok") {
-    ctx.ui.notify(
+    if (result.context) s.cmdCtx = result.context;
+    (result.context ?? ctx).ui.notify(
       `Step complete — context at ${displayPercent}% (hard threshold: ${HARD_CONTEXT_REROOT_THRESHOLD_PERCENT}%). Fresh session ready for /gsd next.`,
       "info",
     );
@@ -1602,6 +1617,8 @@ export async function cleanupAfterLoopExit(ctx: ExtensionContext): Promise<void>
       logWarning("engine", "post-loop session re-root was cancelled", { file: "auto.ts", basePath: s.originalBasePath });
     } else if (result.status === "failed") {
       logWarning("engine", `post-loop session re-root failed: ${result.error ?? "unknown"}`, { file: "auto.ts", basePath: s.originalBasePath });
+    } else if (result.context) {
+      s.cmdCtx = result.context;
     }
   }
 
@@ -1952,6 +1969,8 @@ export async function stopAuto(
         logWarning("engine", "post-stop session re-root was cancelled", { file: "auto.ts", basePath: s.originalBasePath });
       } else if (result.status === "failed") {
         logWarning("engine", `post-stop session re-root failed: ${result.error ?? "unknown"}`, { file: "auto.ts", basePath: s.originalBasePath });
+      } else if (result.context && pi) {
+        ({ ctx, pi } = bindAutoReplacementSession(s, result.context, pi));
       }
     }
 
@@ -3346,11 +3365,26 @@ export async function dispatchHookUnit(
     return false;
   }
 
-  const result = await cmdCtx.newSession({ workspaceRoot: s.basePath });
+  let replacementCtx: ExtensionCommandContext | undefined;
+  const result = await cmdCtx.newSession({
+    workspaceRoot: s.basePath,
+    withSession: async (freshCtx) => {
+      replacementCtx = freshCtx;
+    },
+  });
   if (result.cancelled) {
     await stopAuto(ctx, pi);
     return false;
   }
+  if (!replacementCtx) {
+    await stopAuto(ctx, pi, "Replacement session did not provide a hook dispatch context");
+    return false;
+  }
+  ({ ctx, pi } = bindAutoReplacementSession(
+    s,
+    replacementCtx as Parameters<typeof bindAutoReplacementSession>[1],
+    pi,
+  ));
 
   s.setCurrentUnit({
     type: hookUnitType,

@@ -73,6 +73,7 @@ export type {
 	ReadToolCallEvent,
 	RegisteredCommand,
 	RegisteredTool,
+	ReplacedSessionContext,
 	ResolvedCommand,
 	SessionBeforeCompactEvent,
 	SessionBeforeForkEvent,

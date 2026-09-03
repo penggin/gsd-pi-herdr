@@ -808,3 +808,31 @@ GLM Coding Plan continues to use its declared OpenAI Completions transport and
 native plaintext compaction. It must not be relabeled as Codex Responses merely
 to gain Remote V2 or hosted-search behavior. GSD and Herdr authority boundaries
 are unchanged.
+
+---
+
+## ADR-H042 — Rebind long-lived orchestration at every Pi session replacement
+
+**Status:** Accepted
+**Date:** 2026-09-03
+
+Pi invalidates both the command context and extension API that initiated a
+successful `newSession`, `fork`, or `switchSession`. GSD auto-mode is a
+long-lived command orchestrator that intentionally creates a fresh session per
+unit, so it must treat session replacement as an explicit ownership handoff,
+not continue through captured objects from the previous extension instance.
+
+The host's `ReplacedSessionContext` therefore exposes the session-bound model,
+thinking, active-tool, and visible-skill controls required for a dispatch in
+addition to message delivery. GSD captures that context only through
+`withSession`, binds it as the current command/runtime surface, and publishes it
+back through the mutable iteration context before verification, closeout, and
+the next iteration. The process-scoped event bus may be retained; old
+session-bound objects may not.
+
+This contract applies to auto units, manual phase dispatch, hook dispatch, and
+workspace re-rooting. Compatibility with a host that does not invoke
+`withSession` is retained only for legacy non-invalidating test/host seams; the
+current Pi runtime must supply the callback. This changes no GSD workflow
+authority, Herdr terminal authority, Task Attempt semantics, or provider
+selection policy.

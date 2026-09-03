@@ -73,8 +73,21 @@ describe("hook dispatch session workspace root", () => {
       sessionManager: {
         getSessionFile: () => join(basePath, "session.jsonl"),
       },
-      newSession: async (options?: unknown) => {
+      newSession: async (options?: {
+        workspaceRoot?: string;
+        withSession?: (ctx: any) => Promise<void>;
+      }) => {
         newSessionOptions = options;
+        await options?.withSession?.({
+          ...ctx,
+          sendMessage: () => Promise.resolve(),
+          setModel: async () => true,
+          getThinkingLevel: () => "off",
+          setThinkingLevel: () => {},
+          getActiveTools: () => [],
+          getVisibleSkills: () => undefined,
+          setVisibleSkills: () => {},
+        });
         return { cancelled: false };
       },
     };
@@ -95,7 +108,8 @@ describe("hook dispatch session workspace root", () => {
     );
 
     assert.equal(dispatched, true);
-    assert.deepEqual(newSessionOptions, { workspaceRoot: basePath });
+    assert.equal((newSessionOptions as { workspaceRoot?: string }).workspaceRoot, basePath);
+    assert.equal(typeof (newSessionOptions as { withSession?: unknown }).withSession, "function");
   });
 
   test("dispatchHookUnit commits in-flight work when command context lacks newSession", async (t) => {

@@ -1008,6 +1008,8 @@ export async function autoLoop(
             ),
           );
         } catch (err) {
+          ctx = ic.ctx;
+          pi = ic.pi;
           if (err instanceof ModelPolicyDispatchBlockedError) {
             throw err;
           }
@@ -1020,6 +1022,10 @@ export async function autoLoop(
           dispatchSettled = customDispatchSettled;
           throw err;
         }
+        // Unit dispatch may have replaced the underlying Pi session. The phase
+        // publishes its fresh bindings through the mutable iteration context.
+        ctx = ic.ctx;
+        pi = ic.pi;
         if (unitPhaseResult.action === "next") {
           const requestTimestamp = resolveUnitRequestTimestamp(unitPhaseResult.data);
           if (requestTimestamp !== undefined) s.lastRequestTimestamp = requestTimestamp;
@@ -1908,6 +1914,8 @@ export async function autoLoop(
           ),
         );
       } catch (err) {
+        ctx = ic.ctx;
+        pi = ic.pi;
         if (err instanceof ModelPolicyDispatchBlockedError) {
           throw err;
         }
@@ -1923,6 +1931,10 @@ export async function autoLoop(
           ));
         throw err;
       }
+      // Unit dispatch may have replaced the underlying Pi session. The phase
+      // publishes its fresh bindings through the mutable iteration context.
+      ctx = ic.ctx;
+      pi = ic.pi;
       if (unitPhaseResult.action === "next") {
         const requestTimestamp = resolveUnitRequestTimestamp(unitPhaseResult.data);
         if (requestTimestamp !== undefined) s.lastRequestTimestamp = requestTimestamp;

@@ -441,6 +441,16 @@ export interface ReplacedSessionContext extends ExtensionCommandContext {
 		content: string | (TextContent | ImageContent)[],
 		options?: { deliverAs?: "steer" | "followUp" },
 	): Promise<void>;
+
+	/** Session-bound model controls for long-lived command orchestrators. */
+	setModel(model: Model<any>, options?: { persist?: boolean }): Promise<boolean>;
+	getThinkingLevel(): ThinkingLevel;
+	setThinkingLevel(level: ThinkingLevel): void;
+
+	/** Session-bound tool/skill visibility controls for replacement-session dispatch. */
+	getActiveTools(): string[];
+	getVisibleSkills(): string[] | undefined;
+	setVisibleSkills(skillNames: string[] | undefined): void;
 }
 
 // ============================================================================

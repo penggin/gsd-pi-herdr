@@ -2,6 +2,7 @@
 // File Purpose: Auto-loop unit execution phase.
 
 import { importExtensionModule } from "@gsd/pi-coding-agent";
+import type { ExtensionAPI } from "@gsd/pi-coding-agent";
 import type { SidecarItem, AutoSession } from "./session.js";
 import { resetEvidence, loadEvidenceFromDisk } from "../safety/evidence-collector.js";
 import { captureRootDirtySnapshot } from "../root-write-leak-guard.js";
@@ -173,7 +174,8 @@ export async function runUnitPhase(
   loopState: LoopState,
   sidecarItem?: SidecarItem,
 ): Promise<PhaseResult<{ unitStartedAt?: number; requestDispatchedAt?: number; retryAfterMs?: number }>> {
-  const { ctx, pi, s, deps, prefs } = ic;
+  let { ctx, pi } = ic;
+  const { s, deps, prefs } = ic;
   const { unitType, unitId, prompt, state, mid } = iterData;
 
   debugLog("autoLoop", {
@@ -537,6 +539,7 @@ export async function runUnitPhase(
     unitId,
   });
   const pausedBeforeRun = s.paused;
+  const commandCtxBeforeRun = s.cmdCtx;
   const unitResult = await runUnit(
     ctx,
     pi,
@@ -545,6 +548,14 @@ export async function runUnitPhase(
     unitId,
     finalPrompt,
   );
+  // runUnit may replace the Pi session. Refresh this phase and its caller's
+  // iteration bindings before any closeout, UI, or model operation.
+  if (s.cmdCtx && s.cmdCtx !== commandCtxBeforeRun) {
+    ctx = s.cmdCtx;
+    pi = s.cmdCtx as unknown as ExtensionAPI;
+    ic.ctx = ctx;
+    ic.pi = pi;
+  }
   s.lastUnitAgentEndMessages = unitResult.event?.messages ?? null;
   debugLog("autoLoop", {
     phase: "runUnit-end",

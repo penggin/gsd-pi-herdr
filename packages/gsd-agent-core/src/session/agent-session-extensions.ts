@@ -603,6 +603,19 @@ export class AgentSessionExtensionsModule {
 		) as ReplacedSessionContext;
 		context.sendMessage = (message, options) => this.host.sendCustomMessage(message, options);
 		context.sendUserMessage = (content, options) => this.host.sendUserMessage(content, options);
+		context.setModel = async (model, options) => {
+			if (!this.host.modelRegistry.hasConfiguredAuth(model)) return false;
+			await this.host.setModel(model, options);
+			return true;
+		};
+		context.getThinkingLevel = () => this.host.thinkingLevel;
+		context.setThinkingLevel = (level) => this.host.setThinkingLevel(level);
+		context.getActiveTools = () => this.host.getActiveToolNames();
+		context.getVisibleSkills = () => this.host._visibleSkillNames;
+		context.setVisibleSkills = (skillNames) => {
+			this.host._visibleSkillNames = skillNames;
+			this.refreshSystemPromptForVisibleSkills();
+		};
 		return context;
 	}
 

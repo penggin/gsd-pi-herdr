@@ -6,7 +6,10 @@
  * Imports from: auto/types, auto/resolve
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@gsd/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+} from "@gsd/pi-coding-agent";
 
 import type { AutoSession } from "./session.js";
 import { NEW_SESSION_TIMEOUT_MS } from "./session.js";
@@ -22,6 +25,10 @@ import {
   getCurrentTurnGeneration,
   runWithTurnGeneration,
 } from "./turn-epoch.js";
+import {
+  bindAutoReplacementSession,
+  type AutoReplacementContext,
+} from "./replacement-session.js";
 import { debugLog } from "../debug-logger.js";
 import { logWarning, logError } from "../workflow-logger.js";
 import { resolveAutoSupervisorConfig } from "../preferences.js";
@@ -111,6 +118,7 @@ export async function runUnit(
   }
 
   let sessionResult: { cancelled: boolean };
+  let replacementCtx: AutoReplacementContext | undefined;
   let sessionTimeoutHandle: ReturnType<typeof setTimeout> | undefined;
   const mySessionSwitchGeneration = ++sessionSwitchGeneration;
   // #3731: Cancellation controller for newSession(). When session creation
@@ -122,6 +130,9 @@ export async function runUnit(
     const sessionPromise = cmdCtx.newSession({
       abortSignal: sessionAbortController.signal,
       workspaceRoot: s.basePath,
+      withSession: async (freshCtx) => {
+        replacementCtx = freshCtx as unknown as AutoReplacementContext;
+      },
     }).finally(() => {
       if (sessionSwitchGeneration === mySessionSwitchGeneration) {
         _markSessionSwitchAbortGraceWindow();
@@ -163,6 +174,14 @@ export async function runUnit(
   if (!s.active) {
     _consumePendingSwitchCancellation();
     return { status: "cancelled" };
+  }
+
+  // Pi invalidates the extension API and command context that initiated a
+  // successful session replacement. Continue the long-lived auto coroutine
+  // exclusively through the fresh replacement context. Older compatible hosts
+  // that do not invoke withSession retain the legacy objects.
+  if (replacementCtx) {
+    ({ ctx, pi } = bindAutoReplacementSession(s, replacementCtx, pi));
   }
 
   if (s.currentUnitModel && typeof pi.setModel === "function") {
