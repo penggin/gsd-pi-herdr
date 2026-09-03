@@ -2824,6 +2824,32 @@ this session does not merge, push, tag, or publish.
   retain the previous remote prefix as rollback. After deployment, decide
   whether optional P3.8 copy-only migration tooling is worth implementing;
   do not change the default as part of that decision.
+- Committed and pushed the controlled opt-in as
+  `53dc2f2abd9ec5a413a365a47b2a175ec7606771`. The clean release-candidate
+  tarball is
+  `/srv/penglab/gsd-runs/artifacts/gsd-pi-herdr-1.16.2-53dc2f2a-d75b4f67.tgz`
+  with SHA-256
+  `d75b4f67beb5ffd647ed016f012bd9cd573b13f12398894dae8e750e676ceaf3`.
+- Installed the tarball at immutable prefix
+  `/srv/penglab/gsd-runs/toolchains/gsd-pi-herdr-1.16.2-53dc2f2a-d75b4f67`.
+  First launch repaired all seven internal workspace links. The verified Linux
+  x64 addon reports `nativeLoaded: true` with 98 exports, and build info reports
+  the exact clean commit with `dirty: false`.
+- Direct-prefix installed-binary smoke under owner-only directory
+  `/srv/penglab/gsd-runs/public-v4-smoke.z9w4jk` created and reopened one
+  public-selected v4 session (headers 4/4), rejected opening that file under
+  the default v3 backend without replacement, and returned header 3 under the
+  explicit legacy rollback. The installed help also exposes the public option.
+- Atomically switched only the shared remote `gsd` and `gsd-mcp-server` links
+  to the new prefix. The previous
+  `/srv/penglab/gsd-runs/toolchains/gsd-pi-herdr-1.16.2-a0f8e6b5-476f0297`
+  installation remains intact for rollback; no running process was killed or
+  restarted. No local global installation was changed.
+- Exact next task: evaluate optional P3.8 as a copy-only, preview-first
+  migration command. It must retain the v3 source, publish only after v4 reopen
+  and semantic comparison, and remain independent from the default backend.
+  If that user value does not justify the added mutation surface, record the
+  decision to defer it and move to the next upstream adoption slice instead.
 
 ## 11. Working-session protocol
 
