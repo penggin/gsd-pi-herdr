@@ -3258,6 +3258,45 @@ this session does not merge, push, tag, or publish.
   on future toolchain rotations and continue to gate new product work on a
   concrete Codex/GLM/Herdr failure or the automated upstream freshness signal.
 
+### 2026-09-03 — Compaction seam regression ownership repair
+
+- A completion audit found that the canonical compiled package matrix was green
+  while the explicitly maintained
+  `packages/pi-coding-agent/test/suite/agent-session-compaction.test.ts`
+  characterization still called the removed pre-split `_checkCompaction` and
+  `_runAutoCompaction` methods. This was test ownership drift, not a production
+  compaction failure: runtime authority has lived in
+  `AgentSessionCompactionModule` since the ADR-010 split.
+- Rebound the 13-test characterization to an owned
+  `AgentSessionCompactionModule` instance and
+  repaired its compactable fixture to contain discarded and retained turns.
+  Custom-stream summaries now satisfy the production non-degenerate-summary
+  contract, and the test distinguishes successful compaction from whether a
+  queued continuation is requested.
+- Added six canonical Node tests beside the owning module for one-shot overflow
+  recovery, stale pre-compaction response rejection, threshold recovery from
+  the last successful usage, no-usage rejection, pre-compaction usage
+  invalidation, disabled mode, and below-threshold behavior. These tests are
+  now included automatically in `@gsd/agent-core` and the compiled workspace
+  matrix instead of relying only on an ad-hoc Vitest selection.
+- Verification is green: focused characterization **13/13**, Codex OAuth /
+  transport / Remote V2 / hosted-search plus GLM catalog and compaction matrix
+  **151/151** (89 Vitest + 62 Node), `@gsd/agent-core` **169/169**, and the full
+  compiled workspace matrix (agent-core **169/169**, agent-modes **294/294**,
+  native **223 passed / 1 skipped**, pi-agent-core **3/3**, pi-ai **49/49**,
+  pi-coding-agent **72/72**, pi-tui **8/8**, contracts **9/9**, MCP server
+  **377/377**, RPC client **30/30**).
+- No runtime behavior, provider routing, model catalog, Herdr pane authority, or
+  installation artifact changed, so the remote `/srv/penglab` runtime does not
+  need replacement for this test-only slice. Cursor, Gemini, and Antigravity
+  remain outside the supported implementation scope.
+- Final Pi boundary/patch inventory, extension typecheck, `build:core`,
+  `validate-pack`, `test:changed:src`, and `git diff --check` all pass. Package
+  validation again reports `Package is installable. Safe to publish.`
+- Exact next task: commit and push this test-ownership repair. Afterward, make
+  no speculative provider change unless the read-only upstream audit moves or
+  a concrete Codex/GLM/Herdr production failure is reproduced.
+
 ## 11. Working-session protocol
 
 For every Herdr session:
