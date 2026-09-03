@@ -837,6 +837,11 @@ workflow tool remains unavailable, dispatch fails closed before consuming a
 model turn. This prevents an executor from finishing source work while being
 structurally unable to publish its canonical lifecycle closeout.
 
+Required-tool checks resolve both MCP canonical names and the documented Pi
+native equivalents (`capture_thought`, `memory_query`, and `gsd_graph`). These
+are presentation aliases for the same GSD-owned operations, not permission to
+substitute an unrelated tool or relax a unit contract.
+
 The Pi SDK `tools` option is a permanent registry allowlist, not an active-set
 snapshot. Interactive session replacement therefore creates the full registry
 without deriving `tools` from the outgoing session, then reapplies the outgoing

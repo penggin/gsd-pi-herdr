@@ -81,7 +81,10 @@ import { RUN_UAT_READ_ONLY_TOOL_NAMES, RUN_UAT_WORKFLOW_TOOL_NAMES } from "../to
 import { supportsSourceObservationsForUnit } from "../source-observations.js";
 import { clearPendingAutoStart } from "../pending-auto-start.js";
 import { resolveWorkflowToolBasePath } from "./dynamic-tools.js";
-import { getRequiredWorkflowToolsForUnit } from "../unit-tool-contracts.js";
+import {
+  getRequiredWorkflowToolsForUnit,
+  matchesUnitWorkflowToolName,
+} from "../unit-tool-contracts.js";
 import { flushAllManifests } from "../workflow-manifest.js";
 import { recordUnitHarnessAbort, type UnitHarnessAbortRecord } from "../unit-runtime.js";
 import { clearNativeMilestoneStatusSourceRevisions } from "./query-tools.js";
@@ -342,9 +345,7 @@ function hasResolvedWorkflowTool(
   resolvedToolNames: readonly string[],
   requiredToolName: string,
 ): boolean {
-  return resolvedToolNames.some(
-    (name) => name === requiredToolName || mcpToolMatchesBaseName(name, requiredToolName),
-  );
+  return resolvedToolNames.some((name) => matchesUnitWorkflowToolName(name, requiredToolName));
 }
 
 function warnIfRequiredWorkflowToolsUnresolved(

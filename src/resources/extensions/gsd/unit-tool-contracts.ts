@@ -11,6 +11,7 @@ import {
   type UnitToolSurfaceContract,
   type UnitWorkflowToolName,
 } from "./unit-registry.js";
+import { mcpToolMatchesBaseName } from "./mcp-tool-name.js";
 
 export {
   RUN_UAT_WORKFLOW_TOOL_NAMES,
@@ -22,6 +23,23 @@ export {
 } from "./unit-registry.js";
 
 export const RUN_UAT_TOOL_PRESENTATION_PLAN_ID = "run-uat/default-v1";
+
+/** Canonical workflow names whose in-process Pi registration uses a native name. */
+export const NATIVE_WORKFLOW_TOOL_EQUIVALENTS: Readonly<Record<string, readonly string[]>> = {
+  gsd_capture_thought: ["capture_thought"],
+  gsd_memory_query: ["memory_query"],
+  gsd_memory_graph: ["gsd_graph"],
+};
+
+export function matchesUnitWorkflowToolName(
+  presentedName: string,
+  requiredName: string,
+): boolean {
+  const candidates = [requiredName, ...(NATIVE_WORKFLOW_TOOL_EQUIVALENTS[requiredName] ?? [])];
+  return candidates.some(
+    (candidate) => presentedName === candidate || mcpToolMatchesBaseName(presentedName, candidate),
+  );
+}
 
 export const UNIT_TOOL_CONTRACTS: Record<string, UnitToolSurfaceContract> = Object.fromEntries(
   Object.entries(UNIT_REGISTRY).flatMap(([unitType, descriptor]) =>

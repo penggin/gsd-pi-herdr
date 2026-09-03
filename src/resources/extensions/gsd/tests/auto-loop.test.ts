@@ -1199,7 +1199,7 @@ test("runUnit hands long-lived auto dispatch to the replacement session context"
       { name: "gsd_exec" },
       { name: "gsd_exec_search" },
       { name: "gsd_resume" },
-      { name: "gsd_capture_thought" },
+      { name: "capture_thought" },
       { name: "gsd_task_complete" },
       { name: "gsd_task_recovery_resume" },
     ],
@@ -1254,6 +1254,7 @@ test("runUnit hands long-lived auto dispatch to the replacement session context"
   assert.ok(replacementCalls.includes("setModel"));
   assert.ok(replacementCalls.includes("setActiveTools"));
   assert.ok(replacementActiveTools.includes("gsd_task_complete"));
+  assert.ok(replacementActiveTools.includes("capture_thought"));
   assert.ok(replacementCalls.includes("sendMessage"));
 });
 

@@ -38,8 +38,8 @@ import { applyUnitSkillVisibility } from "../skill-scope.js";
 import {
   AUTO_UNIT_SCOPED_TOOLS,
   getRequiredWorkflowToolsForUnit,
+  matchesUnitWorkflowToolName,
 } from "../unit-tool-contracts.js";
-import { mcpToolMatchesBaseName } from "../mcp-tool-name.js";
 
 const UNIT_FAILSAFE_BUFFER_MS = 30_000;
 const UNIT_FAILSAFE_RECHECK_MS = 30_000;
@@ -99,17 +99,13 @@ export function restoreReplacementUnitToolSurface(
   const registered = pi.getAllTools().map((tool) => tool.name);
   const requested = AUTO_UNIT_SCOPED_TOOLS[unitType] ?? [];
   const additions = registered.filter((registeredName) =>
-    requested.some((requestedName) =>
-      registeredName === requestedName || mcpToolMatchesBaseName(registeredName, requestedName),
-    ),
+    requested.some((requestedName) => matchesUnitWorkflowToolName(registeredName, requestedName)),
   );
   const next = [...new Set([...active, ...additions])];
   pi.setActiveTools(next);
 
   return getRequiredWorkflowToolsForUnit(unitType).filter((requiredName) =>
-    !next.some((activeName) =>
-      activeName === requiredName || mcpToolMatchesBaseName(activeName, requiredName),
-    ),
+    !next.some((activeName) => matchesUnitWorkflowToolName(activeName, requiredName)),
   );
 }
 

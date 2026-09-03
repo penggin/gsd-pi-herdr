@@ -28,6 +28,7 @@ import {
 import {
   getRequiredWorkflowToolsForUnit,
   getUnitToolSurfaceContract,
+  NATIVE_WORKFLOW_TOOL_EQUIVALENTS,
   UNIT_TOOL_CONTRACTS,
 } from "../unit-tool-contracts.ts";
 import { UNIT_MANIFESTS } from "../unit-context-manifest.ts";
@@ -49,12 +50,9 @@ const MCP_TRANSPORT = {
   baseUrl: "local://claude-code",
 };
 
-/** Native Pi registers some contract names under legacy aliases. */
-const NATIVE_TOOL_EQUIVALENTS: Readonly<Record<string, readonly string[]>> = {
-  gsd_capture_thought: ["capture_thought", "gsd_capture_thought"],
-  gsd_memory_query: ["memory_query", "gsd_memory_query"],
-  gsd_memory_graph: ["gsd_graph", "gsd_memory_graph"],
-};
+/** Native Pi registers some contract names under host-native equivalents. */
+const NATIVE_TOOL_EQUIVALENTS: Readonly<Record<string, readonly string[]>> =
+  NATIVE_WORKFLOW_TOOL_EQUIVALENTS;
 
 const REGISTERED_SURFACE_TOOL_NAMES = [
   ...new Set([
