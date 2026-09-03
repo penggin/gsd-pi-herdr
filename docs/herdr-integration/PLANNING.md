@@ -2625,6 +2625,18 @@ this session does not merge, push, tag, or publish.
   installation validation, Assessment pack validation, and `git diff --check`
   pass. ADR-H035 records the mapping. The custom-directory cutover blocker is
   closed without changing the deployed default.
+- Packaged clean commit `60845072b5ad368e97b59f8d31aa4b921f399d5d` as
+  `/srv/penglab/gsd-runs/artifacts/gsd-pi-herdr-1.16.2-60845072-932258da.tgz`
+  (`sha256:932258daf6c51d639123158e4e2f3e92c4c51e1eb33b08d1401912341532f084`)
+  and installed it at immutable prefix
+  `/srv/penglab/gsd-runs/toolchains/gsd-pi-herdr-1.16.2-60845072-932258da`.
+  Seven internal links repaired on first launch; the verified Linux x64 addon
+  still reports `nativeLoaded: true` with 98 exports. Direct-prefix and shared
+  remote smoke both created one flat custom-directory v4 file and proved that
+  `--continue` returned the same session ID. The shared `gsd` and
+  `gsd-mcp-server` links now target this prefix; `703d07f5`, `ec14fbb1`, and
+  older immutable prefixes remain available for rollback. Running processes
+  were not killed and require their normal pane/process restart to acquire it.
 - Exact next task: from an actual Herdr-managed root pane (`HERDR_ENV=1`), run
   the pinned-Herdr P3.7 root/worker matrix with an internal harness-v4 root
   session: single dispatch, affinity reuse, parallel >4, cancellation, pane
