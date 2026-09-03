@@ -1073,6 +1073,12 @@ const createInteractiveRuntime = async ({
     modelRegistry,
   })
   const previousSession = sessionRuntime?.session ?? session
+  // `tools` is an SDK allowlist, not merely the active subset. Passing the
+  // previous unit-scoped active names here permanently removed every other
+  // registered workflow tool from the replacement runtime, so execute-task
+  // could no longer close out with gsd_task_complete. Build the full registry,
+  // then restore only the previous active subset before the runtime is rebound.
+  const previousActiveToolNames = previousSession.getActiveToolNames()
   const result = await createAgentSession({
     cwd: runtimeCwd,
     agentDir,
@@ -1087,8 +1093,8 @@ const createInteractiveRuntime = async ({
     model: previousSession.model,
     thinkingLevel: previousSession.thinkingLevel,
     scopedModels: [...previousSession.scopedModels],
-    tools: previousSession.getActiveToolNames(),
   })
+  result.session.setActiveToolsByName(previousActiveToolNames)
   const diagnostics = collectExtensionDiagnostics(result.extensionsResult.errors, result.extensionsResult.warnings)
   return {
     ...result,

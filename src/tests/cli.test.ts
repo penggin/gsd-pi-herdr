@@ -21,4 +21,11 @@ test('CLI startup prepares every session target through the awaitable runtime fa
   assert.doesNotMatch(startup, /SessionManager\.(?:inMemory|open|continueRecent|create)\(/)
   assert.match(startup, /sessionRuntime = new AgentSessionRuntime\(/)
   assert.match(startup, /new InteractiveMode\(session, \{ sessionRuntime \}\)/)
+  assert.match(startup, /const previousActiveToolNames = previousSession\.getActiveToolNames\(\)/)
+  assert.match(startup, /result\.session\.setActiveToolsByName\(previousActiveToolNames\)/)
+  assert.doesNotMatch(
+    startup,
+    /tools:\s*previousSession\.getActiveToolNames\(\)/,
+    'replacement must not turn the active subset into a permanent registry allowlist',
+  )
 })

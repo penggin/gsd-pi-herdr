@@ -837,6 +837,12 @@ workflow tool remains unavailable, dispatch fails closed before consuming a
 model turn. This prevents an executor from finishing source work while being
 structurally unable to publish its canonical lifecycle closeout.
 
+The Pi SDK `tools` option is a permanent registry allowlist, not an active-set
+snapshot. Interactive session replacement therefore creates the full registry
+without deriving `tools` from the outgoing session, then reapplies the outgoing
+active names with `setActiveToolsByName` before rebinding. Unit scoping remains
+an active-surface concern and must never narrow the next runtime's registry.
+
 This contract applies to auto units, manual phase dispatch, hook dispatch, and
 workspace re-rooting. Compatibility with a host that does not invoke
 `withSession` is retained only for legacy non-invalidating test/host seams; the
