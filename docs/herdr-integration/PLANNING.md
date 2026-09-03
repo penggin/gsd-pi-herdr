@@ -3427,6 +3427,49 @@ this session does not merge, push, tag, or publish.
   boundary and its next-iteration prologue without another stale-context crash
   before archiving the debug session.
 
+### 2026-09-04 — Replacement-session live proof and hook-surface follow-up
+
+- Built and validated a clean `2ae4a78b5` candidate. The combined auto-loop,
+  retry, timer, replacement, and detached regression suite passed **169/169**;
+  focused stale-owner tests passed **20/20**; `typecheck:extensions`,
+  `build:core`, `validate-pack`, and `git diff --check` passed. The local
+  tarball SHA-256 was
+  `48eeee0fde12f4015de0a449eb40925e13ee9eb679e8427d82b5aa0f1eaa7116`.
+- Installed that candidate locally, ran `/gsd doctor` with zero findings,
+  acknowledged wedge `W-2a506e46`, and used the canonical recovery action
+  `38dc4609-3a06-4606-aa98-7689e169b6f5` for Attempt
+  `bdb5507c-d7a3-421b-9242-e44802a62e74`. The recovered T09 crossed its exact
+  20-minute soft-timeout boundary with `wrapupWarningSent=true`; root PID
+  63642 remained alive, no crash log newer than `pid-68537.log` appeared, T09
+  finalized successfully, and orchestration entered `complete-slice M013/S03`.
+  This closes both the delayed-timer and next-iteration stale-context risks.
+- Deployed the same candidate under the standing remote policy as artifact
+  `/srv/penglab/gsd-runs/artifacts/gsd-pi-herdr-1.16.2-2ae4a78b-48eeee0f.tgz`
+  and immutable prefix
+  `/srv/penglab/gsd-runs/toolchains/gsd-pi-herdr-1.16.2-2ae4a78b-48eeee0f`.
+  The Linux x64 native addon SHA-256 remains
+  `b1d5b33b59cc1578eed207544a4020699f0c9d123c0247481df1914002b51da7`
+  with 98 exports. Shared links were switched atomically; remote PID 948361
+  was not restarted and the previous prefix remains available for rollback.
+- A distinct post-T09 failure then exposed a second incomplete replacement
+  contract: `complete-slice M013/S03` selected its next model successfully but
+  failed at `pi.emitAdjustToolSet` because `ReplacedSessionContext` exposed
+  model/tool controls without the active extension runner's model-selection,
+  tool-adjustment, and lifecycle-event methods. The replacement context now
+  delegates all three hooks to the current runner, and GSD rebinds its
+  module-level lifecycle emitter during the same ownership handoff.
+- RED evidence reproduced both missing surfaces. After the fix, agent-core
+  tests pass **170/170**, replacement bridge tests pass **2/2**, and the
+  isolated auto model/loop/replacement/timer regression matrix passes
+  **207/207**. `typecheck:extensions` passes. The one non-isolated model test
+  initially read the operator's global `thinking: max` preference; rerunning
+  with an isolated `GSD_HOME` passed and confirmed this was test-environment
+  contamination rather than a product regression.
+- Exact next task: complete build/package gates for the hook-surface fix,
+  install the clean candidate locally and remotely, acknowledge only the new
+  wedge `W-45e1a282`, and require `complete-slice M013/S03` to pass model/tool
+  hook selection and advance without replaying finalized T09.
+
 ## 11. Working-session protocol
 
 For every Herdr session:

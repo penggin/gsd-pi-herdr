@@ -7,6 +7,7 @@ import type {
 } from "@gsd/pi-coding-agent";
 
 import type { AutoSession } from "./session.js";
+import { setHookEmitter } from "../hook-emitter.js";
 
 export type AutoReplacementContext = ExtensionCommandContext & Pick<
   ExtensionAPI,
@@ -17,6 +18,9 @@ export type AutoReplacementContext = ExtensionCommandContext & Pick<
   | "getActiveTools"
   | "getVisibleSkills"
   | "setVisibleSkills"
+  | "emitBeforeModelSelect"
+  | "emitAdjustToolSet"
+  | "emitExtensionEvent"
 > & Partial<Pick<ExtensionAPI, "getAllTools" | "setActiveTools">>;
 
 /**
@@ -31,6 +35,7 @@ export function bindAutoReplacementSession(
 ): { ctx: AutoReplacementContext; pi: ExtensionAPI } {
   s.cmdCtx = freshCtx;
   const pi = Object.assign(freshCtx, { events: previousPi.events }) as unknown as ExtensionAPI;
+  setHookEmitter(pi);
   s.orchestration?.rebindSessionContext?.(freshCtx, pi);
   return { ctx: freshCtx, pi };
 }

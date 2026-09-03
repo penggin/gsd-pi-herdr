@@ -199,10 +199,23 @@ describe("AgentSessionExtensionsModule", () => {
 		const model = { provider: "test-provider", id: "test-model" };
 		const modelCalls: Array<{ model: typeof model; options?: { persist?: boolean } }> = [];
 		const activeToolCalls: string[][] = [];
+		const extensionHookCalls: Array<{ kind: string; event: unknown }> = [];
 		const host = {
 			_cwd: "/tmp/project",
 			_extensionRunner: {
 				createCommandContext: () => ({ ui: {}, sessionManager: {} }),
+				emitBeforeModelSelect: async (event: unknown) => {
+					extensionHookCalls.push({ kind: "before-model-select", event });
+					return { modelId: "test/model" };
+				},
+				emitAdjustToolSet: async (event: unknown) => {
+					extensionHookCalls.push({ kind: "adjust-tool-set", event });
+					return { toolNames: ["gsd_exec"] };
+				},
+				emitExtensionEventDynamic: async (event: unknown) => {
+					extensionHookCalls.push({ kind: "extension-event", event });
+					return undefined;
+				},
 			},
 			_toolRegistry: new Map(),
 			_toolPromptSnippets: new Map(),
@@ -238,12 +251,26 @@ describe("AgentSessionExtensionsModule", () => {
 		replacement.setThinkingLevel("high");
 		replacement.setActiveTools(["gsd_exec", "gsd_task_complete"]);
 		replacement.setVisibleSkills(["task-skill"]);
+		assert.deepEqual(
+			await replacement.emitBeforeModelSelect({ unitType: "complete-slice" } as any),
+			{ modelId: "test/model" },
+		);
+		assert.deepEqual(
+			await replacement.emitAdjustToolSet({ selectedModelId: "test/model" } as any),
+			{ toolNames: ["gsd_exec"] },
+		);
+		await replacement.emitExtensionEvent({ type: "unit_start", unitType: "complete-slice", unitId: "M013/S03" });
 
 		assert.deepEqual(modelCalls, [{ model, options: { persist: false } }]);
 		assert.equal(replacement.getThinkingLevel(), "high");
 		assert.deepEqual(replacement.getAllTools().map((tool) => tool.name), ["gsd_exec", "gsd_task_complete"]);
 		assert.deepEqual(replacement.getActiveTools(), ["gsd_exec", "gsd_task_complete"]);
 		assert.deepEqual(replacement.getVisibleSkills(), ["task-skill"]);
+		assert.deepEqual(extensionHookCalls.map(({ kind }) => kind), [
+			"before-model-select",
+			"adjust-tool-set",
+			"extension-event",
+		]);
 	});
 
 	test("forwards and patches tool-result usage through extension hooks", async () => {

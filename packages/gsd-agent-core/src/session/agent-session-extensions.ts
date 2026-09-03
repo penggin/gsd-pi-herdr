@@ -618,6 +618,9 @@ export class AgentSessionExtensionsModule {
 			this.host._visibleSkillNames = skillNames;
 			this.refreshSystemPromptForVisibleSkills();
 		};
+		context.emitBeforeModelSelect = (event) => this.host._extensionRunner.emitBeforeModelSelect(event);
+		context.emitAdjustToolSet = (event) => this.host._extensionRunner.emitAdjustToolSet(event);
+		context.emitExtensionEvent = (event) => this.host._extensionRunner.emitExtensionEventDynamic(event);
 		return context;
 	}
 

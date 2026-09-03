@@ -453,6 +453,11 @@ export interface ReplacedSessionContext extends ExtensionCommandContext {
 	setActiveTools(toolNames: string[]): void;
 	getVisibleSkills(): string[] | undefined;
 	setVisibleSkills(skillNames: string[] | undefined): void;
+
+	/** Session-bound extension hooks used by long-lived orchestrators. */
+	emitBeforeModelSelect(event: Omit<BeforeModelSelectEvent, "type">): Promise<BeforeModelSelectResult | undefined>;
+	emitAdjustToolSet(event: Omit<AdjustToolSetEvent, "type">): Promise<AdjustToolSetResult | undefined>;
+	emitExtensionEvent(event: ExtensionEvent): Promise<unknown>;
 }
 
 // ============================================================================

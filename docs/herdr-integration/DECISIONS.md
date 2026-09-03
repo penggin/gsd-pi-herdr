@@ -823,12 +823,14 @@ unit, so it must treat session replacement as an explicit ownership handoff,
 not continue through captured objects from the previous extension instance.
 
 The host's `ReplacedSessionContext` therefore exposes the session-bound model,
-thinking, registered-tool, active-tool, and visible-skill controls required for
-a dispatch in addition to message delivery. GSD captures that context only through
-`withSession`, binds it as the current command/runtime surface, and publishes it
-back through the mutable iteration context before verification, closeout, and
-the next iteration. The process-scoped event bus may be retained; old
-session-bound objects may not.
+thinking, registered-tool, active-tool, visible-skill, model-selection hook,
+tool-adjustment hook, and lifecycle-event controls required for a dispatch in
+addition to message delivery. GSD captures that context only through
+`withSession`, binds it as the current command/runtime surface, rebinds its
+module-level lifecycle emitter to the fresh hook surface, and publishes it back
+through the mutable iteration context before verification, closeout, and the
+next iteration. The process-scoped event bus may be retained; old session-bound
+objects may not.
 
 Because a replacement runtime may preserve only a partial active-tool set, GSD
 must reconstruct the current unit's allowed tool surface from the replacement
@@ -857,6 +859,15 @@ successful executor turn. Detached failure reporting and cleanup must likewise
 resolve the latest command context from the auto session instead of capturing
 the command-entry context, so error handling cannot mask the originating error
 with a second stale-context failure.
+
+The same rule applies to closures registered before replacement but invoked
+after it. Supervision timeouts, watchdogs, context-pressure callbacks, and
+per-iteration dependency functions must resolve their host operations from the
+current auto-session context when they execute; capturing `ctx` or `pi` when a
+timer or loop dependency is constructed is invalid even if the owning
+orchestrator itself is rebound. Error telemetry is ordered durable-log first,
+best-effort UI second, so an unavailable or stale UI can never replace the
+originating exception in crash evidence.
 
 This contract applies to auto units, manual phase dispatch, hook dispatch, and
 workspace re-rooting. Compatibility with a host that does not invoke
