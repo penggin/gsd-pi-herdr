@@ -104,7 +104,7 @@ This opens an interactive wizard showing which keys are configured and which are
 2. On every session start, `loadToolApiKeys()` reads the file and sets environment variables
 3. Keys apply to all projects — no per-project setup required
 4. Environment variables (`export BRAVE_API_KEY=...`) take precedence over saved keys
-5. Supported Anthropic and ChatGPT-backed OpenAI Codex models don't need Brave/Tavily — they use hosted web search
+5. Supported Anthropic and direct OpenAI Codex models don't need Brave/Tavily — they use hosted web search. A Codex-compatible proxy remains disabled by default and may opt in with `compat.nativeWebSearch: true` only after its Responses search contract is verified.
 
 ## MCP Servers
 

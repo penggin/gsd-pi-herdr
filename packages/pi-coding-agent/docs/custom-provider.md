@@ -240,7 +240,8 @@ equivalent explicit configuration is:
   "baseUrl": "http://127.0.0.1:10100/v1",
   "compat": {
     "codexAuth": "bearer",
-    "codexEndpoint": "responses"
+    "codexEndpoint": "responses",
+    "nativeWebSearch": true
   }
 }
 ```
@@ -248,6 +249,8 @@ equivalent explicit configuration is:
 Use `codexAuth: "chatgpt-oauth"` and `codexEndpoint: "chatgpt"` only for endpoints that implement the ChatGPT
 OAuth claim and `/codex/responses` contract. API shape alone does not guarantee Remote Compaction V2 support;
 an incompatible proxy will fail the remote request and GSD can fall back to native plaintext compaction.
+Likewise, compatible proxies default to hosted search disabled. Set `nativeWebSearch: true` only after the endpoint
+has been verified to accept the Responses `web_search` tool and return its streamed search lifecycle events.
 
 For Anthropic-compatible providers using `api: "anthropic-messages"`, set `compat.forceAdaptiveThinking: true` on models or providers whose upstream model requires adaptive thinking (`thinking.type: "adaptive"` plus `output_config.effort`). Built-in adaptive Claude models set this automatically.
 

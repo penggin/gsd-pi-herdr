@@ -69,7 +69,12 @@ const CODEX_RESPONSE_STATUSES = new Set<CodexResponseStatus>([
 	"in_progress",
 ]);
 
-type ResolvedOpenAICodexResponsesCompat = Required<OpenAICodexResponsesCompat>;
+type ResolvedOpenAICodexResponsesCompat = Required<
+	Pick<
+		OpenAICodexResponsesCompat,
+		"codexAuth" | "codexEndpoint" | "supportsAdditionalTools" | "supportsToolSearch"
+	>
+>;
 
 function isCanonicalChatGPTBaseUrl(baseUrl?: string): boolean {
 	const raw = baseUrl && baseUrl.trim().length > 0 ? baseUrl : DEFAULT_CODEX_BASE_URL;

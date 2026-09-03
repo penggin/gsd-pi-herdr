@@ -3053,6 +3053,45 @@ this session does not merge, push, tag, or publish.
   `d3a4868c-79eeb73d` prefix remains intact for rollback; no running process was
   killed or restarted and no local global installation changed.
 
+### 2026-09-03 — Supported-model scope and verified OpenCodex hosted search
+
+- Narrowed current downstream provider work to Codex authentication,
+  Codex-based models, and GLM Coding Plan models. Cursor Agent, Gemini CLI, and
+  Antigravity adapter work is deferred; inherited support remains intact and no
+  provider was removed. ADR-H041 records the implementation boundary.
+- Revalidated the installed remote runtime from the writable canonical project
+  root `/srv/penglab/gsd-runs/projects/pengbot_monorepo/757a5a1c2c35`.
+  `opencodex/gpt-5.6-luna` returned `CODEX_ROUTE_OK`, and
+  `gsd-haiku/zai/glm-5.3-flash` returned `GLM_ROUTE_OK`. The earlier
+  `/srv/penglab/.gsd/runtime` EACCES was an invalid smoke cwd under the
+  root-owned workspace container, not a provider or runtime-path defect.
+- Sent a bounded, credential-redacted Responses request directly through the
+  installed OpenCodex endpoint. It accepted `tools: [{ type: "web_search" }]`
+  and streamed the complete `response.web_search_call.in_progress` →
+  `searching` → `completed` lifecycle with HTTP 200.
+- Added `OpenAICodexResponsesCompat.nativeWebSearch`. Direct OpenAI Codex keeps
+  its existing default; compatible proxies remain disabled unless explicitly
+  enabled after verification, and an explicit `false` disables the direct
+  default. Search injection, external-tool suppression, config schema, types,
+  and author documentation share that capability.
+- Verification is green for the changed contract: native-search **52/52**,
+  Codex proxy model registry **1/1**, generated-model validation **16/16**,
+  Codex Responses transport **31/31**, changed-source **52/52**, Herdr
+  integration **30/30**, `typecheck:extensions`, `build:core`, `validate-pack`,
+  and `git diff --check`. Package validation again reported
+  `Package is installable. Safe to publish.` and repaired all ten linkable
+  workspaces on first launch.
+- The broader network-bearing `@gsd/pi-ai` suite passed 78 files/475 tests but
+  retained four unrelated failures: one pre-existing generated Anthropic
+  adaptive-model fixture drift and three live Codex tool-call expectations.
+  The deterministic Codex transport suite and every changed test are green;
+  none of those four failures exercises `nativeWebSearch`.
+- Exact next task: commit and push, build a clean immutable tarball, install
+  only on `penglab:/srv/penglab`, add `compat.nativeWebSearch: true` to the
+  verified OpenCodex provider, and prove an installed GSD search turn plus
+  unchanged GLM behavior before switching the shared remote link. Do not
+  install locally.
+
 ## 11. Working-session protocol
 
 For every Herdr session:

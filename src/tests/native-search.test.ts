@@ -148,7 +148,7 @@ test("before_provider_request uses hosted web_search for ChatGPT-backed Codex Re
   assert.equal(supportsCodexNativeWebSearch(model), true);
 });
 
-test("Codex hosted search is gated on the exact openai-codex provider", async () => {
+test("Codex hosted search stays fail-closed for an undeclared compatible proxy", async () => {
   const pi = createMockPI();
   registerNativeSearchHooks(pi);
   const payload = {
@@ -165,6 +165,54 @@ test("Codex hosted search is gated on the exact openai-codex provider", async ()
 
   assert.equal(result, undefined);
   assert.deepEqual(payload.tools, [{ type: "function", name: "search-the-web" }]);
+});
+
+test("Codex hosted search can be enabled explicitly for a verified compatible proxy", async () => {
+  const pi = createMockPI();
+  registerNativeSearchHooks(pi);
+  const model = {
+    provider: "opencodex",
+    api: "openai-codex-responses",
+    id: "gpt-5.6-luna",
+    compat: { nativeWebSearch: true },
+  };
+  const payload: Record<string, unknown> = {
+    model: "gpt-5.6-luna",
+    input: [],
+    tools: [
+      { type: "function", name: "search-the-web" },
+      { type: "function", name: "read" },
+    ],
+  };
+
+  await pi.fire("model_select", {
+    type: "model_select",
+    model,
+    previousModel: undefined,
+    source: "set",
+  });
+  const result = await pi.fire("before_provider_request", {
+    type: "before_provider_request",
+    model,
+    payload,
+  });
+
+  assert.equal(supportsCodexNativeWebSearch(model), true);
+  assert.equal(result, payload);
+  assert.deepEqual(
+    (payload.tools as Array<Record<string, unknown>>).map((tool) => tool.name ?? tool.type),
+    ["read", "web_search"],
+  );
+  assert.ok(!pi.getActiveTools().includes("search-the-web"));
+  assert.ok(pi.notifications.some(({ message }) => message === "Native OpenAI Codex web search active"));
+});
+
+test("Codex hosted search can be disabled explicitly for a direct provider", () => {
+  assert.equal(supportsCodexNativeWebSearch({
+    provider: "openai-codex",
+    api: "openai-codex-responses",
+    compat: { nativeWebSearch: false },
+  }), false);
 });
 
 test("model_select activates hosted search and hides external tools for OpenAI Codex", async () => {

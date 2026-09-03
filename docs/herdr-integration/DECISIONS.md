@@ -782,3 +782,29 @@ future external engine. Each must demonstrate a true pre-execution deny hook
 before consuming the evaluator. If an engine owns tool execution but exposes no
 such hook, guarded GSD workflows must fail closed or use a capability-restricted
 surface rather than claiming parity after side effects have occurred.
+
+---
+
+## ADR-H041 — Bound current downstream provider work to Codex and GLM Coding Plan
+
+**Status:** Accepted
+**Date:** 2026-09-03
+
+Current downstream implementation and deployment acceptance targets are Codex
+authentication, Codex-based models (direct or through a verified compatible
+Responses proxy), and GLM Coding Plan models. Cursor Agent, Gemini CLI, and
+Antigravity integration work is deferred without a discovery or enforcement
+spike. Existing inherited provider support is not removed, but it is not a
+reason to add new downstream policy adapters or release gates.
+
+Compatible Responses shape alone does not authorize provider-hosted features.
+Codex proxy auth/endpoint behavior, Remote Compaction V2, and hosted web search
+remain separate capabilities. Direct OpenAI Codex keeps hosted search enabled;
+other `openai-codex-responses` providers must declare
+`compat.nativeWebSearch: true` only after live verification. An absent flag is
+fail-closed, and an explicit `false` can disable the direct-provider default.
+
+GLM Coding Plan continues to use its declared OpenAI Completions transport and
+native plaintext compaction. It must not be relabeled as Codex Responses merely
+to gain Remote V2 or hosted-search behavior. GSD and Herdr authority boundaries
+are unchanged.

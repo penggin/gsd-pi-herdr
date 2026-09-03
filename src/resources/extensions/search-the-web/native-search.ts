@@ -101,13 +101,23 @@ export function supportsNativeWebSearch(
 
 /**
  * The ChatGPT-backed Codex Responses transport accepts the hosted Responses
- * `web_search` tool. Keep this allowlist exact: compatible-looking Responses
- * proxies may use the same payload shape while rejecting hosted OpenAI tools.
+ * `web_search` tool. Compatible-looking proxies remain disabled unless their
+ * model metadata explicitly declares the capability after live verification.
  */
 export function supportsCodexNativeWebSearch(
-  model: { api?: string; provider?: string } | null | undefined
+  model: {
+    api?: string;
+    provider?: string;
+    compat?: unknown;
+  } | null | undefined
 ): boolean {
-  return model?.api === "openai-codex-responses" && model?.provider === "openai-codex";
+  if (model?.api !== "openai-codex-responses") return false;
+  const compat = model.compat;
+  if (compat && typeof compat === "object" && "nativeWebSearch" in compat) {
+    const declared = (compat as { nativeWebSearch?: unknown }).nativeWebSearch;
+    if (typeof declared === "boolean") return declared;
+  }
+  return model.provider === "openai-codex";
 }
 
 /**
@@ -257,7 +267,11 @@ export function registerNativeSearchHooks(pi: NativeSearchPI): { getIsAnthropic:
     // the model_select flag, then to the model name heuristic (last resort).
     // The model name heuristic is needed for session restores where
     // modelsAreEqual suppresses model_select AND the SDK doesn't pass model.
-    const eventModel = event.model as { provider?: string; api?: string } | undefined;
+    const eventModel = event.model as {
+      provider?: string;
+      api?: string;
+      compat?: unknown;
+    } | undefined;
     const payloadModelName = typeof payload.model === "string" ? payload.model : "";
     const payloadLooksAnthropic = payloadModelName ? looksLikeAnthropicModelName(payloadModelName) : undefined;
     let isAnthropic: boolean;

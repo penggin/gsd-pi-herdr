@@ -531,6 +531,12 @@ export interface OpenAICodexResponsesCompat {
 	 * Default: inferred from baseUrl alongside codexAuth.
 	 */
 	codexEndpoint?: "chatgpt" | "responses";
+	/**
+	 * Whether the endpoint implements the hosted Responses `web_search` tool.
+	 * Direct OpenAI Codex defaults to true; compatible proxies default to false
+	 * and must opt in only after their wire behavior has been verified.
+	 */
+	nativeWebSearch?: boolean;
 	/** Whether the model supports message-anchored `additional_tools` input items. Default: false. */
 	supportsAdditionalTools?: boolean;
 	/** Whether the model supports client-executed tool search for deferred tools. Default: false. */

@@ -88,6 +88,7 @@ const CompatSchema = Type.Object({
 	supportsMidConvoEffort: Type.Optional(Type.Boolean()),
 	codexAuth: Type.Optional(Type.Union([Type.Literal("chatgpt-oauth"), Type.Literal("bearer")])),
 	codexEndpoint: Type.Optional(Type.Union([Type.Literal("chatgpt"), Type.Literal("responses")])),
+	nativeWebSearch: Type.Optional(Type.Boolean()),
 });
 
 const ThinkingLevelMapSchema = Type.Object(

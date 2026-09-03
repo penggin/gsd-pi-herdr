@@ -461,6 +461,7 @@ describe("ModelRegistry", () => {
 					compat: {
 						codexAuth: "bearer",
 						codexEndpoint: "responses",
+						nativeWebSearch: true,
 						supportsAdditionalTools: true,
 						supportsToolSearch: false,
 					},
@@ -475,6 +476,7 @@ describe("ModelRegistry", () => {
 			expect(compat).toEqual({
 				codexAuth: "bearer",
 				codexEndpoint: "responses",
+				nativeWebSearch: true,
 				supportsAdditionalTools: true,
 				supportsToolSearch: false,
 			});

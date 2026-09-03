@@ -33,6 +33,10 @@ Codex-compatible proxy URLs default to opaque bearer auth and `/responses`; thes
 with `compat.codexAuth: bearer` and `compat.codexEndpoint: responses`. This distinction changes transport only —
 Remote V2 eligibility remains based on `model.api`.
 
+Hosted search is a separate capability. Direct OpenAI Codex enables it by default, while a compatible proxy must
+set `compat.nativeWebSearch: true` only after a live request proves that the endpoint accepts the Responses
+`web_search` tool and streams its search lifecycle events. Remote V2 support does not imply hosted-search support.
+
 The Remote V2 wire contract is controlled by the configured Codex backend and is not a stable public API.
 Sessions retain a visible fallback marker so missing or incompatible replay is explicit rather than silently
 inventing older context.
