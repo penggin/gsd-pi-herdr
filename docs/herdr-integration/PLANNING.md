@@ -3212,6 +3212,30 @@ this session does not merge, push, tag, or publish.
   complete but the GitHub-hosted execution gate remains explicitly pending;
   no `main` merge or upstream mutation is authorized by this session.
 
+### 2026-09-03 — Remote runtime health and stale probe cleanup
+
+- Audited the active `penglab:/srv/penglab` runtime without changing user
+  configuration or restarting GSD/Herdr. The shared launcher resolves to the
+  immutable `9e09e779-426cc709` package, reports `1.16.2`, and loads the Linux
+  x64 native addon at SHA-256
+  `b1d5b33b59cc1578eed207544a4020699f0c9d123c0247481df1914002b51da7`.
+- The host had roughly 48.8 GiB available memory with effectively unused swap
+  and 578 GiB free disk space (33% used). Current evidence therefore does not
+  support memory or disk pressure as the phase-transition latency cause.
+- Found one unrelated ad-hoc upload probe from 2026-08-28 still listening on
+  localhost: a two-process `bash`/Bun group running `/tmp/probe2-remote.mjs`.
+  Its source proved it was the prior test listener, not a GSD worker or user
+  service. Terminated only process group `1697457`, removed only its two exact
+  temporary files, and verified both PIDs and port `34739` disappeared.
+- Other long-running processes whose cwd is the real `pengbot_monorepo`
+  `search-worker` service were deliberately left untouched. No product-code
+  change is justified by an uncommitted one-off probe; future live probes must
+  remain bounded and explicitly close listeners before their shell exits.
+- Exact next task remains the default-branch Actions validation after normal
+  merge or a concrete Codex/GLM/Herdr production failure. The current remote
+  runtime is healthy and requires no reinstall for the documentation/CI-only
+  freshness changes.
+
 ## 11. Working-session protocol
 
 For every Herdr session:
