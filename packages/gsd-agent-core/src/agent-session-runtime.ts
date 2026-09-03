@@ -38,7 +38,7 @@ export interface CreateAgentSessionRuntimeResult extends CreateAgentSessionResul
 export type CreateAgentSessionRuntimeFactory = (options: {
 	cwd: string;
 	agentDir: string;
-	sessionManager: SessionManager;
+	sessionManager?: SessionManager;
 	sessionCapabilities?: SessionCapabilityAdapter;
 	sessionSnapshot?: SessionCapabilityReadSnapshot;
 	sessionStartEvent?: SessionStartEvent;
@@ -208,7 +208,7 @@ export class AgentSessionRuntime {
 		return this.createRuntime({
 			cwd: options.cwd,
 			agentDir: this.services.agentDir,
-			sessionManager: requireLegacySessionManager(prepared),
+			sessionManager: prepared.legacyManager,
 			sessionCapabilities: prepared.capabilities,
 			sessionSnapshot: prepared.snapshot,
 			sessionStartEvent: options.sessionStartEvent,
@@ -277,6 +277,9 @@ export class AgentSessionRuntime {
 				: {}),
 		});
 		if (options?.abortSignal?.aborted) return { cancelled: true };
+		if (options?.setup && !prepared.legacyManager) {
+			throw new Error("newSession setup(sessionManager) is not available for the harness-v4 backend");
+		}
 
 		await this.teardownCurrent("new", prepared.snapshot.getSessionFile());
 		this.apply(
@@ -287,8 +290,9 @@ export class AgentSessionRuntime {
 			prepared,
 		);
 		if (options?.setup) {
-			await options.setup(this.session.sessionManager);
-			this.session.sessionView.refreshLegacy(this.session.sessionManager);
+			const sessionManager = requireLegacySessionManager(prepared);
+			await options.setup(sessionManager);
+			this.session.sessionView.refreshLegacy(sessionManager);
 			this.session.agent.state.messages = this.session.sessionView.buildSessionContext().messages;
 		}
 		await this.finishSessionReplacement(options?.withSession);
@@ -420,14 +424,17 @@ export async function createAgentSessionRuntime(
 	options: {
 		cwd: string;
 		agentDir: string;
-		sessionManager: SessionManager;
+		sessionManager?: SessionManager;
 		preparedSession?: PreparedSessionRuntime;
 		sessionStartEvent?: SessionStartEvent;
 		sessionManagers?: SessionManagerRuntimeFactory;
 	},
 ): Promise<AgentSessionRuntime> {
-	assertSessionCwdExists(options.sessionManager, options.cwd);
-	const prepared = options.preparedSession ?? await createLegacyPreparedSessionRuntime(options.sessionManager);
+	if (!options.preparedSession && !options.sessionManager) {
+		throw new Error("createAgentSessionRuntime requires preparedSession or a legacy SessionManager");
+	}
+	const prepared = options.preparedSession ?? await createLegacyPreparedSessionRuntime(options.sessionManager!);
+	assertSessionCwdExists(prepared.snapshot, options.cwd);
 	const result = await createRuntime({
 		...options,
 		sessionCapabilities: prepared.capabilities,

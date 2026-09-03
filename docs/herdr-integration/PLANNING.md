@@ -2486,6 +2486,20 @@ this session does not merge, push, tag, or publish.
   `newSession({ setup(sessionManager) })` on harness-v4. Prove the common
   lifecycle suite on prepared legacy and v4 memory sessions before adding any
   runtime preference or CLI selector.
+- Completed P3.5c6 AgentSession composition. A capability adapter plus coherent
+  snapshot can now construct AgentSession without any legacy manager. Real v4
+  JSONL runtime replacement covers fork, switch, and new-session operations;
+  session-ID parentage survives replacement. The legacy manager getter remains
+  source-compatible for legacy embeddings and fails explicitly on v4.
+- Added ADR-H032 for the remaining legacy extension callback:
+  `newSession({ setup(sessionManager) })` is rejected on v4 before teardown,
+  while `withSession` is the backend-neutral post-replacement mechanism. This
+  avoids a fake manager and second writer. Focused AgentSession/runtime tests
+  pass **32/32**.
+- Exact next task: add a test-only/internal composition selector for CLI print,
+  JSON/headless, and interactive startup parity on harness-v4. Keep the public
+  preference surface and deployed default on legacy-v3 until that matrix and
+  GSD/Herdr integration gates pass.
 
 ## 11. Working-session protocol
 

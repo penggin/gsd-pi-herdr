@@ -49,7 +49,7 @@ export interface CreateAgentSessionServicesOptions {
  */
 export interface CreateAgentSessionFromServicesOptions {
 	services: AgentSessionServices;
-	sessionManager: SessionManager;
+	sessionManager?: SessionManager;
 	sessionCapabilities?: SessionCapabilityAdapter;
 	sessionSnapshot?: SessionCapabilityReadSnapshot;
 	sessionStartEvent?: SessionStartEvent;

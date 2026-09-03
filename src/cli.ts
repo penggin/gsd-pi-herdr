@@ -1016,7 +1016,7 @@ const createInteractiveRuntime = async ({
 }: {
   cwd: string
   agentDir: string
-  sessionManager: typeof sessionManager
+  sessionManager?: typeof sessionManager
   sessionCapabilities?: (typeof preparedSession)['capabilities']
   sessionSnapshot?: (typeof preparedSession)['snapshot']
   sessionStartEvent?: import('@gsd/pi-coding-agent').SessionStartEvent

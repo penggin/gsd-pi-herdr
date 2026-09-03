@@ -211,6 +211,100 @@ describe("production session-manager runtime factory", () => {
 		);
 	});
 
+	it("constructs AgentSession on a prepared harness-v4 memory runtime without a legacy manager", async () => {
+		const root = makeRoot();
+		const cwd = join(root, "project");
+		const agentDir = join(root, "agent");
+		mkdirSync(cwd, { recursive: true });
+		mkdirSync(agentDir, { recursive: true });
+		const prepared = await createHarnessV4SessionManagerRuntimeFactory({
+			fs: new NodeExecutionEnv({ cwd: root }),
+			sessionsRoot: join(root, "sessions-v4"),
+		}).prepare({ kind: "memory", cwd });
+		const { session } = await createAgentSession({
+			cwd,
+			agentDir,
+			noTools: "all",
+			sessionCapabilities: prepared.capabilities,
+			sessionSnapshot: prepared.snapshot,
+		});
+		try {
+			assert.equal(session.sessionView.getSessionId(), prepared.snapshot.getSessionId());
+			assert.equal(session.sessionView.getBranch().at(-1)?.type, "thinking_level_change");
+			assert.throws(() => session.sessionManager, /does not expose a legacy SessionManager/);
+		} finally {
+			session.dispose();
+		}
+	});
+
+	it("runs AgentSessionRuntime fork and new replacement on harness-v4 and rejects legacy setup before teardown", async () => {
+		const root = makeRoot();
+		const cwd = join(root, "project");
+		const agentDir = join(root, "agent");
+		mkdirSync(cwd, { recursive: true });
+		mkdirSync(agentDir, { recursive: true });
+		const factory = createHarnessV4SessionManagerRuntimeFactory({
+			fs: new NodeExecutionEnv({ cwd: root }),
+			sessionsRoot: join(root, "sessions-v4"),
+		});
+		const initial = await factory.prepare({ kind: "create", cwd });
+		const createRuntime = async (options: Parameters<typeof createAgentSession>[0]) => {
+			const result = await createAgentSession({ ...options, cwd, agentDir, noTools: "all" });
+			return {
+				...result,
+				services: { cwd, agentDir, diagnostics: [] },
+				diagnostics: [],
+			};
+		};
+		const initialResult = await createRuntime({
+			cwd,
+			agentDir,
+			sessionCapabilities: initial.capabilities,
+			sessionSnapshot: initial.snapshot,
+		});
+		const runtime = new AgentSessionRuntime(
+			initialResult.session,
+			initialResult.services as never,
+			createRuntime as never,
+			[],
+			undefined,
+			factory,
+			initial,
+		);
+		try {
+			const userId = await runtime.session.sessionCapabilities.appendMessage({
+				role: "user",
+				content: "fork me",
+				timestamp: 1,
+			});
+			const sourceId = runtime.session.sessionId;
+			const sourcePath = runtime.session.sessionFile;
+			assert.ok(sourcePath);
+			const forkResult = await runtime.fork(userId, { position: "at" });
+			assert.equal(forkResult.cancelled, false);
+			assert.notEqual(runtime.session.sessionId, sourceId);
+			assert.deepEqual(runtime.session.sessionView.getHeader().parentSession, undefined);
+			assert.equal((await runtime.session.sessionCapabilities.getMetadata()).parent?.value, sourceId);
+			const switchResult = await runtime.switchSession(sourcePath!);
+			assert.equal(switchResult.cancelled, false);
+			assert.equal(runtime.session.sessionId, sourceId);
+
+			const beforeRejectedSetup = runtime.session.sessionId;
+			await assert.rejects(
+				runtime.newSession({ setup: async () => {} }),
+				/setup\(sessionManager\) is not available/,
+			);
+			assert.equal(runtime.session.sessionId, beforeRejectedSetup);
+
+			const newResult = await runtime.newSession();
+			assert.equal(newResult.cancelled, false);
+			assert.notEqual(runtime.session.sessionId, beforeRejectedSetup);
+			assert.equal(runtime.session.sessionView.getBranch().at(-1)?.type, "thinking_level_change");
+		} finally {
+			await runtime.dispose();
+		}
+	});
+
 	it("rejects harness-v4 input instead of silently creating an empty legacy session", async () => {
 		const root = makeRoot();
 		const path = join(root, "v4.jsonl");

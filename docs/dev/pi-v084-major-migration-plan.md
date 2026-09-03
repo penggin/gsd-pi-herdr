@@ -2,7 +2,7 @@
 
 Date: 2026-09-03
 
-Status: P3.0–P3.4, P3.5a–P3.5b, and P3.5c1–P3.5c5 complete; P3.5c v4 AgentSession composition in progress; no v4 cutover
+Status: P3.0–P3.4, P3.5a–P3.5b, and P3.5c1–P3.5c6 complete; P3.5c CLI/headless parity in progress; no v4 cutover
 
 Upstream reference: `refs/pi-upstream/v0.84.4`
 
@@ -287,6 +287,17 @@ Next: remove `AgentSession` construction's mandatory legacy manager and define
 how the backward-compatible extension setup callback behaves on non-legacy
 backends. Then run the same AgentSession lifecycle suite over prepared legacy
 and v4 memory runtimes before exposing any preference or CLI selector.
+
+P3.5c6 removes that construction dependency. `AgentSession` now accepts the
+selected capability adapter and snapshot without a legacy manager; its legacy
+getter remains source-compatible but fails explicitly on harness-v4. Runtime
+fork, switch, and new-session replacement execute on real v4 JSONL sessions.
+The legacy-only `setup(sessionManager)` option is rejected before teardown on
+v4, while `withSession` remains the backend-neutral post-replacement path.
+
+Next: add an internal, non-user-facing composition selector to exercise print,
+JSON/headless, and interactive startup against harness-v4 in tests. Do not add a
+global preference or change the default until the full parity matrix succeeds.
 
 ### P3.6 — Integrate GSD, web, and Assessment Gates
 

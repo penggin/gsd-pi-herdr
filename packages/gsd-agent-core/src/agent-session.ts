@@ -105,7 +105,7 @@ export { parseSkillBlock } from "./session/agent-session-types.js";
 
 export class AgentSession implements AgentSessionHost {
 	readonly agent: Agent;
-	readonly sessionManager: SessionManager;
+	private readonly legacySessionManager?: SessionManager;
 	readonly sessionView: SessionCapabilityReadSnapshot;
 	readonly sessionCapabilities: SessionCapabilityAdapter;
 	private readonly sessionMutationDrain: SessionCapabilityMutationDrain;
@@ -174,15 +174,20 @@ export class AgentSession implements AgentSessionHost {
 
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
-		this.sessionManager = config.sessionManager;
-		const selectedCapabilities =
-			config.sessionCapabilities ?? new LegacyV3SessionCapabilityAdapter(config.sessionManager);
-		if (selectedCapabilities.format !== "legacy-v3") {
-			throw new Error(
-				"Harness-v4 AgentSession selection is not available until every persistence and extension path is awaitable",
-			);
+		this.legacySessionManager = config.sessionManager;
+		if (!config.sessionCapabilities && !config.sessionManager) {
+			throw new Error("AgentSession requires sessionCapabilities or a legacy SessionManager");
 		}
-		const sessionSnapshot = config.sessionSnapshot ?? SessionCapabilityReadSnapshot.fromLegacy(config.sessionManager);
+		const selectedCapabilities =
+			config.sessionCapabilities ?? new LegacyV3SessionCapabilityAdapter(config.sessionManager!);
+		const sessionSnapshot =
+			config.sessionSnapshot ??
+			(config.sessionManager
+				? SessionCapabilityReadSnapshot.fromLegacy(config.sessionManager)
+				: undefined);
+		if (!sessionSnapshot) {
+			throw new Error("AgentSession requires a sessionSnapshot with non-legacy sessionCapabilities");
+		}
 		this.sessionView = sessionSnapshot;
 		this.sessionCapabilities = new SnapshottingSessionCapabilityAdapter(selectedCapabilities, sessionSnapshot);
 		this.sessionMutationDrain = new SessionCapabilityMutationDrain(this.sessionCapabilities);
@@ -207,12 +212,23 @@ export class AgentSession implements AgentSessionHost {
 		});
 	}
 
+	/**
+	 * Legacy mutation surface retained for direct embeddings and setup callbacks.
+	 * Harness-v4 callers must use AgentSessionRuntime and capability-backed APIs.
+	 */
+	get sessionManager(): SessionManager {
+		if (!this.legacySessionManager) {
+			throw new Error("The harness-v4 session backend does not expose a legacy SessionManager");
+		}
+		return this.legacySessionManager;
+	}
+
 	queueSessionMutation(mutation: SessionCapabilityMutation): void {
 		this.sessionMutationDrain.enqueue(mutation);
 		// The production backend is still legacy-v3, whose mutation begins
 		// synchronously. Preserve extension read-after-write semantics while the
 		// queued durability/error boundary remains awaitable.
-		this.sessionView.refreshLegacy(this.sessionManager);
+		if (this.legacySessionManager) this.sessionView.refreshLegacy(this.legacySessionManager);
 	}
 
 	drainSessionMutations(): Promise<void> {

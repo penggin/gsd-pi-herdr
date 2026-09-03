@@ -66,14 +66,13 @@ describe("AgentSessionCompactionModule", () => {
 });
 
 describe("AgentSessionEventsModule", () => {
-  test("keeps harness-v4 fail-closed until every AgentSession persistence path is awaitable", () => {
+  test("requires an explicit synchronous snapshot for a non-legacy capability adapter", () => {
     assert.throws(
       () => new AgentSession({
         agent: {},
-        sessionManager: SessionManager.inMemory("/workspace"),
         sessionCapabilities: { format: "harness-v4" },
       } as any),
-      /Harness-v4 AgentSession selection is not available/,
+      /requires a sessionSnapshot/,
     );
   });
 

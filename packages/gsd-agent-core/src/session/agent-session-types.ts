@@ -141,8 +141,9 @@ export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
 
 export interface AgentSessionConfig {
 	agent: Agent;
-	sessionManager: SessionManager;
-	/** Internal awaitable persistence seam. Harness-v4 remains fail-closed until P3.5c completes. */
+	/** Legacy compatibility manager. Required only when sessionCapabilities is omitted. */
+	sessionManager?: SessionManager;
+	/** Internal awaitable persistence seam. */
 	sessionCapabilities?: SessionCapabilityAdapter;
 	/** Atomic synchronous read projection paired with sessionCapabilities. */
 	sessionSnapshot?: SessionCapabilityReadSnapshot;

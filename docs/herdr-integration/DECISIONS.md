@@ -545,3 +545,27 @@ construction and the extension `newSession({ setup(sessionManager) })` callback
 still require an explicit backend-neutral compatibility decision and full
 CLI/headless parity. Until then, selection remains fail-closed and legacy-v3 is
 the only deployed backend.
+
+---
+
+## ADR-H032 — Expose legacy setup callbacks only when a legacy manager exists
+
+**Status:** Accepted
+**Date:** 2026-09-03
+
+`AgentSession` may be constructed from a capability adapter plus its coherent
+read snapshot without a legacy `SessionManager`. Read-only extension context
+continues to receive that snapshot, and all common persistence uses the selected
+capability adapter. The public legacy manager getter remains available for
+existing legacy embeddings but throws a backend-specific diagnostic on v4.
+
+The historical `newSession({ setup(sessionManager) })` callback is inherently
+legacy because it grants direct mutation access to `SessionManager`. It is not
+silently emulated and is not passed a fake manager. On harness-v4 the runtime
+rejects this option before tearing down the active session. Callers that need to
+act after a backend-neutral replacement must use `withSession` and the normal
+AgentSession/extension capability surface.
+
+This policy preserves installed legacy extensions, avoids a second v4 writer,
+and makes incompatibility explicit. It does not yet enable a global v4 default;
+CLI/headless/GSD/Herdr parity and controlled selection remain separate gates.

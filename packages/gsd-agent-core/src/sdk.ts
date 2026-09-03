@@ -230,8 +230,11 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const modelRegistry = options.modelRegistry ?? ModelRegistry.create(authStorage, modelsPath);
 
 	const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
-	const sessionManager = options.sessionManager ?? SessionManager.create(cwd, getDefaultSessionDir(cwd, agentDir));
-	const sessionCapabilities = options.sessionCapabilities ?? new LegacyV3SessionCapabilityAdapter(sessionManager);
+	const sessionManager =
+		options.sessionManager ??
+		(options.sessionCapabilities ? undefined : SessionManager.create(cwd, getDefaultSessionDir(cwd, agentDir)));
+	const sessionCapabilities =
+		options.sessionCapabilities ?? new LegacyV3SessionCapabilityAdapter(sessionManager!);
 	const sessionSnapshot = options.sessionSnapshot ?? await SessionCapabilityReadSnapshot.create(sessionCapabilities);
 
 	if (!resourceLoader) {
