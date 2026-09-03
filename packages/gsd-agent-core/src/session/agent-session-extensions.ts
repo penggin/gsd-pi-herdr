@@ -254,7 +254,7 @@ export class AgentSessionExtensionsModule {
 					this.host.setSessionName(name);
 				},
 				getSessionName: () => {
-					return this.host.sessionManager.getSessionName();
+					return this.host.sessionView.getSessionName();
 				},
 				setLabel: (entryId, label) => {
 					this.host.queueSessionMutation((session) => session.appendLabel(entryId, label));
@@ -454,7 +454,7 @@ export class AgentSessionExtensionsModule {
 			extensionsResult.extensions,
 			extensionsResult.runtime,
 			this.host._cwd,
-			this.host.sessionManager,
+			this.host.sessionView,
 			this.host.modelRegistry,
 		);
 		if (this.host._extensionRunnerRef) {

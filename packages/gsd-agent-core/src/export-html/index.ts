@@ -5,7 +5,7 @@ import { APP_NAME, getExportTemplateDir } from "@gsd/pi-coding-agent/config.js";
 import { getResolvedThemeColors, getThemeExportColors } from "@gsd/pi-coding-agent/theme/theme.js";
 import { normalizePath, resolvePath } from "@gsd/pi-coding-agent/utils/paths.js";
 import type { ToolDefinition } from "@gsd/pi-coding-agent/core/extensions/types.js";
-import type { SessionEntry } from "@gsd/pi-coding-agent/core/session-manager.js";
+import type { ReadonlySessionManager, SessionEntry } from "@gsd/pi-coding-agent/core/session-manager.js";
 import { SessionManager } from "@gsd/pi-coding-agent/core/session-manager.js";
 
 /**
@@ -234,7 +234,7 @@ function preRenderCustomTools(
  * Used by TUI's /export command.
  */
 export async function exportSessionToHtml(
-	sm: SessionManager,
+	sm: ReadonlySessionManager,
 	state?: AgentState,
 	options?: ExportOptions | string,
 ): Promise<string> {

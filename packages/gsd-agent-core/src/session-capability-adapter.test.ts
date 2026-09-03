@@ -12,6 +12,8 @@ import {
 	LegacyV3SessionCapabilityAdapter,
 	type SessionCapabilityAdapter,
 	SessionCapabilityMutationDrain,
+	SessionCapabilityReadSnapshot,
+	SnapshottingSessionCapabilityAdapter,
 } from "./session-capability-adapter.js";
 import { AgentSessionNavigationModule } from "./session/agent-session-navigation.js";
 
@@ -88,6 +90,50 @@ describe("session capability adapter", () => {
 		const backend = new V4MemorySessionRepository().create({ id: "v4-navigation" });
 		const harness = new Session(new V4HarnessSessionStorageAdapter(backend));
 		await exerciseNavigation(await createHarnessV4SessionCapabilityAdapter(harness));
+	});
+
+	it("provides the same synchronous read projection and refreshes it after mutations", async () => {
+		for (const base of [
+			new LegacyV3SessionCapabilityAdapter(SessionManager.inMemory("/workspace")),
+			await createHarnessV4SessionCapabilityAdapter(
+				new Session(new V4HarnessSessionStorageAdapter(new V4MemorySessionRepository().create({ id: "v4-snapshot" }))),
+			),
+		]) {
+			const snapshot = await SessionCapabilityReadSnapshot.create(base);
+			const adapter = new SnapshottingSessionCapabilityAdapter(base, snapshot);
+			const rootId = await adapter.appendMessage({ role: "user", content: "root", timestamp: 1 });
+			await adapter.appendSessionName(" Snapshot ");
+			await adapter.appendLabel(rootId, " pinned ");
+			assert.equal(snapshot.getSessionId(), (await adapter.getMetadata()).id);
+			assert.equal(snapshot.getHeader().version, base.format === "harness-v4" ? 4 : 3);
+			assert.equal(snapshot.getLeafId(), await adapter.getLeafId());
+			assert.equal(snapshot.getEntry(rootId)?.id, rootId);
+			assert.equal(snapshot.getSessionName(), "Snapshot");
+			assert.equal(snapshot.getLabel(rootId), " pinned ");
+			assert.equal(snapshot.getTree()[0]?.label, " pinned ");
+			assert.deepEqual(normalizeValue(snapshot.getBranch()), normalizeValue(await adapter.getBranch()));
+			assert.deepEqual(normalizeValue(snapshot.buildSessionContext()), normalizeValue(await adapter.buildSessionContext()));
+		}
+	});
+
+	it("publishes snapshots atomically and returns defensive copies", async () => {
+		const base = new LegacyV3SessionCapabilityAdapter(SessionManager.inMemory("/workspace"));
+		const rootId = await base.appendMessage({ role: "user", content: "root", timestamp: 1 });
+		const snapshot = await SessionCapabilityReadSnapshot.create(base);
+		const exposed = snapshot.getEntries();
+		(exposed[0] as { id: string }).id = "tampered";
+		assert.equal(snapshot.getEntries()[0]?.id, rootId);
+
+		const failedRefresh = {
+			getMetadata: () => base.getMetadata(),
+			getEntries: async () => {
+				throw new Error("snapshot read failed");
+			},
+			getLeafId: () => base.getLeafId(),
+		} as SessionCapabilityAdapter;
+		await assert.rejects(snapshot.refresh(failedRefresh), /snapshot read failed/);
+		assert.equal(snapshot.getLeafId(), rootId);
+		assert.equal(snapshot.getEntries()[0]?.id, rootId);
 	});
 
 	it("reports parent references without conflating legacy paths and v4 session IDs", async () => {

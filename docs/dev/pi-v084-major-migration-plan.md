@@ -236,10 +236,12 @@ over the selected adapter, not a second writer. Navigation query/export and
 tree navigation now uses the capability contract exclusively for leaf/entry
 queries, branch-summary publication, labels, movement, and context rebuilding.
 Session transition and runtime teardown drain pending extension mutations before
-invalidating the outgoing session. Synchronous UI query/export and legacy
-new/open/fork construction surfaces still require conversion. The only
-production backend remains `legacy-v3`; no v4 preference, write cutover, or
-automatic migration is exposed.
+invalidating the outgoing session. An atomic read-only compatibility snapshot
+now supplies footer, selector, stats, export, print, and extension-context reads;
+normal appends update it incrementally while tree/name/label changes refresh the
+whole projection. Legacy new/open/fork construction surfaces still require
+conversion. The only production backend remains `legacy-v3`; no v4 preference,
+write cutover, or automatic migration is exposed.
 
 ### P3.6 — Integrate GSD, web, and Assessment Gates
 

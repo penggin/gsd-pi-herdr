@@ -123,7 +123,7 @@ export class FooterComponent implements Component {
 		const state = this.session.state;
 		const gsdState = this.getGsdStatus?.();
 
-		const usageTotals = this.session.sessionManager.getUsageTotals();
+		const usageTotals = this.session.sessionView.getUsageTotals();
 		const totalInput = usageTotals.input;
 		const totalOutput = usageTotals.output;
 		const totalCacheRead = usageTotals.cacheRead;
@@ -199,8 +199,8 @@ export class FooterComponent implements Component {
 			secondaryExtText ? theme.fg("dim", secondaryExtText) : undefined,
 		].filter((segment): segment is string => !!segment);
 
-		const cwd = gsdState?.cwd ?? this.session.sessionManager.getCwd();
-		const sessionName = this.session.sessionManager.getSessionName() ?? gsdState?.sessionName;
+		const cwd = gsdState?.cwd ?? this.session.sessionView.getCwd();
+		const sessionName = this.session.sessionView.getSessionName() ?? gsdState?.sessionName;
 		const centerSource = gsdWidgetVisible
 			? primaryStatus?.text
 			: formatWorkspaceCenter(cwd, sessionName);

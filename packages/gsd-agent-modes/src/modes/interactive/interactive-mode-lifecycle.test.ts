@@ -103,7 +103,7 @@ describe("InteractiveMode lifecycle", () => {
 		const nextSession = {
 			autoCompactionEnabled: false,
 			resourceLoader: { getThemes: () => ({ themes: [] }) },
-			sessionManager: { getSessionName: () => undefined, getCwd: () => "/next" },
+			sessionView: { getSessionName: () => undefined, getCwd: () => "/next" },
 		};
 		mode.isInitialized = true;
 		mode.footer = {
@@ -138,7 +138,7 @@ describe("InteractiveMode lifecycle", () => {
 			terminal: { setTitle() {} },
 			requestRender: () => events.push("render"),
 		};
-		mode.session = { sessionManager: { getSessionName: () => undefined } };
+		mode.session = { sessionView: { getSessionName: () => undefined } };
 
 		await (mode.rebindSession as (session: unknown) => Promise<void>)(nextSession);
 

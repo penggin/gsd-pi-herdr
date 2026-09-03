@@ -182,7 +182,7 @@ export class InteractiveMode {
 		return this.session.agent;
 	}
 	private get sessionManager() {
-		return this.session.sessionManager;
+		return this.session.sessionView;
 	}
 	private get settingsManager() {
 		return this.session.settingsManager;
@@ -404,7 +404,7 @@ export class InteractiveMode {
 		this._branchChangeUnsub?.();
 		this._branchChangeUnsub = undefined;
 		this.footerDataProvider.dispose();
-		this.footerDataProvider = new FooterDataProvider(session.sessionManager.getCwd());
+		this.footerDataProvider = new FooterDataProvider(session.sessionView.getCwd());
 		this.footer.setFooterData(this.footerDataProvider);
 		if (this.isInitialized) {
 			this._branchChangeUnsub = this.footerDataProvider.onBranchChange(() => this.ui.requestRender());

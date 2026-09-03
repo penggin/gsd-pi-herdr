@@ -86,6 +86,8 @@ import {
 	type SessionCapabilityAdapter,
 	type SessionCapabilityMutation,
 	SessionCapabilityMutationDrain,
+	SessionCapabilityReadSnapshot,
+	SnapshottingSessionCapabilityAdapter,
 } from "./session-capability-adapter.js";
 
 export type {
@@ -104,6 +106,7 @@ export { parseSkillBlock } from "./session/agent-session-types.js";
 export class AgentSession implements AgentSessionHost {
 	readonly agent: Agent;
 	readonly sessionManager: SessionManager;
+	readonly sessionView: SessionCapabilityReadSnapshot;
 	readonly sessionCapabilities: SessionCapabilityAdapter;
 	private readonly sessionMutationDrain: SessionCapabilityMutationDrain;
 	readonly settingsManager: SettingsManager;
@@ -172,13 +175,16 @@ export class AgentSession implements AgentSessionHost {
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
 		this.sessionManager = config.sessionManager;
-		this.sessionCapabilities =
+		const selectedCapabilities =
 			config.sessionCapabilities ?? new LegacyV3SessionCapabilityAdapter(config.sessionManager);
-		if (this.sessionCapabilities.format !== "legacy-v3") {
+		if (selectedCapabilities.format !== "legacy-v3") {
 			throw new Error(
 				"Harness-v4 AgentSession selection is not available until every persistence and extension path is awaitable",
 			);
 		}
+		const sessionSnapshot = config.sessionSnapshot ?? SessionCapabilityReadSnapshot.fromLegacy(config.sessionManager);
+		this.sessionView = sessionSnapshot;
+		this.sessionCapabilities = new SnapshottingSessionCapabilityAdapter(selectedCapabilities, sessionSnapshot);
 		this.sessionMutationDrain = new SessionCapabilityMutationDrain(this.sessionCapabilities);
 		this.settingsManager = config.settingsManager;
 		this._scopedModels = config.scopedModels ?? [];
@@ -203,6 +209,10 @@ export class AgentSession implements AgentSessionHost {
 
 	queueSessionMutation(mutation: SessionCapabilityMutation): void {
 		this.sessionMutationDrain.enqueue(mutation);
+		// The production backend is still legacy-v3, whose mutation begins
+		// synchronously. Preserve extension read-after-write semantics while the
+		// queued durability/error boundary remains awaitable.
+		this.sessionView.refreshLegacy(this.sessionManager);
 	}
 
 	drainSessionMutations(): Promise<void> {
@@ -297,15 +307,15 @@ export class AgentSession implements AgentSessionHost {
 	}
 
 	get sessionFile(): string | undefined {
-		return this.sessionManager.getSessionFile();
+		return this.sessionView.getSessionFile();
 	}
 
 	get sessionId(): string {
-		return this.sessionManager.getSessionId();
+		return this.sessionView.getSessionId();
 	}
 
 	get sessionName(): string | undefined {
-		return this.sessionManager.getSessionName();
+		return this.sessionView.getSessionName();
 	}
 
 	get scopedModels(): ReadonlyArray<{ model: Model<any>; thinkingLevel?: ThinkingLevel }> {
@@ -639,6 +649,10 @@ export class AgentSession implements AgentSessionHost {
 
 	setSessionName(name: string): void {
 		this._navigation.setSessionName(name);
+	}
+
+	setLabel(entryId: string, label: string | undefined): void {
+		this.queueSessionMutation((session) => session.appendLabel(entryId, label));
 	}
 
 	newSession(options?: {

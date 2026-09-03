@@ -21,7 +21,7 @@ export class AgentSessionBashModule {
 		try {
 			const result = await executeBashWithOperations(
 				resolvedCommand,
-				this.host.sessionManager.getCwd(),
+				this.host.sessionView.getCwd(),
 				options?.operations ?? createLocalBashOperations({ shellPath, loginShell: options?.loginShell }),
 				{
 					onChunk,

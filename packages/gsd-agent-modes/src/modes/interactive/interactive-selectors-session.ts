@@ -180,7 +180,7 @@ export function showTreeSelector(host: InteractiveModeDelegateHost, initialSelec
 					host.ui.requestRender();
 				},
 				(entryId, label) => {
-					host.sessionManager.appendLabelChange(entryId, label);
+					host.session.setLabel(entryId, label);
 					host.ui.requestRender();
 				},
 				initialSelectedId,
@@ -248,7 +248,7 @@ export async function handleResumeSession(host: InteractiveModeDelegateHost, ses
 		host.chatContainer.clear();
 		host.renderInitialMessages();
 
-		if (host.session.sessionManager.wasInterrupted()) {
+		if (host.session.sessionView.wasInterrupted()) {
 			host.showStatus("Resumed session (previous session ended unexpectedly — last action may be incomplete)");
 		} else {
 			host.showStatus("Resumed session");

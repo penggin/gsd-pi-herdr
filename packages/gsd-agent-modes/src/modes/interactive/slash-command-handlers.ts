@@ -30,7 +30,7 @@ import {
 } from "@gsd/pi-coding-agent/config.js";
 import type { AgentSession } from "@gsd/agent-core";
 import type { AppAction, KeybindingsManager } from "@gsd/agent-core";
-import type { SessionManager } from "@gsd/pi-coding-agent/core/session-manager.js";
+import type { ReadonlySessionManager } from "@gsd/pi-coding-agent/core/session-manager.js";
 import type { AdaptiveTuiMode, SettingsManager } from "@gsd/pi-coding-agent/core/settings-manager.js";
 import { copyToClipboard } from "@gsd/pi-coding-agent/utils/clipboard.js";
 import { getChangelogPath, parseChangelog } from "@gsd/pi-coding-agent/utils/changelog.js";
@@ -71,7 +71,7 @@ export interface SlashCommandContext {
 	};
 
 	// Accessors
-	readonly sessionManager: SessionManager;
+	readonly sessionManager: ReadonlySessionManager;
 	readonly settingsManager: SettingsManager;
 
 	// Footer
@@ -384,7 +384,7 @@ function handleNameCommand(text: string, ctx: SlashCommandContext): void {
 		return;
 	}
 
-	ctx.sessionManager.appendSessionInfo(name);
+	ctx.session.setSessionName(name);
 	ctx.updateTerminalTitle();
 	ctx.chatContainer.addChild(new Spacer(1));
 	ctx.chatContainer.addChild(new Text(theme.fg("dim", `Session name set: ${name}`), 1, 0));

@@ -148,6 +148,7 @@ export class AgentSessionNavigationModule {
 			const sessionContext = this.host.sessionManager.buildSessionContext();
 			this.host.agent.state.messages = sessionContext.messages;
 		}
+		this.host.sessionView.refreshLegacy(this.host.sessionManager);
 
 		this.host.reconnectToAgent();
 
@@ -215,6 +216,7 @@ export class AgentSessionNavigationModule {
 			this.host.agent.state.thinkingLevel = effectiveLevel;
 			this.host.sessionManager.appendThinkingLevelChange(effectiveLevel);
 		}
+		this.host.sessionView.refreshLegacy(this.host.sessionManager);
 
 		if (this.host._extensionRunner) {
 			await this.host.emitSessionStartWithLegacySwitch({
@@ -263,6 +265,7 @@ export class AgentSessionNavigationModule {
 		this.host.agent.sessionId = this.host.sessionManager.getSessionId();
 
 		const sessionContext = this.host.sessionManager.buildSessionContext();
+		this.host.sessionView.refreshLegacy(this.host.sessionManager);
 
 		if (this.host._extensionRunner) {
 			await this.host._extensionRunner.emit({
@@ -459,7 +462,7 @@ export class AgentSessionNavigationModule {
 	}
 
 	getUserMessagesForForking(): Array<{ entryId: string; text: string }> {
-		const entries = this.host.sessionManager.getEntries();
+		const entries = this.host.sessionView.getEntries();
 		const result: Array<{ entryId: string; text: string }> = [];
 
 		for (const entry of entries) {
@@ -494,7 +497,7 @@ export class AgentSessionNavigationModule {
 		let toolCalls = 0;
 		const usageTotals: UsageTotals = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
 
-		for (const entry of this.host.sessionManager.getEntries()) {
+		for (const entry of this.host.sessionView.getEntries()) {
 			if ((entry.type === "branch_summary" || entry.type === "compaction") && entry.usage) {
 				addUsage(usageTotals, entry.usage);
 			}
@@ -544,7 +547,7 @@ export class AgentSessionNavigationModule {
 		// After compaction, the last assistant usage reflects pre-compaction context size.
 		// We can only trust usage from an assistant that responded after the latest compaction.
 		// If no such assistant exists, context token count is unknown until the next LLM response.
-		const branchEntries = this.host.sessionManager.getBranch();
+		const branchEntries = this.host.sessionView.getBranch();
 		const latestCompaction = getLatestCompactionEntry(branchEntries);
 
 		if (latestCompaction) {
@@ -587,10 +590,10 @@ export class AgentSessionNavigationModule {
 		const toolRenderer: ToolHtmlRenderer = createToolHtmlRenderer({
 			getToolDefinition: (name) => this.host.getToolDefinition(name),
 			theme,
-			cwd: this.host.sessionManager.getCwd(),
+			cwd: this.host.sessionView.getCwd(),
 		});
 
-		return await exportSessionToHtml(this.host.sessionManager, this.host.state, {
+		return await exportSessionToHtml(this.host.sessionView, this.host.state, {
 			outputPath,
 			themeName,
 			toolRenderer,
@@ -600,7 +603,7 @@ export class AgentSessionNavigationModule {
 	exportToJsonl(outputPath?: string): string {
 		const filePath = resolvePath(
 			outputPath ?? `session-${new Date().toISOString().replace(/[:.]/g, "-")}.jsonl`,
-			this.host.sessionManager.getCwd(),
+			this.host.sessionView.getCwd(),
 		);
 		const dir = dirname(filePath);
 		if (!existsSync(dir)) {
@@ -610,12 +613,12 @@ export class AgentSessionNavigationModule {
 		const header: SessionHeader = {
 			type: "session",
 			version: CURRENT_SESSION_VERSION,
-			id: this.host.sessionManager.getSessionId(),
+			id: this.host.sessionView.getSessionId(),
 			timestamp: new Date().toISOString(),
-			cwd: this.host.sessionManager.getCwd(),
+			cwd: this.host.sessionView.getCwd(),
 		};
 
-		const branchEntries = this.host.sessionManager.getBranch();
+		const branchEntries = this.host.sessionView.getBranch();
 		const lines = [JSON.stringify(header)];
 
 		// Re-chain parentIds to form a linear sequence

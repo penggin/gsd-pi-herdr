@@ -11,6 +11,7 @@ import { AgentSessionCompactionModule } from "./session/agent-session-compaction
 import { AgentSessionEventsModule } from "./session/agent-session-events.ts";
 import { AgentSessionBashModule } from "./session/agent-session-bash.ts";
 import { createRetryingSummaryCompleteFn } from "./session/summarization-retry.ts";
+import { SessionCapabilityReadSnapshot } from "./session-capability-adapter.ts";
 
 describe("parseSkillBlock", () => {
   test("parses a valid skill block with trailing user message", () => {
@@ -366,6 +367,7 @@ describe("AgentSessionNavigationModule", () => {
         reset: () => {},
       },
       sessionManager,
+      sessionView: SessionCapabilityReadSnapshot.fromLegacy(sessionManager),
       drainSessionMutations: async () => {},
       abortRetry: () => {},
       abort: async () => {},

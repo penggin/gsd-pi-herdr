@@ -2408,6 +2408,29 @@ this session does not merge, push, tag, or publish.
   footer, selector, stats, export, and extension getter APIs; then migrate
   new/open/fork construction to return a capability-backed runtime object. Keep
   harness-v4 fail-closed until those reads and CLI/headless parity are proven.
+- Added the ADR-H030 read-only compatibility snapshot. It atomically projects
+  metadata, entries, leaf, labels, tree, context, and usage from either
+  legacy-v3 or harness-v4 without owning a write path. Normal persisted appends
+  update it from the returned entry instead of rescanning the full transcript;
+  movement/name/label changes perform a complete backend refresh. Failed
+  refreshes leave the previous coherent snapshot intact, and all public entry
+  and tree reads are defensive copies.
+- Footer, tree/session selectors, stats, JSONL/HTML export, print-mode headers,
+  slash commands, and extension contexts now consume the snapshot. `/name` and
+  interactive label edits route back through the AgentSession mutation drain
+  instead of mutating `SessionManager` directly. Legacy callback read-after-
+  write remains immediate; harness-v4 production selection remains blocked.
+- Verification for this slice: capability snapshot tests pass across both
+  formats, including refresh-after-mutation and atomic failure behavior;
+  agent-core passes **155/155**, agent-modes passes **9/9**, focused inherited
+  session-name coverage passes **2/2** with the other selected split-harness
+  files skipped, and pi-coding-agent/agent-core/agent-modes builds plus extension
+  typecheck pass.
+- Exact next task: replace legacy-only new/open/continue/fork factory returns
+  with a capability-backed runtime object that carries metadata, read snapshot,
+  and the selected adapter together. Then migrate `AgentSessionRuntime` session
+  replacement paths and run CLI/print/JSON/headless parity before considering
+  removal of the harness-v4 fail-closed guard.
 
 ## 11. Working-session protocol
 

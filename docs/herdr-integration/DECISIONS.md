@@ -491,3 +491,32 @@ entry point has such an awaited boundary.
 The drain does not make extension state authoritative and does not add a new
 session log. The selected session backend remains the only durability owner.
 GSD lifecycle state and Herdr runtime authority remain unchanged.
+
+---
+
+## ADR-H030 — Serve synchronous session reads from an atomic compatibility snapshot
+
+**Status:** Accepted
+**Date:** 2026-09-03
+
+Pi's footer, selectors, export commands, and installed extension contexts expose
+synchronous session reads, while the harness-v4 repository contract is
+asynchronous. Production therefore maintains one read-only compatibility
+snapshot beside the selected capability adapter. The snapshot contains no
+mutation methods, never writes a session file, and is atomically replaced only
+after a backend read or mutation succeeds. Returned entries and trees are
+defensive copies so callers cannot mutate the projection in place.
+
+Common append operations update the projection from the newly persisted entry;
+tree movement, labels, and names perform a complete refresh. This avoids
+rescanning a long transcript after every normal message while preserving one
+coherent view at UI and extension boundaries. Legacy-v3 synchronous extension
+mutations also refresh directly from the same manager before the callback
+returns, preserving existing read-after-write behavior; their durability or
+policy failures still surface through ADR-H029's awaited drain.
+
+The snapshot is not a second writer and does not change authority: the selected
+session backend remains canonical, GSD owns workflow state, and Herdr owns
+terminal runtime. A harness-v4 production opt-in remains forbidden until
+new/open/fork construction and CLI/headless parity use the same capability-
+backed runtime object.

@@ -9,7 +9,7 @@ import { type Theme, theme } from "../../theme/theme.js";
 import type { ResourceDiagnostic } from "../diagnostics.js";
 import type { Keybinding, KeybindingsConfig } from "../keybindings.js";
 import type { ModelRegistry } from "../model-registry.js";
-import type { SessionManager } from "../session-manager.js";
+import type { ReadonlySessionManager, SessionManager } from "../session-manager.js";
 import type { BuildSystemPromptOptions } from "../system-prompt.js";
 import type {
 	BeforeAgentStartEvent,
@@ -255,7 +255,7 @@ export class ExtensionRunner {
 	private uiPromptDepth = 0;
 	private activeUIPrompt: { kind: UIPromptKind; title?: string } | undefined;
 	private cwd: string;
-	private sessionManager: SessionManager;
+	private sessionManager: ReadonlySessionManager;
 	private modelRegistry: ModelRegistry;
 	private errorListeners: Set<ExtensionErrorListener> = new Set();
 	private getModel: () => Model<any> | undefined = () => undefined;
@@ -282,7 +282,7 @@ export class ExtensionRunner {
 		extensions: Extension[],
 		runtime: ExtensionRuntime,
 		cwd: string,
-		sessionManager: SessionManager,
+		sessionManager: ReadonlySessionManager,
 		modelRegistry: ModelRegistry,
 	) {
 		this.extensions = extensions;

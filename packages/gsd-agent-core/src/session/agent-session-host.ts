@@ -45,7 +45,7 @@ import type {
 	TurnLatencyStatus,
 	TurnLatencyVisibleKind,
 } from "../turn-latency.js";
-import type { SessionCapabilityAdapter } from "../session-capability-adapter.js";
+import type { SessionCapabilityAdapter, SessionCapabilityReadSnapshot } from "../session-capability-adapter.js";
 import type { SessionCapabilityMutation } from "../session-capability-adapter.js";
 
 /**
@@ -55,6 +55,7 @@ import type { SessionCapabilityMutation } from "../session-capability-adapter.js
 export interface AgentSessionHost {
 	readonly agent: Agent;
 	readonly sessionManager: SessionManager;
+	readonly sessionView: SessionCapabilityReadSnapshot;
 	readonly sessionCapabilities: SessionCapabilityAdapter;
 	readonly settingsManager: SettingsManager;
 	readonly modelRegistry: ModelRegistry;
