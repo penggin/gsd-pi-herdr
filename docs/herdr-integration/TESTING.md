@@ -205,3 +205,7 @@ outside a Herdr-managed pane, from a subagent child, against a non-v4 root, with
 mismatched inherited/current pane identity, or without the pinned Herdr
 v0.8.2/protocol-20 capability contract. A passing report still requires every
 worker scenario in section 8 before cutover.
+
+The complete isolated-path setup, exact marker protocol, public-subagent
+scenario order, topology capture, restart evidence, and closeout gates are in
+[`spikes/P3.7-SESSION-V4-LIVE-RUNBOOK.md`](spikes/P3.7-SESSION-V4-LIVE-RUNBOOK.md).

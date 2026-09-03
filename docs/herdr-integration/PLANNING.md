@@ -2662,6 +2662,12 @@ this session does not merge, push, tag, or publish.
   `gsd` and `gsd-mcp-server` links now target this clean candidate. Prior
   immutable prefixes remain rollback targets and running processes were not
   killed; they acquire the candidate after their normal restart.
+- Added the P3.7 live runbook with an isolated remote path layout, exact result
+  markers, public-subagent-only single/chain/parallel/cancellation/pane-loss
+  sequence, detach/reattach and root-restart captures, artifact/mode/raw-output
+  checks, and final promotion gates. Partial or manually asserted results are
+  explicitly non-promotable. This standardizes the still-unrun live evidence;
+  it does not mark P3.7 complete or change the legacy-v3 default.
 - Exact next task: from an actual Herdr-managed root pane (`HERDR_ENV=1`), run
   the pinned-Herdr P3.7 root/worker matrix with an internal harness-v4 root
   session: single dispatch, affinity reuse, parallel >4, cancellation, pane
