@@ -76,6 +76,7 @@ export {
 	type SessionManagerRuntimeFactory,
 	type SessionManagerTarget,
 } from "./session-manager-runtime.js";
+export * from "./session-capability-adapter.js";
 export { ContextualTips } from "./contextual-tips.js";
 export * from "./agent-session-runtime.js";
 export {

@@ -75,7 +75,7 @@ for (const backend of ["memory", "jsonl"] as const) {
 			await session.appendLabel(target, " pinned ");
 			await session.appendSessionName(" Example ");
 
-			expect(await session.getLabel(target)).toBe("pinned");
+			expect(await session.getLabel(target)).toBe(" pinned ");
 			expect(await session.getSessionName()).toBe("Example");
 			expect((await session.buildContext()).messages.at(-1)).toMatchObject({
 				role: "custom",

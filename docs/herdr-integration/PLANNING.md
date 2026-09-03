@@ -2315,6 +2315,33 @@ this session does not merge, push, tag, or publish.
   parallel, P3.5c begins with the explicit async mutation/read capability
   contract needed to adapt the validated v4 repository without a duplicate
   synchronous writer.
+- Completed P3.5c1's version-neutral session capability contract. The adapter
+  delegates every read and mutation to either the existing legacy-v3 manager or
+  a validated harness-v4 session and never owns a second log or fire-and-forget
+  write path. Metadata distinguishes legacy parent file paths from v4 parent
+  session IDs; a harness-v4 factory rejects mismatched metadata before use.
+- The shared parity scenario covers branch navigation with summary, rebuilt
+  context, model/thinking changes, custom messages, labels, and names across
+  both formats. It exposed and fixed a v4 compatibility difference where label
+  text was trimmed even though legacy-v3 preserves every non-empty label
+  verbatim. Focused adapter tests pass **3/3**, harness-v4 parity passes
+  **12/12**, the full harness configuration passes **197/197**, the agent-core
+  suite passes **146/146**, extension typecheck passes, and pi-agent-core plus
+  the complete core build pass. No production backend selection, existing
+  session file, GSD state, remote installation, or Mac global installation
+  changed.
+- Known test-runner limitation: the pi-agent-core package's unscoped
+  `vitest --run` command still collects one Node `node:test` source as an empty
+  Vitest suite and its external faux-provider E2E returns empty responses in
+  this environment (**8 failures**). The dedicated harness configuration is
+  the repository's valid session-v4 evidence and is green; no failing default
+  test was hidden or changed as part of this slice.
+- Exact next task: complete P3.5c2 by moving asynchronous AgentSession
+  persistence/query paths onto the capability boundary and explicitly adapting
+  the synchronous extension-context compatibility surface. Keep legacy-v3 as
+  the only selectable production backend until CLI/headless parity is complete.
+  Independently, retry the immutable `penglab` deployment only after the
+  configured private endpoint becomes reachable.
 
 ## 11. Working-session protocol
 

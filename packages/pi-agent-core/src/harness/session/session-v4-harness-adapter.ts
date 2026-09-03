@@ -229,7 +229,10 @@ export class V4HarnessSessionStorageAdapter implements SessionStorage<V4HarnessS
 				await this.setLeafId(entry.targetId);
 				return;
 			case "label":
-				await this.backend.setLabel(entry.targetId, entry.label?.trim() || undefined);
+				// Legacy-v3 preserves non-empty label text verbatim. Only an empty
+				// string clears the label, so the v4 compatibility projection must
+				// not introduce trimming that changes established session behavior.
+				await this.backend.setLabel(entry.targetId, entry.label || undefined);
 				return;
 			case "session_info":
 				await this.backend.setName(entry.name?.trim() || undefined);

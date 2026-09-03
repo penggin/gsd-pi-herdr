@@ -2,7 +2,7 @@
 
 Date: 2026-09-03
 
-Status: P3.0–P3.4 and P3.5a–P3.5b complete; P3.5c requires a functional v4 manager adapter; no v4 cutover
+Status: P3.0–P3.4, P3.5a–P3.5b, and P3.5c1 complete; P3.5c runtime adoption in progress; no v4 cutover
 
 Upstream reference: `refs/pi-upstream/v0.84.4`
 
@@ -203,9 +203,24 @@ make the legacy `AgentSession` navigation module asynchronous.
 - Proved replacement preparation precedes teardown and successful replacement
   follows prepare → abort → UI invalidation → dispose → create → rebind order.
 
-P3.5c must now implement the version-neutral `SessionManager` capability adapter
-over the validated async v4 stores. The only production backend remains
-`legacy-v3`; no v4 preference, write cutover, or automatic migration is exposed.
+#### P3.5c — Version-neutral session capabilities (in progress)
+
+P3.5c1 adds the first production-shaped, awaitable capability boundary over the
+existing legacy-v3 `SessionManager` and validated harness-v4 `Session`. It
+covers metadata, branch/context queries, messages, model/thinking changes,
+compaction, custom entries, labels, names, and navigation without owning a
+second writer. Parent references explicitly distinguish legacy file paths from
+v4 session IDs. A parity scenario proves equivalent branch/context, label, and
+name behavior and rejects non-v4 metadata at the v4 factory boundary.
+
+The parity work also corrected v4 label projection to preserve the established
+legacy behavior for non-empty labels instead of silently trimming them. Session
+name trimming remains unchanged in both formats.
+
+P3.5c2 must adopt this boundary in the asynchronous AgentSession mutation/read
+paths and define the compatibility surface for synchronous extension callbacks.
+The only production backend remains `legacy-v3`; no v4 preference, write
+cutover, or automatic migration is exposed.
 
 ### P3.6 — Integrate GSD, web, and Assessment Gates
 
