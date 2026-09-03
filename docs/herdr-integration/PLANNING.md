@@ -2649,6 +2649,19 @@ this session does not merge, push, tag, or publish.
   the installable tarball (`Package is installable. Safe to publish.`). The
   current non-Herdr shell correctly exits 2 before issuing any pane command.
   This removes setup ambiguity but does not count as live P3.7 evidence.
+- Packaged clean preflight commit
+  `8f8b2bd58a328425cc91fa1763849d47fc4d9110` as
+  `/srv/penglab/gsd-runs/artifacts/gsd-pi-herdr-1.16.2-8f8b2bd5-e9d66dfa.tgz`
+  (`sha256:e9d66dfab02fb99382e6b92f677912e88a182f01977c36faf54609420303dcec`)
+  and installed it at immutable prefix
+  `/srv/penglab/gsd-runs/toolchains/gsd-pi-herdr-1.16.2-8f8b2bd5-e9d66dfa`.
+  The installed package contains the preflight and shared capability helpers;
+  first launch repaired seven internal links, the verified Linux x64 addon
+  reports `nativeLoaded: true` with 98 exports, and an outside-Herdr installed
+  smoke exits 2 with `phase=environment` before pane control. Shared remote
+  `gsd` and `gsd-mcp-server` links now target this clean candidate. Prior
+  immutable prefixes remain rollback targets and running processes were not
+  killed; they acquire the candidate after their normal restart.
 - Exact next task: from an actual Herdr-managed root pane (`HERDR_ENV=1`), run
   the pinned-Herdr P3.7 root/worker matrix with an internal harness-v4 root
   session: single dispatch, affinity reuse, parallel >4, cancellation, pane
