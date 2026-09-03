@@ -2262,6 +2262,38 @@ this session does not merge, push, tag, or publish.
   implementing a functional `harness-v4` manager adapter. Existing v3 remains
   the default and no remote deployment is warranted until that runtime path is
   complete.
+- Completed P3.5b interactive runtime ownership. The root interactive CLI now
+  owns an `AgentSessionRuntime`; `/new`, `/resume`, and `/fork` replacement
+  requests prepare storage through the awaitable factory, detach the old agent
+  and extension UI, recreate cwd-bound settings/resources, then rebind the
+  footer, branch watcher, themes, autocomplete, extension runner, and agent
+  subscription. The selected model, thinking level, scoped models, and active
+  tools carry across. Replacement extension diagnostics and model fallback
+  warnings remain visible in the rebound TUI.
+- Removed the remaining process-cwd affinity from replacement-sensitive UI
+  surfaces: GSD status/footer workspace labels, extension shortcut context,
+  command autocomplete, user-bash events, terminal title, and JSONL export now
+  use the active session cwd. The production backend remains `legacy-v3`; no v4
+  setting, automatic migration, or write cutover was exposed.
+- Focused session-runtime and TUI lifecycle regression passes **8/8**, including
+  runtime command routing, extension/UI rebinding, diagnostics, workspace-cwd
+  construction, and prepare → abort → UI invalidation → dispose → create →
+  rebind ordering. Changed root-source tests pass **27/27**. The compiled package
+  matrix passes: agent-core **143/143**, agent-modes **294/294**, native **223
+  passed / 1 skipped**, pi-agent-core **3/3**, pi-ai **49/49**,
+  pi-coding-agent **72/72**, pi-tui **8/8**, contracts **9/9**, MCP server
+  **377/377**, and RPC client **30/30**.
+- Packaging validation exposed two environment-dependent leaks and both now fail
+  safe: local `gsd_engine.dev.node` is excluded from release tarballs, and main
+  plus optional assessment-pack validation use an isolated empty npm user config
+  with inherited `allow-scripts` cleared. This reduced the candidate from the
+  rejected **384.4 MB** unpacked payload to **280.2 MB** and prevents a user's
+  npm policy from making the isolated install check nondeterministic.
+- Exact next task: finish all final gates, commit and push P3.5b plus packaging
+  hardening, deploy one clean immutable candidate to `penglab:/srv/penglab`, and
+  then begin P3.5c by implementing a functional version-neutral manager adapter
+  over the validated async v4 stores. Do not expose `harness-v4` until the full
+  legacy manager capability contract passes.
 
 ## 11. Working-session protocol
 

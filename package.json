@@ -25,6 +25,7 @@
     "packages/*/package.json",
     "packages/*/README.md",
     "native/addon/*.node",
+    "!native/addon/*.dev.node",
     "pkg",
     "src/resources",
     "integrations/hermes/plugin.yaml",

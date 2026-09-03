@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -7,6 +8,18 @@ import test from "node:test";
 import { build } from "esbuild";
 
 const root = resolve(new URL("../../", import.meta.url).pathname);
+
+test("validate-pack isolates npm commands from user-level npm configuration", () => {
+  const source = readFileSync(join(root, "scripts/validate-pack.js"), "utf8");
+  const assessmentSource = readFileSync(join(root, "scripts/validate-assessment-pack.mjs"), "utf8");
+
+  assert.match(source, /npm_config_userconfig: npmUserConfig/);
+  assert.match(source, /npm_config_allow_scripts: ''/);
+  assert.match(source, /writeFileSync\(npmUserConfig, ''\)/);
+  assert.match(assessmentSource, /npm_config_userconfig: npmUserConfig/);
+  assert.match(assessmentSource, /npm_config_allow_scripts: ""/);
+  assert.match(assessmentSource, /writeFileSync\(npmUserConfig, ""\)/);
+});
 
 async function importValidatePackWithRootPackage(rootPackageJson) {
   const outdir = await mkdtemp(join(tmpdir(), "validate-pack-test-"));

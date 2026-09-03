@@ -19,6 +19,7 @@ const { getLinkablePackages } = require('./lib/workspace-manifest.cjs');
 let tarball = null;
 let installDir = null;
 let npmCacheDir = null;
+let npmUserConfig = null;
 const DEFAULT_MAX_BUFFER = 50 * 1024 * 1024;
 
 function getNpmCommand() {
@@ -36,6 +37,10 @@ function cleanNpmEnv(extra = {}) {
     npm_config_fund: 'false',
     NPM_CONFIG_LOGLEVEL: 'error',
     npm_config_loglevel: 'error',
+    NPM_CONFIG_USERCONFIG: npmUserConfig,
+    npm_config_userconfig: npmUserConfig,
+    NPM_CONFIG_ALLOW_SCRIPTS: '',
+    npm_config_allow_scripts: '',
     ...extra,
   };
   for (const key of Object.keys(env)) {
@@ -134,6 +139,8 @@ function getPackagedWorkspacePackages() {
 try {
   npmCacheDir = mkdtempSync(join(tmpdir(), 'validate-pack-npm-cache-'));
   mkdirSync(npmCacheDir, { recursive: true });
+  npmUserConfig = join(npmCacheDir, 'empty-npmrc');
+  writeFileSync(npmUserConfig, '');
 
   const rootPkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -22,10 +22,19 @@ if (Object.keys(manifest.dependencies ?? {}).length > 0) {
 
 const temporaryRoot = mkdtempSync(join(tmpdir(), "gsd-assessment-pack-"));
 try {
+  const npmUserConfig = join(temporaryRoot, "empty-npmrc");
+  writeFileSync(npmUserConfig, "");
+  const npmEnv = {
+    ...process.env,
+    NPM_CONFIG_USERCONFIG: npmUserConfig,
+    npm_config_userconfig: npmUserConfig,
+    NPM_CONFIG_ALLOW_SCRIPTS: "",
+    npm_config_allow_scripts: "",
+  };
   const packOutput = execFileSync(
     "npm",
     ["pack", "--ignore-scripts", "--json", "--pack-destination", temporaryRoot],
-    { cwd: packageDir, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] },
+    { cwd: packageDir, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"], env: npmEnv },
   );
   const packed = JSON.parse(packOutput)[0];
   if (!packed?.filename || !Array.isArray(packed.files)) throw new Error("npm pack returned no file inventory");
@@ -47,7 +56,7 @@ try {
   execFileSync(
     "npm",
     ["install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", installRoot, tarball],
-    { stdio: ["ignore", "pipe", "inherit"] },
+    { stdio: ["ignore", "pipe", "inherit"], env: npmEnv },
   );
   const installed = join(installRoot, "node_modules", "@penggin", "gsd-assessment-pack-gstack");
   for (const path of required) readFileSync(join(installed, path));

@@ -110,3 +110,10 @@ test("publish-engine-packages script continues through all platforms", () => {
   assert.doesNotMatch(script, /exit 1\s*\n\s*fi\s*\n\s*cd "\$GITHUB_WORKSPACE"/);
   assert.match(script, /already on npm, skipping/);
 });
+
+test("root package excludes the local debug native addon", () => {
+  const manifest = JSON.parse(readFileSync("package.json", "utf8"));
+
+  assert.ok(manifest.files.includes("native/addon/*.node"));
+  assert.ok(manifest.files.includes("!native/addon/*.dev.node"));
+});
