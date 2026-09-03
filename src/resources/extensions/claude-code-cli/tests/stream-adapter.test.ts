@@ -63,6 +63,7 @@ import { autoSession } from "../../gsd/auto-runtime-state.ts";
 import { getInFlightToolCount, hasInteractiveToolInFlight, clearInFlightTools, isInteractiveElicitationInFlight } from "../../gsd/auto-tool-tracking.ts";
 import { clearMcpConfigCache } from "../../mcp-client/manager.ts";
 import { UNIT_TOOL_CONTRACTS } from "../../gsd/unit-tool-contracts.ts";
+import { clearDiscussionFlowState, setQueuePhaseActive } from "../../gsd/bootstrap/write-gate.ts";
 
 // ---------------------------------------------------------------------------
 // Env helpers — `GSD_WORKFLOW_MCP_*` save/restore
@@ -3921,6 +3922,26 @@ describe("stream-adapter — canUseTool handler", () => {
 			tool_use_id: "toolu_rm",
 		}, "toolu_rm", { signal: new AbortController().signal });
 		assert.equal(output.hookSpecificOutput?.permissionDecision, "ask");
+	});
+
+	test("pre-tool hook enforces shared GSD queue policy for Claude native tool names", async () => {
+		const cwd = mkdtempSync(join(tmpdir(), "claude-pretool-queue-"));
+		try {
+			setQueuePhaseActive(true, cwd);
+			const hook = createClaudeCodePreToolUsePolicyHook(cwd);
+			const output = await hook({
+				hook_event_name: "PreToolUse",
+				tool_name: "Write",
+				tool_input: { file_path: join(cwd, "src", "index.ts") },
+				tool_use_id: "toolu_queue_write",
+			}, "toolu_queue_write", { signal: new AbortController().signal });
+
+			assert.equal(output.hookSpecificOutput?.permissionDecision, "deny");
+			assert.match(output.hookSpecificOutput?.permissionDecisionReason ?? "", /queue mode/i);
+		} finally {
+			clearDiscussionFlowState(cwd);
+			rmSync(cwd, { recursive: true, force: true });
+		}
 	});
 
 	test("headless permission fallback fails closed for destructive and state-mutating tools", async () => {

@@ -990,6 +990,20 @@ export function shouldBlockContextWrite(
   _queuePhaseActive?: boolean,
   basePath: string = process.cwd(),
 ): { block: boolean; reason?: string } {
+  return shouldBlockContextWriteInSnapshot(
+    hostWriteGateAdapter.readState(basePath),
+    toolName,
+    inputPath,
+    milestoneId,
+  );
+}
+
+export function shouldBlockContextWriteInSnapshot(
+  snapshot: WriteGateSnapshot,
+  toolName: string,
+  inputPath: string,
+  milestoneId: string | null,
+): { block: boolean; reason?: string } {
   if (toolName !== "write") return { block: false };
   if (!MILESTONE_CONTEXT_RE.test(inputPath)) return { block: false };
 
@@ -1005,7 +1019,7 @@ export function shouldBlockContextWrite(
     };
   }
 
-  if (isMilestoneDepthVerified(targetMilestoneId, basePath)) return { block: false };
+  if (isMilestoneDepthVerifiedInSnapshot(snapshot, targetMilestoneId)) return { block: false };
 
   return {
     block: true,

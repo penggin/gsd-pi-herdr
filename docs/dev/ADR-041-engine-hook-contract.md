@@ -23,16 +23,14 @@ Under the external claude-code-cli engine, `tool_call`/`tool_result` hooks never
 ## Consequences
 
 - "Does this fire under claude-code-cli?" is answered at import time; a new engine updates one contract.
-- The original nine-guard follow-up is being closed at the correct external
-  execution boundary rather than by pretending `tool_execution_start` is
-  pre-execution. Phase-specific Claude tool presentation already removes native
-  mutation tools from `run-uat` and `complete-slice` and narrows workflow MCP
-  tools for other GSD units. As of 2026-09-03, the Claude SDK adapter also owns
-  a real `PreToolUse` hook for the two hard safety invariants: direct writes to
-  `.gsd/STATE.md`/`gsd.db` are denied in every permission mode, and destructive
-  Bash requires one-time interactive approval while headless execution denies
-  it. Saved allow rules cannot bypass either decision. Loop, approval/depth,
-  queue, planning, and worktree policy still require a separate shared
-  pre-execution-policy extraction before this follow-up can be considered fully
-  closed across every external engine.
+- The original guard set now has one ordered pre-execution evaluator shared by
+  native Pi `tool_call` and the Claude SDK `PreToolUse` hook. It enforces loop,
+  deferred/pending approval, queue, planning-unit, worktree, authoritative-state,
+  and context-depth policy from one disk-reconciled host snapshot, while host
+  effects such as harness-abort evidence and approval-gate deferral are applied
+  separately and exactly once. Claude's adapter-specific destructive-command
+  permission remains layered after that shared decision. This closes policy
+  parity for native Pi and Claude Code; it does not claim parity for an external
+  CLI that offers no true pre-execution interception API. `tool_execution_start`
+  remains observation/arming only and must never be treated as rollback-capable.
 - Complements ADR-036 (Tool Surface Readiness): same spirit, applied to the hook surface instead of the tool surface.

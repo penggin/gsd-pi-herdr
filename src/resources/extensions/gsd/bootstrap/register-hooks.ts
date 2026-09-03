@@ -13,11 +13,9 @@ import type { GSDEcosystemBeforeAgentStartHandler } from "../ecosystem/gsd-exten
 import { updateSnapshot } from "../ecosystem/gsd-extension-api.js";
 
 import { buildMilestoneFileName, canonicalPhaseDirName, clearPathCache, milestonesDir, legacyMilestonesDir, relMilestoneFile, resolveMilestonePath, resolveSliceFile, resolveSlicePath } from "../paths.js";
-import { applyAskUserQuestionsGateResult, clearDiscussionFlowState, currentWriteGateSnapshot, formatPendingAskUserQuestionsGateMessage, formatTimedOutAskUserQuestionsGateMessage, hostWriteGateAdapter, isApprovalGateVerifiedInSnapshot, isDepthConfirmationAnswer, isMilestoneDepthVerifiedInSnapshot, isQueuePhaseActive, resetWriteGateState, shouldBlockContextWrite, shouldBlockPlanningUnit, shouldBlockQueueExecution, shouldBlockWorktreeBash, shouldBlockWorktreeWrite, isGateQuestionId, getPendingGate, shouldBlockPendingGate, shouldBlockPendingGateBash, extractDepthVerificationMilestoneId, type WriteGateSnapshot } from "./write-gate.js";
+import { applyAskUserQuestionsGateResult, clearDiscussionFlowState, currentWriteGateSnapshot, formatPendingAskUserQuestionsGateMessage, formatTimedOutAskUserQuestionsGateMessage, hostWriteGateAdapter, isApprovalGateVerifiedInSnapshot, isDepthConfirmationAnswer, isMilestoneDepthVerifiedInSnapshot, resetWriteGateState, isGateQuestionId, getPendingGate, extractDepthVerificationMilestoneId } from "./write-gate.js";
 import { canonicalToolName } from "../engine-hook-contract.js";
 import { resolveManifest } from "../unit-context-manifest.js";
-import { getIsolationMode, resolveEffectiveUnitIsolationMode } from "../preferences.js";
-import { isBlockedStateFile, isBashWriteToStateFile, BLOCKED_WRITE_ERROR } from "../write-intercept.js";
 import { loadFile, saveFile, formatContinue } from "../files.js";
 import {
   clearAutoCompletionStopInProgress,
@@ -41,7 +39,7 @@ import {
 } from "../auto-tool-tracking.js";
 import { applyProviderPayloadPolicy } from "../provider-payload-policy.js";
 
-import { checkToolCallLoop, configureToolCallLoopGuard, recordToolCallLoopMutation, resetToolCallLoopGuard } from "./tool-call-loop-guard.js";
+import { configureToolCallLoopGuard, recordToolCallLoopMutation, resetToolCallLoopGuard } from "./tool-call-loop-guard.js";
 import { MINIMAL_AUTO_BASE_TOOL_NAMES } from "./core-session-tools.js";
 import { maybePauseAutoForApprovalGate, resetPendingGatePauseGuard } from "./pending-gate-pause.js";
 import { saveActivityLog } from "../activity-log.js";
@@ -62,9 +60,7 @@ import { installNotifyInterceptor } from "./notify-interceptor.js";
 import { initNotificationStore } from "../notification-store.js";
 import { initNotificationWidget } from "../notification-widget.js";
 import { notifyPreferenceDiagnostics } from "../preferences-diagnostics.js";
-import { resolveEffectivePlanningToolsPolicy } from "../planning-subagent-policy.js";
 import { resolveWorktreeProjectRoot } from "../worktree-root.js";
-import { extractSubagentAgentClasses } from "./subagent-input.js";
 import {
   approvalGateIdForUnit,
   evaluateAskUserQuestionsRound,
@@ -89,6 +85,16 @@ import { getRequiredWorkflowToolsForUnit } from "../unit-tool-contracts.js";
 import { flushAllManifests } from "../workflow-manifest.js";
 import { recordUnitHarnessAbort, type UnitHarnessAbortRecord } from "../unit-runtime.js";
 import { clearNativeMilestoneStatusSourceRevisions } from "./query-tools.js";
+import {
+  activateDeferredApprovalGate,
+  clearDeferredApprovalGate,
+  deferApprovalGateFromSnapshot,
+  isApprovalGateBlocking,
+} from "./deferred-approval-gate.js";
+import {
+  applyGsdPreExecutionPolicyEffects,
+  evaluateGsdPreExecutionPolicy,
+} from "../pre-execution-policy.js";
 
 let approvalQuestionAbortInFlight = false;
 
@@ -191,7 +197,6 @@ function suppressWelcomeHeader(ctx: ExtensionContext): void {
  * projects in one process cannot lose each other's deferred gate; entries
  * are bounded — cleared on activation, session boundaries, and verification.
  */
-const deferredApprovalGates = new Map<string, string>();
 const deferredDestructiveConfirmationPauses = new Set<string>();
 
 export const MINIMAL_GSD_TOOL_NAMES = [
@@ -616,14 +621,6 @@ async function applyToolCallLoopGuardConfig(basePath: string): Promise<void> {
   }
 }
 
-function clearDeferredApprovalGate(basePath?: string): void {
-  if (!basePath) {
-    deferredApprovalGates.clear();
-  } else {
-    deferredApprovalGates.delete(basePath);
-  }
-}
-
 function deferDestructiveConfirmationPause(basePath: string): void {
   deferredDestructiveConfirmationPauses.add(basePath);
 }
@@ -641,38 +638,8 @@ function isDestructiveConfirmationBlocking(basePath: string): boolean {
     && Boolean(peekPendingDestructiveCommand(basePath));
 }
 
-function deferApprovalGate(gateId: string, basePath: string): void {
-  // Verified-on-disk wins (same adapter policy as activation/re-arm): if the
-  // workflow MCP child already verified this gate, deferring would block
-  // tools for a gate that can never legitimately arm.
-  const snapshot = hostWriteGateAdapter.readState(basePath);
-  deferApprovalGateFromSnapshot(gateId, basePath, snapshot);
-}
-
-function deferApprovalGateFromSnapshot(gateId: string, basePath: string, snapshot: WriteGateSnapshot): void {
-  if (isApprovalGateVerifiedInSnapshot(snapshot, gateId)) return;
-  const milestoneId = extractDepthVerificationMilestoneId(gateId);
-  if (milestoneId && isMilestoneDepthVerifiedInSnapshot(snapshot, milestoneId)) return;
-  deferredApprovalGates.set(basePath, gateId);
-}
-
 function contextBasePath(ctx?: { cwd?: string }): string {
   return typeof ctx?.cwd === "string" ? ctx.cwd : process.cwd();
-}
-
-const LOOP_GUARD_INTERACTIVE_INSTRUCTIONS = [
-  "Do not retry this tool or call other tools this turn — stop and respond to the user in text.",
-  "Do not retry this tool or pivot to other tools this turn — stop and respond to the user in text.",
-];
-const LOOP_GUARD_AUTO_INSTRUCTION =
-  "Do not re-issue this blocked tool. In /gsd auto, stop tool calls for this turn and return control to the auto-mode recovery/replan path.";
-
-function formatLoopGuardBlockReason(reason: string | undefined): string | undefined {
-  if (!reason || !getAutoRuntimeSnapshot().active) return reason;
-  return LOOP_GUARD_INTERACTIVE_INSTRUCTIONS.reduce(
-    (formatted, instruction) => formatted.replace(instruction, LOOP_GUARD_AUTO_INSTRUCTION),
-    reason,
-  );
 }
 
 function isGateResultPersistenceTool(toolName: string): boolean {
@@ -790,31 +757,10 @@ function isShellExecutionTool(canonicalName: string): boolean {
     canonicalName === "powershell";
 }
 
-function activateDeferredApprovalGate(basePath: string): void {
-  const gateId = deferredApprovalGates.get(basePath);
-  if (gateId === undefined) return;
-  deferredApprovalGates.delete(basePath);
-  // hostWriteGateAdapter.setPending applies the verified-on-disk-wins merge
-  // policy: it refuses to arm (and thereby clobber) a gate the workflow MCP
-  // child already verified on disk.
-  hostWriteGateAdapter.setPending(gateId, basePath);
-}
-
 function extractGateQuestionId(input: unknown): string | undefined {
   const questions: Array<{ id?: unknown }> = (input as { questions?: unknown })?.questions as Array<{ id?: unknown }> ?? [];
   const match = questions.find((question) => typeof question?.id === "string" && isGateQuestionId(question.id));
   return typeof match?.id === "string" ? match.id : undefined;
-}
-
-function isApprovalGateBlocking(basePath: string): boolean {
-  return Boolean(getPendingGate(basePath))
-    || deferredApprovalGates.has(basePath);
-}
-
-function isContextDraftSummarySave(toolName: string, input: unknown): boolean {
-  if (toolName !== "gsd_summary_save" && toolName !== "summary_save") return false;
-  if (!input || typeof input !== "object") return false;
-  return (input as { artifact_type?: unknown }).artifact_type === "CONTEXT-DRAFT";
 }
 
 /**
@@ -991,33 +937,6 @@ async function saveDiscussionQuestionRound(
   } catch (err) {
     safetyLogWarning("guided", `failed to persist CONTEXT-DRAFT artifact for ${milestoneId}: ${(err as Error).message}`);
   }
-}
-
-function withDepthGateDisplayReason<T extends { block: boolean; reason?: string }>(
-  result: T,
-  displayReason = "Depth confirmation is waiting for your answer.",
-): T & { displayReason?: string } {
-  if (!result.block) return result;
-  return { ...result, displayReason };
-}
-
-function shouldBlockDeferredApprovalTool(
-  toolName: string,
-  input: unknown,
-  basePath: string,
-): { block: boolean; reason?: string; displayReason?: string } {
-  const deferredGateId = deferredApprovalGates.get(basePath);
-  if (deferredGateId === undefined) return { block: false };
-  if (toolName === "ask_user_questions") return { block: false };
-  if (isContextDraftSummarySave(toolName, input)) return { block: false };
-  return withDepthGateDisplayReason({
-    block: true,
-    reason: [
-      `HARD BLOCK: Approval question "${deferredGateId}" has been shown to the user.`,
-      `Only CONTEXT-DRAFT persistence may finish in this same assistant turn.`,
-      `Wait for the user's answer before calling additional tools.`,
-    ].join(" "),
-  });
 }
 
 export function resolveNotificationStoreBasePath(basePath: string): string {
@@ -1518,227 +1437,28 @@ export function registerHooks(
     }
   });
 
-  // Engine hook contract (../engine-hook-contract.ts): tool_call is
-  // NATIVE_ONLY_TOOL_HOOKS — it never fires under external engines
-  // (claude-code-cli pre-executes tools). The guards below (loop guard,
-  // pending/deferred gate blocks, queue guard, planning-unit tools policy,
-  // worktree write gate, STATE.md single-writer, context-write depth gate)
-  // are therefore native-engine enforcement only. The write-gate arming
-  // concern has a universal mirror at tool_execution_start below.
+  // Engine hook contract (../engine-hook-contract.ts): tool_call is a native
+  // pre-execution boundary. The ordered decision logic is shared with external
+  // engine prehooks through ../pre-execution-policy.ts; this adapter applies
+  // the native host effects (harness abort evidence and auto pause) exactly once.
   pi.on("tool_call", async (event, ctx) => {
     const discussionBasePath = contextBasePath(ctx);
-    const toolName = canonicalToolName(event.toolName);
-    // ── Loop guard: block repeated identical tool calls ──
-    const loopCheck = checkToolCallLoop(toolName, event.input as Record<string, unknown>);
-    if (loopCheck.block) {
-      recordCurrentUnitHarnessAbort({
-        kind: "tool-loop-guard",
-        reason: loopCheck.reason ?? "Tool-call loop guard blocked a repeated tool call.",
-        toolName,
-        count: loopCheck.count,
-      });
-      return { block: true, reason: formatLoopGuardBlockReason(loopCheck.reason) };
-    }
+    const decision = await evaluateGsdPreExecutionPolicy({
+      toolName: event.toolName,
+      input: event.input,
+      basePath: discussionBasePath,
+    });
 
-    const deferredGateGuard = shouldBlockDeferredApprovalTool(
-      toolName,
-      event.input,
-      discussionBasePath,
-    );
-    if (deferredGateGuard.block) {
-      if (ctx) {
-        await maybePauseAutoForApprovalGate(
-          ctx,
-          pi,
-          isApprovalGateBlocking(discussionBasePath),
-          "Depth confirmation is waiting for your answer — pausing auto-mode.",
-        );
-      }
-      return deferredGateGuard;
-    }
-
-    // ── Discussion gate enforcement: defer gate arming until execution ─────
-    // Same-turn CONTEXT-DRAFT persistence can finish after the question is shown.
-    // The durable pending gate activates at tool_execution_start (or agent_end for
-    // streamed text approval questions).
-    if (toolName === "ask_user_questions") {
-      const questionId = extractGateQuestionId(event.input);
-      if (typeof questionId === "string") {
-        deferApprovalGate(questionId, discussionBasePath);
-      }
-    }
-
-    // ── Discussion gate enforcement: block tool calls while gate is pending ──
-    // If ask_user_questions was called with a gate ID but hasn't been confirmed,
-    // block all non-read-only tool calls to prevent the model from skipping gates.
-    if (getPendingGate(discussionBasePath)) {
-      const milestoneId = await getDiscussionMilestoneIdFor(discussionBasePath);
-      if (isToolCallEventType("bash", event)) {
-        const bashGuard = shouldBlockPendingGateBash(
-          event.input.command,
-          milestoneId,
-          isQueuePhaseActive(discussionBasePath),
-          discussionBasePath,
-        );
-        if (bashGuard.block) {
-          if (ctx) {
-            await maybePauseAutoForApprovalGate(
-              ctx,
-              pi,
-              true,
-              "Depth confirmation is waiting for your answer — pausing auto-mode.",
-            );
-          }
-          return withDepthGateDisplayReason(bashGuard);
-        }
-      } else {
-        const gateGuard = shouldBlockPendingGate(
-          toolName,
-          milestoneId,
-          isQueuePhaseActive(discussionBasePath),
-          discussionBasePath,
-        );
-        if (gateGuard.block) {
-          if (ctx) {
-            await maybePauseAutoForApprovalGate(
-              ctx,
-              pi,
-              true,
-              "Depth confirmation is waiting for your answer — pausing auto-mode.",
-            );
-          }
-          return withDepthGateDisplayReason(gateGuard);
-        }
-      }
-    }
-
-    // ── Queue-mode execution guard (#2545): block source-code mutations ──
-    // When /gsd queue is active, the agent should only create milestones,
-    // not execute work. Block write/edit to non-.gsd/ paths and bash commands
-    // that would modify files.
-    if (isQueuePhaseActive(discussionBasePath)) {
-      let queueInput = "";
-      if (isToolCallEventType("write", event)) {
-        queueInput = event.input.path;
-      } else if (isToolCallEventType("edit", event)) {
-        queueInput = event.input.path;
-      } else if (isToolCallEventType("bash", event)) {
-        queueInput = event.input.command;
-      }
-      const queueGuard = shouldBlockQueueExecution(toolName, queueInput, true);
-      if (queueGuard.block) return queueGuard;
-    }
-
-    // ── Planning-unit tools-policy enforcement (#4934): runtime half ─────
-    // The active auto-mode unit's manifest declares a ToolsPolicy. For
-    // planning/docs/read-only modes, deny writes outside .gsd/ (or the
-    // manifest's allowedPathGlobs), bash that isn't read-only, and
-    // subagent dispatch. Closes the b23 bug class where a discuss-milestone
-    // turn used the host Edit tool to modify user source files.
-    const dash = getAutoRuntimeSnapshot();
-    const writeGateBasePath = dash.basePath ?? discussionBasePath;
-
-    // ScheduleWakeup is registered by the GSD extension so auto-mode can
-    // continue the same unit session after long external waits.
-    const guidedUnit = getGuidedUnitContext(discussionBasePath);
-    const activeUnitType = dash.currentUnit?.type ?? guidedUnit?.unitType;
-    if (activeUnitType) {
-      const manifest = resolveManifest(activeUnitType);
-      const planningBasePath = dash.basePath || guidedUnit?.basePath || discussionBasePath;
-      let planningInput = "";
-      let agentClasses: string[] | undefined;
-      if (isToolCallEventType("write", event)) {
-        planningInput = event.input.path;
-      } else if (isToolCallEventType("edit", event)) {
-        planningInput = event.input.path;
-      } else if (isToolCallEventType("bash", event)) {
-        planningInput = event.input.command;
-      } else if (event.toolName === "subagent" || event.toolName === "task") {
-        // Subagent inputs use { agent }, { tasks: [{ agent }] }, or { chain: [{ agent }] }.
-        agentClasses = extractSubagentAgentClasses((event as { input?: unknown }).input);
-      }
-      const planningGuard = shouldBlockPlanningUnit(
-        event.toolName,
-        planningInput,
-        planningBasePath,
-        activeUnitType,
-        resolveEffectivePlanningToolsPolicy(activeUnitType, manifest?.tools, planningBasePath),
-        agentClasses,
-        (event as { input?: unknown }).input,
-        dash.currentUnit?.id,
+    applyGsdPreExecutionPolicyEffects(decision, discussionBasePath);
+    if (decision.pauseForApprovalGate && ctx) {
+      await maybePauseAutoForApprovalGate(
+        ctx,
+        pi,
+        isApprovalGateBlocking(discussionBasePath),
+        "Depth confirmation is waiting for your answer — pausing auto-mode.",
       );
-      if (planningGuard.block) return planningGuard;
     }
-
-    // ── Worktree-isolation write gate (#5199) ────────────────────────────
-    // Block planning-write tools from landing code at the project root when
-    // git.isolation=worktree but auto-mode hasn't created the milestone
-    // worktree yet. Without this, writes silently orphan outside git history.
-    if (
-      isToolCallEventType("write", event)
-      || isToolCallEventType("edit", event)
-      || isToolCallEventType("bash", event)
-    ) {
-      const effectiveIsolationMode = resolveEffectiveUnitIsolationMode(
-        getIsolationMode(writeGateBasePath),
-        dash.isolationDegraded,
-        dash.strandedRecoveryIsolationMode,
-      );
-
-      if (isToolCallEventType("bash", event)) {
-        const wtBashGuard = shouldBlockWorktreeBash(
-          event.input.command,
-          writeGateBasePath,
-          dash.active,
-          dash.currentUnit?.type,
-          effectiveIsolationMode,
-        );
-        if (wtBashGuard.block) return wtBashGuard;
-      } else {
-        const wtGuard = shouldBlockWorktreeWrite(
-          event.toolName,
-          event.input.path,
-          writeGateBasePath,
-          dash.active,
-          dash.currentUnit?.type,
-          effectiveIsolationMode,
-        );
-        if (wtGuard.block) return wtGuard;
-      }
-    }
-
-    // ── Single-writer engine: block direct writes to STATE.md ──────────
-    // Covers write, edit, and bash tools to prevent bypass vectors.
-    if (isToolCallEventType("write", event)) {
-      if (isBlockedStateFile(event.input.path)) {
-        return { block: true, reason: BLOCKED_WRITE_ERROR };
-      }
-    }
-
-    if (isToolCallEventType("edit", event)) {
-      if (isBlockedStateFile(event.input.path)) {
-        return { block: true, reason: BLOCKED_WRITE_ERROR };
-      }
-    }
-
-    if (isToolCallEventType("bash", event)) {
-      if (isBashWriteToStateFile(event.input.command)) {
-        return { block: true, reason: BLOCKED_WRITE_ERROR };
-      }
-    }
-
-    if (!isToolCallEventType("write", event)) return;
-
-    const result = shouldBlockContextWrite(
-      event.toolName,
-      event.input.path,
-      await getDiscussionMilestoneIdFor(discussionBasePath),
-      isQueuePhaseActive(discussionBasePath),
-      discussionBasePath,
-    );
-    if (result.block) {
-      return withDepthGateDisplayReason(result, "Depth check required before writing milestone context.");
-    }
+    if (decision.block) return decision;
   });
 
   // ── Safety harness: evidence collection + destructive command blocking ──

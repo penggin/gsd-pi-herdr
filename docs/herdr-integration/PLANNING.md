@@ -3005,6 +3005,40 @@ this session does not merge, push, tag, or publish.
   pre-execution hooks without duplicating lifecycle side effects, then add
   parity coverage before enabling it for a second external engine.
 
+### 2026-09-03 — Shared native/Claude pre-execution policy
+
+- Extracted the native hook's ordered loop, deferred/pending approval, queue,
+  planning-unit, worktree, authoritative-state, and context-depth decisions into
+  `gsd/pre-execution-policy.ts`. Claude native names are normalized at this
+  boundary, so native `write`/`bash` and SDK `Write`/`Bash` receive the same
+  decision without copying workflow policy into the provider adapter.
+- Moved same-turn deferred approval state into a shared host module and split
+  policy decisions from effects. Gate deferral and loop-guard harness evidence
+  are applied exactly once; native auto-mode pausing remains in the native hook
+  because it owns the Pi UI context. Claude's SDK `PreToolUse` denies shared
+  policy blocks before execution, then applies its existing one-time
+  destructive-command permission layer.
+- Preserved the two-process write-gate contract by resolving one
+  disk-reconciled host snapshot per decision. A focused regression caught an
+  initially stale in-memory snapshot for a lower-case depth gate; the final
+  implementation retains verified-on-disk-wins behavior and canonical M-ID
+  normalization.
+- Verification is green: shared policy plus native/Claude focused regression
+  **350/350**, changed-source **262/262**, all workspace package tests,
+  extension and root TypeScript checks, Herdr integration **30/30**,
+  `build:core`, `validate-pack`, and `git diff --check`. Installed-package
+  validation still proves first-launch repair of all ten linkable packages.
+- ADR-H040 records the boundary. No Herdr pane/runtime authority, GSD lifecycle
+  authority, provider routing, compaction behavior, or session format changed.
+  Cursor and Google CLI are not yet declared safe: post-hoc external results do
+  not constitute a pre-execution deny contract.
+- Exact next task: audit Cursor Agent and Google CLI for a real pre-execution
+  interception capability. Wire the shared evaluator only where denial happens
+  before the external tool side effect; otherwise add an explicit fail-closed or
+  capability-restricted guarded-workflow path and tests. Do not treat
+  `tool_execution_start` as enforcement and do not broaden external CLI access
+  speculatively.
+
 ## 11. Working-session protocol
 
 For every Herdr session:

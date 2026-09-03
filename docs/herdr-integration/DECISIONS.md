@@ -754,3 +754,31 @@ or headless auto-approval from bypassing the hard decision. The remaining
 loop, gate, queue, planning, worktree, and context-depth policies need a shared
 pre-execution extraction before they can be declared universal across all
 external engines.
+
+---
+
+## ADR-H040 — Share ordered GSD policy decisions, not engine lifecycle effects
+
+**Status:** Accepted
+**Date:** 2026-09-03
+
+Native Pi and external engines with a real pre-execution interception contract
+must consume the same ordered GSD policy evaluator. The evaluator canonicalizes
+engine-native tool names and decides loop, deferred/pending approval, queue,
+planning-unit, worktree, authoritative-state, and context-depth blocks from a
+single disk-reconciled host write-gate snapshot. It is the policy authority;
+engine adapters only translate its decision into their own deny shape.
+
+Lifecycle effects are deliberately separate. Approval-gate deferral and
+unit-harness abort evidence are applied once by a host effect function, while
+native-only UI pausing stays in the native hook that owns the Pi context.
+Claude Code consumes the decision in SDK `PreToolUse` before any tool executes,
+then layers its destructive-command one-time permission policy. The universal
+post-hoc `tool_execution_start` event remains an observation and gate-arming
+surface, never a substitute for pre-execution enforcement.
+
+This decision does not authorize optimistic support for Cursor, Google, or a
+future external engine. Each must demonstrate a true pre-execution deny hook
+before consuming the evaluator. If an engine owns tool execution but exposes no
+such hook, guarded GSD workflows must fail closed or use a capability-restricted
+surface rather than claiming parity after side effects have occurred.

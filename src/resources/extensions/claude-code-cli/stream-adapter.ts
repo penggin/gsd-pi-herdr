@@ -93,6 +93,10 @@ import {
 	isBashWriteToStateFile,
 	isBlockedStateFile,
 } from "../gsd/write-intercept.js";
+import {
+	applyGsdPreExecutionPolicyEffects,
+	evaluateGsdPreExecutionPolicy,
+} from "../gsd/pre-execution-policy.js";
 import type {
 	SDKAssistantMessage,
 	SDKMessage,
@@ -1320,7 +1324,7 @@ export function evaluateClaudeCodePreToolUsePolicy(
 	return { action: "continue" };
 }
 
-export function createClaudeCodePreToolUsePolicyHook(): (
+export function createClaudeCodePreToolUsePolicyHook(basePath: string = process.cwd()): (
 	input: ClaudeCodePreToolUseInput,
 	toolUseId: string | undefined,
 	options: { signal: AbortSignal },
@@ -1336,6 +1340,21 @@ export function createClaudeCodePreToolUsePolicyHook(): (
 			};
 		}
 		const toolInput = isRecord(input.tool_input) ? input.tool_input : {};
+		const gsdDecision = await evaluateGsdPreExecutionPolicy({
+			toolName: input.tool_name,
+			input: toolInput,
+			basePath,
+		});
+		applyGsdPreExecutionPolicyEffects(gsdDecision, basePath);
+		if (gsdDecision.block) {
+			return {
+				hookSpecificOutput: {
+					hookEventName: "PreToolUse",
+					permissionDecision: "deny",
+					permissionDecisionReason: gsdDecision.reason ?? "GSD pre-execution policy denied this tool call.",
+				},
+			};
+		}
 		const decision = evaluateClaudeCodePreToolUsePolicy(input.tool_name, toolInput);
 		if (decision.action === "continue") return { continue: true };
 		return {
@@ -2682,7 +2701,7 @@ async function pumpSdkMessages(
 		// When no UI is available (headless / auto-mode), preserve autonomous
 		// ordinary tools while failing closed for the same hard PreToolUse policy.
 		const canUseToolFallback = canUseToolHandler ?? createClaudeCodeHeadlessCanUseToolHandler();
-		const preToolUsePolicyHook = createClaudeCodePreToolUsePolicyHook();
+		const preToolUsePolicyHook = createClaudeCodePreToolUsePolicyHook(cwd);
 		const sdkOpts = buildSdkOptions(
 			modelId,
 			"",
