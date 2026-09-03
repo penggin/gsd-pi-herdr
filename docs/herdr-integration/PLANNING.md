@@ -2584,10 +2584,33 @@ this session does not merge, push, tag, or publish.
   selected custom legacy `sessionDir` does not yet have a defined v4 repository
   mapping. Until that is resolved or explicitly rejected at selection time,
   harness-v4 stays internal and the deployed default stays legacy-v3.
-- Exact next task: execute the real pinned-Herdr root/worker matrix with the
-  internal harness-v4 root session: single dispatch, affinity reuse, parallel
-  >4, cancellation, pane loss, detach/reattach, and restart. Record artifact
-  evidence and deploy only to `penglab:/srv/penglab` when SSH is reachable.
+- On 2026-09-03, packaged the clean P3.6 commit `703d07f5a674ee82cb7b372d5ddbfd30e991747a`
+  as release-candidate artifact
+  `/srv/penglab/gsd-runs/artifacts/gsd-pi-herdr-1.16.2-703d07f5-15a59dab.tgz`
+  (`sha256:15a59dab11fe178e303a2bf22a5b7959f795f0481daf31273ca6f4ad3a5214e7`)
+  and installed it at the immutable remote prefix
+  `/srv/penglab/gsd-runs/toolchains/gsd-pi-herdr-1.16.2-703d07f5-15a59dab`.
+  The first launch repaired all seven internal package links. The separately
+  verified Linux x64 addon was installed with matching source/artifact hash
+  `72e5d00f1f15121bd8b33156a050c41588d0943d6dfe0194940e6d40a874f166`,
+  and runtime inspection reported `nativeLoaded: true` with 98 exports.
+- Direct-prefix and shared-path smoke tests both emitted a canonical version-4
+  session header and exited zero under
+  `GSD_INTERNAL_SESSION_BACKEND=harness-v4`; `gsd --build-info` reports the
+  exact clean P3.6 commit. Only the shared remote `gsd` and `gsd-mcp-server`
+  symlinks were atomically switched. The previous known installation
+  `/srv/penglab/gsd-runs/toolchains/gsd-pi-herdr-1.16.2-ec14fbb1-75478002`
+  remains intact for rollback. Existing GSD/Herdr processes were not restarted
+  and will acquire the candidate only after their normal pane/process restart.
+- This deployment is installation evidence, not P3.7 completion and not a v4
+  cutover: the deployed default remains `legacy-v3`, the selector remains
+  internal-only, and Herdr capability metadata remains unverified until the
+  live pane matrix passes.
+- Exact next task: from an actual Herdr-managed root pane (`HERDR_ENV=1`), run
+  the pinned-Herdr P3.7 root/worker matrix with an internal harness-v4 root
+  session: single dispatch, affinity reuse, parallel >4, cancellation, pane
+  loss, detach/reattach, and restart. Record the worker artifacts and semantic
+  parent results before any opt-in or cutover decision.
 
 ## 11. Working-session protocol
 
