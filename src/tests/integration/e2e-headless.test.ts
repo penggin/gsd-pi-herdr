@@ -239,7 +239,7 @@ test("headless --resume with nonexistent ID exits 1 with descriptive error", asy
   assertNoCrashMarkers(combined);
 });
 
-test("headless --resume resolves its catalog through harness-v4", async (t) => {
+test("headless public session backend flag reaches the RPC child and resume catalog", async (t) => {
   const tmpDir = createTempWithGsd("gsd-e2e-v4-resume-bad-");
   const gsdHome = createTempDir("gsd-e2e-v4-resume-home-");
   t.after(() => {
@@ -248,11 +248,16 @@ test("headless --resume resolves its catalog through harness-v4", async (t) => {
   });
 
   const result = await runGsd(
-    ["headless", "--resume", "nonexistent-v4-id", "--max-restarts", "0", "auto"],
+    [
+      "headless",
+      "--session-backend", "harness-v4",
+      "--resume", "nonexistent-v4-id",
+      "--max-restarts", "0",
+      "auto",
+    ],
     30_000,
     {
       GSD_HOME: gsdHome,
-      GSD_INTERNAL_SESSION_BACKEND: "harness-v4",
     },
     tmpDir,
   );

@@ -678,3 +678,29 @@ post-restart record must match the currently live root pane. Session ID and
 derived runtime ID remain stable; instance ID and start time must change. This
 clarification changes neither GSD/Herdr authority nor the deployed legacy-v3
 default.
+
+---
+
+## ADR-H037 — Expose v4 only as an explicit, format-bound root-session selection
+
+**Status:** Accepted
+**Date:** 2026-09-03
+
+The completed P3.7 live matrix authorizes a public opt-in, not a default
+cutover. Root CLI, headless/RPC, and web launches may select exactly
+`legacy-v3` or `harness-v4` through `--session-backend`; automation may use the
+equivalent `GSD_SESSION_BACKEND`. CLI selection has precedence, unset selection
+remains `legacy-v3`, and unknown values fail startup. The older
+`GSD_INTERNAL_SESSION_BACKEND` remains only as the lowest-precedence validation
+seam so existing test/runbook evidence stays reproducible.
+
+Selection determines the format for a new session and the only backend allowed
+to open, continue, list, fork, or rename it. A mismatched existing file fails
+closed without an empty replacement, rewrite, or automatic conversion. Users
+must repeat the selection when resuming v4. Explicitly selecting `legacy-v3`,
+or unsetting the public environment selection, is the rollback and changes no
+existing file.
+
+This is a root GSD composition policy. It does not change subagent runtime
+selection, GSD workflow authority, Herdr terminal authority, or the
+legacy-v3-only standalone `@gsd/agent-modes` entry.

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -85,6 +85,7 @@ test('launchWebMode forwards custom host, port, and allowed origins to subproces
       host: '0.0.0.0',
       port: 8080,
       allowedOrigins: ['http://192.168.1.10:8080', 'http://tailscale-host:8080'],
+      sessionBackend: 'harness-v4',
     },
     {
       initResources: () => {},
@@ -110,6 +111,7 @@ test('launchWebMode forwards custom host, port, and allowed origins to subproces
   assert.equal(spawnEnv!.GSD_WEB_HOST, '0.0.0.0')
   assert.equal(spawnEnv!.GSD_WEB_PORT, '8080')
   assert.equal(spawnEnv!.GSD_WEB_ALLOWED_ORIGINS, 'http://192.168.1.10:8080,http://tailscale-host:8080')
+  assert.equal(spawnEnv!.GSD_SESSION_BACKEND, 'harness-v4')
 })
 
 test('launchWebMode omits GSD_WEB_ALLOWED_ORIGINS when none provided', async (t) => {
@@ -405,6 +407,7 @@ test('runWebCliBranch forwards --host, --port, --allowed-origins to launchWebMod
     '--host', '0.0.0.0',
     '--port', '9000',
     '--allowed-origins', 'http://my-host:9000',
+    '--session-backend', 'harness-v4',
   ])
 
   const result = await cliWeb.runWebCliBranch(flags, {
@@ -433,4 +436,41 @@ test('runWebCliBranch forwards --host, --port, --allowed-origins to launchWebMod
   assert.equal(receivedOptions!.host, '0.0.0.0')
   assert.equal(receivedOptions!.port, 9000)
   assert.deepEqual(receivedOptions!.allowedOrigins, ['http://my-host:9000'])
+  assert.equal(receivedOptions!.sessionBackend, 'harness-v4')
+})
+
+test('runWebCliBranch does not migrate legacy flat sessions when v4 is selected', async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'gsd-web-v4-no-v3-migration-'))
+  const projectDir = join(tmp, 'project')
+  const baseSessionsDir = join(tmp, 'sessions')
+  const legacyPath = join(baseSessionsDir, 'legacy.jsonl')
+  mkdirSync(projectDir, { recursive: true })
+  mkdirSync(baseSessionsDir, { recursive: true })
+  writeFileSync(legacyPath, '{"type":"session","version":3}\n')
+  t.after(() => { rmSync(tmp, { recursive: true, force: true }) });
+
+  const flags = cliWeb.parseCliArgs([
+    'node', 'dist/loader.js', '--web', projectDir,
+    '--session-backend', 'harness-v4',
+  ])
+  const result = await cliWeb.runWebCliBranch(flags, {
+    baseSessionsDir,
+    runWebMode: async (options) => ({
+      mode: 'web' as const,
+      ok: true as const,
+      cwd: options.cwd,
+      projectSessionsDir: options.projectSessionsDir,
+      host: '127.0.0.1',
+      port: 45000,
+      url: 'http://127.0.0.1:45000',
+      hostKind: 'source-dev' as const,
+      hostPath: '/tmp/fake-web/package.json',
+      hostRoot: '/tmp/fake-web',
+    }),
+    stderr: { write: () => true },
+  })
+
+  assert.equal(result.handled, true)
+  assert.equal(existsSync(legacyPath), true)
+  assert.equal(existsSync(cliWeb.getProjectSessionsDir(projectDir, baseSessionsDir)), false)
 })

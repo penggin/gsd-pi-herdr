@@ -46,6 +46,14 @@ describe('buildHeadlessCommandArgs', () => {
     })
     assert.deepEqual(args, ['--thinking', 'medium', 'auto', 'next'])
   })
+
+  test('forwards the public session backend before positional args', () => {
+    const args = buildHeadlessCommandArgs({
+      sessionBackend: 'harness-v4',
+      messages: ['auto'],
+    })
+    assert.deepEqual(args, ['--session-backend', 'harness-v4', 'auto'])
+  })
 })
 
 describe('parseCliArgs — worktree flag', () => {
@@ -97,6 +105,15 @@ describe('parseCliArgs — short flags and basic options', () => {
     const flags = parse('--session', '/tmp/session.jsonl', '--session-dir', '/tmp/sessions')
     assert.equal(flags.session, '/tmp/session.jsonl')
     assert.equal(flags.sessionDir, '/tmp/sessions')
+  })
+
+  test('--session-backend accepts only deployed session formats', () => {
+    assert.equal(parse('--session-backend', 'legacy-v3').sessionBackend, 'legacy-v3')
+    assert.equal(parse('--session-backend', 'harness-v4').sessionBackend, 'harness-v4')
+    assert.throws(
+      () => parse('--session-backend', 'future-v5'),
+      /Unsupported --session-backend: future-v5/,
+    )
   })
 
   test('--model captures model id', () => {

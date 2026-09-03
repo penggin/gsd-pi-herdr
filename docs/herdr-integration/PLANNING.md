@@ -2790,6 +2790,41 @@ this session does not merge, push, tag, or publish.
   the complete two-backend CLI/GSD/web/Herdr regression matrix before deploying
   that opt-in to `penglab:/srv/penglab`.
 
+### 2026-09-03 — P3.7 controlled public session-v4 opt-in
+
+- Added the public root-session selector
+  `--session-backend legacy-v3|harness-v4` and the automation equivalent
+  `GSD_SESSION_BACKEND`. CLI selection wins over the public environment, which
+  wins over the retained internal validation seam. Unknown values fail
+  explicitly; an unset selection remains `legacy-v3`.
+- Propagated the selected backend through direct interactive/print/JSON/RPC
+  startup, `auto` and `quick` headless routing, headless RPC children and resume
+  catalog lookup, and web host/bridge children. The standalone
+  `@gsd/agent-modes` entry remains legacy-only.
+- Existing files remain format-bound. A v4 file opened under the v3 default
+  fails without rewrite or replacement; v4 resume requires the same explicit
+  selection. `--session-backend legacy-v3` or removing the public environment
+  variable is the conversion-free rollback. No default cutover or automatic
+  migration was added.
+- The web launch audit found one legacy side effect at the new boundary:
+  `runWebCliBranch` previously migrated flat v3 files before backend selection.
+  Selection is now resolved first and that migration runs only for
+  `legacy-v3`; a focused test proves v4 web startup leaves the legacy file and
+  destination directory untouched.
+- Verification is green: parser/precedence/forwarding tests **52/52**; the
+  complete legacy-v3 versus harness-v4 print/JSON/RPC/headless/GSD lifecycle/
+  Assessment Gate matrix **12/12**; public create, environment, mismatch and
+  rollback E2E **2/2**; headless public propagation **1/1**; web selection and
+  v3 non-migration **19/19**; Herdr integration **30/30**; all workspace package
+  suites passed; `typecheck:extensions`, `build:core`, and `validate-pack`
+  passed, with the package reported installable and safe to publish.
+- Exact next task: commit and push this opt-in, build an immutable clean tarball,
+  deploy it only to `penglab:/srv/penglab`, verify the Linux native addon plus
+  public v4 create/reopen and legacy rollback from the installed binary, and
+  retain the previous remote prefix as rollback. After deployment, decide
+  whether optional P3.8 copy-only migration tooling is worth implementing;
+  do not change the default as part of that decision.
+
 ## 11. Working-session protocol
 
 For every Herdr session:

@@ -43,6 +43,47 @@ otherwise
 
 No fallback is permitted after an external launch may have started.
 
+## Root session format opt-in
+
+New root sessions remain `legacy-v3` by default. To opt a new session into the
+validated v4 harness, select it explicitly:
+
+```bash
+gsd --session-backend harness-v4
+```
+
+The same selection is available to automation and web-mode child processes:
+
+```bash
+GSD_SESSION_BACKEND=harness-v4 gsd
+gsd headless --session-backend harness-v4 auto
+gsd --session-backend harness-v4 --web /path/to/project
+```
+
+Only `legacy-v3` and `harness-v4` are accepted. CLI selection takes precedence
+over `GSD_SESSION_BACKEND`; the internal validation variable
+`GSD_INTERNAL_SESSION_BACKEND` remains a lower-precedence test seam. An unknown
+value fails startup instead of silently selecting a different format.
+
+Session files remain format-bound. Opening a v4 file with the v3 backend (or a
+v3 file with the v4 backend) fails without rewriting the file or creating an
+empty replacement. Use the same backend when reopening or continuing a
+session, for example:
+
+```bash
+gsd --session-backend harness-v4 --continue
+gsd --session-backend harness-v4 --session /absolute/path/to/session.jsonl
+```
+
+Rollback affects only subsequent selections and requires no data conversion:
+
+```bash
+gsd --session-backend legacy-v3
+unset GSD_SESSION_BACKEND
+```
+
+There is no automatic migration and the deployed default has not changed.
+
 ## Fixed v1 worker policy
 
 The current version deliberately keeps worker tuning out of the public

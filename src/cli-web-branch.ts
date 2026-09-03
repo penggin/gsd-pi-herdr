@@ -3,6 +3,11 @@ import { join, resolve, sep } from 'node:path'
 import { agentDir as defaultAgentDir, sessionsDir as defaultSessionsDir, webPreferencesPath as defaultWebPreferencesPath } from './app-paths.js'
 import { getProjectSessionsDir } from './project-sessions.js'
 import { launchWebMode, stopWebMode, type WebModeLaunchStatus, type WebModeStopOptions, type WebModeStopResult } from './web-mode.js'
+import {
+  resolvePublicSessionBackend,
+  resolveSessionBackendSelection,
+  type SessionBackend,
+} from './session-runtime-selection.js'
 
 export interface CliFlags {
   mode?: 'text' | 'json' | 'rpc' | 'mcp'
@@ -13,6 +18,7 @@ export interface CliFlags {
   noSession?: boolean
   session?: string
   sessionDir?: string
+  sessionBackend?: SessionBackend
   worktree?: boolean | string
   model?: string
   thinking?: CliThinkingLevel
@@ -99,6 +105,8 @@ export function parseCliArgs(argv: string[]): CliFlags {
       flags.session = args[++i]
     } else if (arg === '--session-dir' && i + 1 < args.length) {
       flags.sessionDir = args[++i]
+    } else if (arg === '--session-backend' && i + 1 < args.length) {
+      flags.sessionBackend = resolvePublicSessionBackend(args[++i])
     } else if (arg === '--worktree' || arg === '-w') {
       // -w with no value → auto-generate name; -w <name> → use that name
       if (i + 1 < args.length && !args[i + 1].startsWith('-')) {
@@ -158,10 +166,11 @@ export function parseCliArgs(argv: string[]): CliFlags {
   return flags
 }
 
-export function buildHeadlessCommandArgs(flags: Pick<CliFlags, 'messages' | 'model' | 'thinking'>): string[] {
+export function buildHeadlessCommandArgs(flags: Pick<CliFlags, 'messages' | 'model' | 'thinking' | 'sessionBackend'>): string[] {
   const args: string[] = []
   if (flags.model) args.push('--model', flags.model)
   if (flags.thinking) args.push('--thinking', flags.thinking)
+  if (flags.sessionBackend) args.push('--session-backend', flags.sessionBackend)
   args.push(...flags.messages)
   return args
 }
@@ -352,7 +361,10 @@ export async function runWebCliBranch(
   const agentDir = deps.agentDir ?? defaultAgentDir
   const projectSessionsDir = getProjectSessionsDir(currentCwd, baseSessionsDir)
 
-  migrateLegacyFlatSessions(baseSessionsDir, projectSessionsDir)
+  const sessionBackend = resolveSessionBackendSelection({ backend: flags.sessionBackend })
+  if (sessionBackend === 'legacy-v3') {
+    migrateLegacyFlatSessions(baseSessionsDir, projectSessionsDir)
+  }
   const launchOptions: Parameters<typeof launchWebMode>[0] = {
     cwd: currentCwd,
     projectSessionsDir,
@@ -360,6 +372,7 @@ export async function runWebCliBranch(
     host: flags.webHost,
     port: flags.webPort,
     allowedOrigins: flags.webAllowedOrigins,
+    sessionBackend,
   }
   if (flags.webNoAuth !== undefined) {
     launchOptions.noAuth = flags.webNoAuth

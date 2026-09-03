@@ -101,6 +101,20 @@ herdr:
 
 Start GSD from a Herdr pane. `/herdr-doctor` verifies the environment and `/herdr-status` shows root and worker runtime state.
 
+Root sessions still default to the established `legacy-v3` format. The
+validated v4 session runtime is an explicit new-session opt-in:
+
+```bash
+gsd --session-backend harness-v4
+```
+
+Pass the same option when reopening that session. Use
+`--session-backend legacy-v3` (or omit the option when
+`GSD_SESSION_BACKEND` is unset) for immediate rollback; neither direction
+rewrites existing session files. See
+[`CONFIGURATION.md`](./docs/herdr-integration/CONFIGURATION.md#root-session-format-opt-in)
+for headless, web, and environment examples.
+
 ## Migrate From Older Installs
 
 Install the tarball and make sure its global bin directory precedes any older

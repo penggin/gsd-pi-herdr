@@ -2,7 +2,7 @@
 
 Date: 2026-09-03
 
-Status: P3.0–P3.4, P3.5a–P3.5b, P3.5c1–P3.5c10, and P3.6 complete; P3.7 live gate passed; no default v4 cutover
+Status: P3.0–P3.7 complete with an explicit v4 opt-in; legacy-v3 remains default
 
 Upstream reference: `refs/pi-upstream/v0.84.4`
 
@@ -415,6 +415,14 @@ detach/reattach, and append-only root restart under `harness-v4`. The bounded
 auditor returned `ready=true` with all ten required markers, positive usage,
 private artifacts, and no raw worker-pane JSON. This authorizes design of a
 public opt-in; it does not by itself authorize changing the default.
+
+Controlled selection result (2026-09-03): the root CLI now exposes
+`--session-backend legacy-v3|harness-v4`, with `GSD_SESSION_BACKEND` for
+automation. The value is propagated through headless/RPC and web launches;
+unknown values fail startup. Unset selection and explicit rollback remain
+`legacy-v3`. Existing session files stay format-bound and a mismatched open
+fails without rewrite, conversion, or empty-session fallback. No default
+cutover or automatic migration was added.
 
 ### P3.8 — Optional explicit migration tooling
 

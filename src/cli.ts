@@ -76,10 +76,11 @@ function loadRpcModeModule(): Promise<RpcModeModule> {
   return (rpcModeModulePromise ??= import('@gsd/agent-modes/modes/rpc/rpc-mode.js'))
 }
 
-function loadSelectedSessionRuntimeFactory() {
+function loadSelectedSessionRuntimeFactory(backend?: string) {
   return (sessionRuntimeFactoryPromise ??= createSelectedSessionRuntimeFactory({
     cwd: process.cwd(),
     sessionsRoot: sessionsDir,
+    backend,
   }))
 }
 
@@ -515,7 +516,7 @@ if (cliFlags.web || (cliFlags.messages[0] === 'web' && cliFlags.messages[1] !== 
 
 // `gsd sessions` — list past sessions and pick one to resume
 if (cliFlags.messages[0] === 'sessions') {
-  const sessionManagerRuntimeFactory = await loadSelectedSessionRuntimeFactory()
+  const sessionManagerRuntimeFactory = await loadSelectedSessionRuntimeFactory(cliFlags.sessionBackend)
   const { SettingsManager } = await loadPiCodingAgentModule()
   const cwd = process.cwd()
   const safePath = `--${cwd.replace(/^[/\\]/, '').replace(/[/\\:]/g, '-')}--`
@@ -699,7 +700,7 @@ const {
   AgentSessionRuntime,
   createAgentSession,
 } = await loadAgentCoreModule()
-const sessionManagerRuntimeFactory = await loadSelectedSessionRuntimeFactory()
+const sessionManagerRuntimeFactory = await loadSelectedSessionRuntimeFactory(cliFlags.sessionBackend)
 markStartup('loadPiCodingAgent')
 
 // Pi's tool bootstrap can mis-detect already-installed fd/rg on some systems

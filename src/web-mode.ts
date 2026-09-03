@@ -50,6 +50,8 @@ export interface WebModeLaunchOptions {
   allowedOrigins?: string[]
   /** Disable web bearer-token auth for externally protected deployments. */
   noAuth?: boolean
+  /** Public root-session backend selection; inherited by the bridge child. */
+  sessionBackend?: 'legacy-v3' | 'harness-v4'
 }
 
 export interface ResolvedWebHostBootstrap {
@@ -699,6 +701,7 @@ export async function launchWebMode(
     GSD_WEB_HOST_KIND: resolution.kind,
     ...(resolution.kind === 'source-dev' ? { NEXT_PUBLIC_GSD_DEV: '1' } : {}),
     ...(options.allowedOrigins?.length ? { GSD_WEB_ALLOWED_ORIGINS: options.allowedOrigins.join(',') } : {}),
+    ...(options.sessionBackend ? { GSD_SESSION_BACKEND: options.sessionBackend } : {}),
   }
   if (authToken) {
     env.GSD_WEB_AUTH_TOKEN = authToken

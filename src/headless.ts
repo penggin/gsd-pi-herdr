@@ -22,7 +22,11 @@ import type { SessionInfo } from '@gsd/pi-coding-agent'
 import { sessionsDir } from './app-paths.js'
 import { getProjectSessionsDir } from './project-sessions.js'
 import { loadAndValidateAnswerFile, AnswerInjector } from './headless-answers.js'
-import { createSelectedSessionRuntimeFactory } from './session-runtime-selection.js'
+import {
+  createSelectedSessionRuntimeFactory,
+  resolvePublicSessionBackend,
+  type SessionBackend,
+} from './session-runtime-selection.js'
 
 import {
   isTerminalNotification,
@@ -98,6 +102,7 @@ export interface HeadlessOptions {
   eventFilter?: Set<string>  // filter JSONL output to specific event types
   resumeSession?: string // session ID to resume (--resume <id>)
   bare?: boolean         // --bare: suppress CLAUDE.md/AGENTS.md, user skills, project preferences
+  sessionBackend?: SessionBackend // public new/open session format selection
 }
 
 const HEADLESS_CHAIN_AUTO_FLAG = '--headless-chain-auto'
@@ -260,6 +265,13 @@ export function parseHeadlessArgs(argv: string[]): HeadlessOptions {
         }
       } else if (arg === '--resume' && i + 1 < args.length) {
         options.resumeSession = args[++i]
+      } else if (arg === '--session-backend' && i + 1 < args.length) {
+        try {
+          options.sessionBackend = resolvePublicSessionBackend(args[++i])
+        } catch (error) {
+          process.stderr.write(`[headless] Error: ${error instanceof Error ? error.message : String(error)}\n`)
+          process.exit(1)
+        }
       } else if (arg === '--resume-wedge' && i + 1 < args.length) {
         // ADR-047 wedge acknowledgment: consume the id here so the bare value
         // positional cannot clobber the subcommand, then pass both through to
@@ -521,6 +533,9 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
   // Propagate --bare to the child process
   if (options.bare) {
     clientOptions.args = [...((clientOptions.args as string[]) || []), '--bare']
+  }
+  if (options.sessionBackend) {
+    clientOptions.args = [...((clientOptions.args as string[]) || []), '--session-backend', options.sessionBackend]
   }
 
   const client = new RpcClient(clientOptions)
@@ -1038,6 +1053,7 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
     const sessionRuntimeFactory = await createSelectedSessionRuntimeFactory({
       cwd: process.cwd(),
       sessionsRoot: sessionsDir,
+      backend: options.sessionBackend,
     })
     const sessions = await sessionRuntimeFactory.list({
       cwd: process.cwd(),

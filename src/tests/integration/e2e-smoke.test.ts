@@ -253,6 +253,72 @@ test("internal harness-v4 selector composes JSON no-session mode without a model
   assertNoCrashMarkers(stripAnsi(result.stdout + result.stderr));
 });
 
+test("public session backend opt-in creates v4, fails closed on format mismatch, and rolls back to v3", async (t) => {
+  const gsdHome = createTempDir("gsd-e2e-public-session-backend-");
+  const v4SessionDir = join(gsdHome, "v4-sessions");
+  t.after(() => rmSync(gsdHome, { recursive: true, force: true }));
+  const env = { GSD_HOME: gsdHome };
+
+  const createdV4 = await runGsd(
+    ["--mode", "json", "--session-backend", "harness-v4", "--session-dir", v4SessionDir],
+    30_000,
+    env,
+  );
+  assert.equal(createdV4.code, 0, createdV4.stderr);
+  const v4Files = readdirSync(v4SessionDir).filter((path) => path.endsWith(".jsonl"));
+  assert.equal(v4Files.length, 1);
+  const v4Path = join(v4SessionDir, v4Files[0]!);
+  assert.equal(JSON.parse(readFileSync(v4Path, "utf8").split("\n")[0]!).version, 4);
+
+  const mismatched = await runGsd(
+    ["--mode", "json", "--session", v4Path, "--session-dir", v4SessionDir],
+    30_000,
+    env,
+  );
+  assert.notEqual(mismatched.code, 0);
+  assert.match(stripAnsi(mismatched.stderr), /harness-v4 sessions are recognized but not readable/);
+  assert.deepEqual(readdirSync(v4SessionDir).filter((path) => path.endsWith(".jsonl")), v4Files);
+
+  const rollback = await runGsd(
+    ["--mode", "json", "--session-backend", "legacy-v3", "--no-session"],
+    30_000,
+    env,
+  );
+  assert.equal(rollback.code, 0, rollback.stderr);
+  const rollbackHeader = stripAnsi(rollback.stdout)
+    .split("\n")
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line) as Record<string, unknown>];
+      } catch {
+        return [];
+      }
+    })
+    .find((record) => record.type === "session");
+  assert.equal(rollbackHeader?.version, 3);
+});
+
+test("public session backend environment selection is strict", async (t) => {
+  const gsdHome = createTempDir("gsd-e2e-public-session-env-");
+  t.after(() => rmSync(gsdHome, { recursive: true, force: true }));
+
+  const selected = await runGsd(
+    ["--mode", "json", "--no-session"],
+    30_000,
+    { GSD_HOME: gsdHome, GSD_SESSION_BACKEND: "harness-v4" },
+  );
+  assert.equal(selected.code, 0, selected.stderr);
+  assert.match(stripAnsi(selected.stdout), /"version":4/);
+
+  const invalid = await runGsd(
+    ["--mode", "json", "--no-session"],
+    30_000,
+    { GSD_HOME: gsdHome, GSD_SESSION_BACKEND: "future-v5" },
+  );
+  assert.notEqual(invalid.code, 0);
+  assert.match(stripAnsi(invalid.stderr), /Unsupported GSD_SESSION_BACKEND: future-v5/);
+});
+
 test("internal harness-v4 JSON mode creates, opens, and continues one persisted session", async (t) => {
   const gsdHome = createTempDir("gsd-e2e-harness-v4-persisted-");
   t.after(() => rmSync(gsdHome, { recursive: true, force: true }));
