@@ -46,6 +46,7 @@ import type {
 	TurnLatencyVisibleKind,
 } from "../turn-latency.js";
 import type { SessionCapabilityAdapter } from "../session-capability-adapter.js";
+import type { SessionCapabilityMutation } from "../session-capability-adapter.js";
 
 /**
  * Internal surface shared by AgentSession submodule classes.
@@ -126,6 +127,8 @@ export interface AgentSessionHost {
 	markFirstStreamActivity(kind: string, data?: Record<string, unknown>): void;
 	markFirstVisibleTurnLatency(kind: TurnLatencyVisibleKind, data?: Record<string, unknown>): void;
 	finishTurnLatency(status: TurnLatencyStatus): void;
+	queueSessionMutation(mutation: SessionCapabilityMutation): void;
+	drainSessionMutations(): Promise<void>;
 	disconnectFromAgent(): void;
 	reconnectToAgent(): void;
 	isRetryableError(message: AssistantMessage): boolean;

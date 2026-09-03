@@ -46,8 +46,8 @@ export class AgentSessionNavigationModule {
 	constructor(readonly host: AgentSessionHost) {}
 
 	setSessionName(name: string): void {
-		this.host.sessionManager.appendSessionInfo(name);
-		this.host.emit({ type: "session_info_changed", name: this.host.sessionManager.getSessionName() });
+		this.host.queueSessionMutation((session) => session.appendSessionName(name));
+		this.host.emit({ type: "session_info_changed", name: name.trim() || undefined });
 	}
 
 	async settleCurrentTurnForSessionTransition(): Promise<void> {

@@ -248,7 +248,7 @@ export class AgentSessionExtensionsModule {
 					});
 				},
 				appendEntry: (customType, data) => {
-					this.host.sessionManager.appendCustomEntry(customType, data);
+					this.host.queueSessionMutation((session) => session.appendCustomEntry(customType, data));
 				},
 				setSessionName: (name) => {
 					this.host.setSessionName(name);
@@ -257,7 +257,7 @@ export class AgentSessionExtensionsModule {
 					return this.host.sessionManager.getSessionName();
 				},
 				setLabel: (entryId, label) => {
-					this.host.sessionManager.appendLabelChange(entryId, label);
+					this.host.queueSessionMutation((session) => session.appendLabel(entryId, label));
 				},
 				getActiveTools: () => this.host.getActiveToolNames(),
 				getAllTools: () => this.host.getAllTools(),

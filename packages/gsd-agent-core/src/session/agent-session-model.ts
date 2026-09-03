@@ -77,6 +77,7 @@ export class AgentSessionModelModule {
 
 		// Re-clamp thinking level for new model's capabilities
 		this.host.setThinkingLevel(thinkingLevel);
+		await this.host.drainSessionMutations();
 
 		await this.emitModelSelect(model, previousModel, "set");
 	}
@@ -111,6 +112,7 @@ export class AgentSessionModelModule {
 		// - Undefined scoped model thinking level inherits the current session preference
 		// setThinkingLevel clamps to model capabilities.
 		this.host.setThinkingLevel(thinkingLevel);
+		await this.host.drainSessionMutations();
 
 		await this.emitModelSelect(next.model, currentModel, "cycle");
 
@@ -136,6 +138,7 @@ export class AgentSessionModelModule {
 
 		// Re-clamp thinking level for new model's capabilities
 		this.host.setThinkingLevel(thinkingLevel);
+		await this.host.drainSessionMutations();
 
 		await this.emitModelSelect(nextModel, currentModel, "cycle");
 
@@ -153,7 +156,7 @@ export class AgentSessionModelModule {
 		this.host.agent.state.thinkingLevel = effectiveLevel;
 
 		if (isChanging) {
-			this.host.sessionManager.appendThinkingLevelChange(effectiveLevel);
+			this.host.queueSessionMutation((session) => session.appendThinkingLevelChange(effectiveLevel));
 			if (this.supportsThinking() || effectiveLevel !== "off") {
 				this.host.settingsManager.setDefaultThinkingLevel(effectiveLevel);
 			}

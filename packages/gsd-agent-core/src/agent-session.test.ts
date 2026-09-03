@@ -105,6 +105,7 @@ describe("AgentSessionEventsModule", () => {
     const host = {
       _extensionRunner: { emitMessageEnd: async () => undefined },
       _eventListeners: [],
+      drainSessionMutations: async () => {},
       sessionCapabilities: {
         appendMessage: async () => {
           await writeBlocked;
@@ -401,6 +402,7 @@ describe("AgentSessionPromptModule", () => {
 			},
 			flushPendingBashMessages: () => order.push("flush-bash"),
 			flushPendingCustomMessages: () => order.push("flush-custom"),
+			drainSessionMutations: async () => {},
 			_extensionRunner: {
 				emit: async (event: { type: string }) => order.push(`extension:${event.type}`),
 			},
@@ -432,6 +434,7 @@ describe("AgentSessionPromptModule", () => {
 			},
 			flushPendingBashMessages: () => {},
 			flushPendingCustomMessages: () => {},
+			drainSessionMutations: async () => {},
 			_extensionRunner: { emit: async (event: { type: string }) => events.push(`extension:${event.type}`) },
 			emit: (event: { type: string }) => events.push(`session:${event.type}`),
 		};
@@ -612,6 +615,7 @@ function makeModelModuleHost() {
       setDefaultModelAndProvider: (provider: string, id: string) => persistedModels.push([provider, id]),
     },
     setThinkingLevel: () => {},
+    drainSessionMutations: async () => {},
     _extensionRunner: { emit: async () => {} },
   };
 

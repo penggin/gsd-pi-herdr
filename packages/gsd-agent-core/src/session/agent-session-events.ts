@@ -58,6 +58,7 @@ export class AgentSessionEventsModule {
 
 		// Emit to extensions first
 		await this.emitExtensionEvent(event, agentEndWillRetry);
+		await this.host.drainSessionMutations();
 
 		// Notify all listeners
 		this.emit(event.type === "agent_end" ? { ...event, willRetry: agentEndWillRetry ?? false } : event);

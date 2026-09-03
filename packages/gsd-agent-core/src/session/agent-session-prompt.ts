@@ -40,6 +40,7 @@ export class AgentSessionPromptModule {
 			this.host.agent.latencyMark = previousLatencyMark;
 			await this.host.flushPendingBashMessages();
 			await this.host.flushPendingCustomMessages();
+			await this.host.drainSessionMutations();
 			await this.host._extensionRunner.emit({ type: "agent_settled" });
 			this.host.emit({ type: "agent_settled" });
 		}
@@ -244,6 +245,7 @@ export class AgentSessionPromptModule {
 			preflightResult?.(false);
 			throw error;
 		} finally {
+			await this.host.drainSessionMutations();
 			if (latencyStatus !== "completed" || !messages) {
 				this.host.finishTurnLatency(latencyStatus);
 			}
@@ -283,6 +285,7 @@ export class AgentSessionPromptModule {
 
 		try {
 			await command.handler(args, ctx);
+			await this.host.drainSessionMutations();
 			return true;
 		} catch (err) {
 			// Emit error via extension runner

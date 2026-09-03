@@ -2377,6 +2377,23 @@ this session does not merge, push, tag, or publish.
   in-memory semantics while registering durable Promises that the enclosing
   command/run boundary drains and surfaces; do not silently ignore rejections
   or introduce a second session writer.
+- Implemented the synchronous extension mutation bridge and recorded it as
+  ADR-H029. Legacy-v3 callbacks start their selected-backend operation
+  immediately; harness-v4 operations serialize. The bridge captures the first
+  failure and rethrows it exactly once at an awaited command, input, Agent-event,
+  prompt-settlement, or explicit drain boundary instead of emitting an
+  unhandled Promise rejection. It stores no session data itself.
+- Extension `appendEntry`, session-name, label, and thinking mutations now use
+  that bridge. Model switches drain the associated thinking write before their
+  selection event settles. Focused tests prove immediate legacy visibility,
+  one-time failure propagation, ordered v4 mutations, and the existing session
+  parity contract. The combined focused suite passes **27/27**, the agent-core
+  suite passes **152/152**, extension typecheck passes, and the complete core
+  build passes.
+- Exact next task: convert the remaining navigation read/write surfaces to the
+  capability contract, add a coherent snapshot for synchronous UI/extension
+  reads, and add an awaited disposal/replacement drain. Only after those paths
+  and CLI/headless parity pass may the AgentSession harness-v4 guard be removed.
 
 ## 11. Working-session protocol
 

@@ -465,3 +465,29 @@ characterized.
 Independent upstream correctness fixes may continue to land when they preserve
 the current session authority boundary and have focused regressions. They do not
 constitute or imply a session-format cutover.
+
+---
+
+## ADR-H029 — Drain synchronous extension mutations at awaited runtime boundaries
+
+**Status:** Accepted
+**Date:** 2026-09-03
+
+Existing Pi extensions use synchronous `appendEntry`, `setSessionName`,
+`setLabel`, and `setThinkingLevel` callbacks. Breaking those signatures would
+invalidate installed extensions, while ignoring the Promise from an
+asynchronous harness-v4 store would falsely report completion before durability
+and could lose or reorder mutations.
+
+The production session seam therefore owns a mutation drain, not a second
+writer. Legacy-v3 mutations begin immediately so established read-after-write
+behavior remains intact. Harness-v4 mutations are serialized through the one
+validated capability adapter. Failures are retained and rethrown when the
+enclosing extension command, input hook, Agent event, prompt settlement, or
+explicit lifecycle boundary drains the queue. No rejection may be silently
+discarded, and disposal/cutover cannot be enabled for v4 until every external
+entry point has such an awaited boundary.
+
+The drain does not make extension state authoritative and does not add a new
+session log. The selected session backend remains the only durability owner.
+GSD lifecycle state and Herdr runtime authority remain unchanged.

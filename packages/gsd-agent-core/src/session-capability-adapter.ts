@@ -69,6 +69,61 @@ export interface SessionCapabilityAdapter {
 	moveTo(entryId: string | null, summary?: SessionMoveSummary): Promise<string | undefined>;
 }
 
+export type SessionCapabilityMutation = (adapter: SessionCapabilityAdapter) => Promise<unknown>;
+
+/**
+ * Bridges legacy synchronous extension callbacks to the awaitable session
+ * contract. Legacy mutations begin immediately to preserve established read-
+ * after-write behavior. Harness-v4 mutations are serialized because their
+ * parent/leaf checks are asynchronous. Every queued failure is retained until
+ * an enclosing runtime boundary drains and surfaces it.
+ */
+export class SessionCapabilityMutationDrain {
+	private tail: Promise<void> = Promise.resolve();
+	private firstFailure: unknown;
+
+	constructor(private readonly adapter: SessionCapabilityAdapter) {}
+
+	enqueue(mutation: SessionCapabilityMutation): void {
+		const recordFailure = (error: unknown): void => {
+			if (this.firstFailure === undefined) this.firstFailure = error;
+		};
+
+		if (this.adapter.format === "legacy-v3") {
+			let pending: Promise<unknown>;
+			try {
+				pending = mutation(this.adapter);
+			} catch (error) {
+				recordFailure(error);
+				return;
+			}
+			this.tail = Promise.all([this.tail, pending.catch(recordFailure)]).then(() => undefined);
+			return;
+		}
+
+		this.tail = this.tail.then(async () => {
+			try {
+				await mutation(this.adapter);
+			} catch (error) {
+				recordFailure(error);
+			}
+		});
+	}
+
+	async drain(): Promise<void> {
+		while (true) {
+			const observed = this.tail;
+			await observed;
+			if (observed === this.tail) break;
+		}
+		if (this.firstFailure !== undefined) {
+			const failure = this.firstFailure;
+			this.firstFailure = undefined;
+			throw failure;
+		}
+	}
+}
+
 function legacyMetadata(manager: SessionManager): SessionCapabilityMetadata {
 	const header = manager.getHeader();
 	if (!header) throw new Error("Legacy-v3 capability adapter requires a session header");

@@ -11,6 +11,7 @@ import {
 	createHarnessV4SessionCapabilityAdapter,
 	LegacyV3SessionCapabilityAdapter,
 	type SessionCapabilityAdapter,
+	SessionCapabilityMutationDrain,
 } from "./session-capability-adapter.js";
 
 function normalizeValue(value: unknown): unknown {
@@ -95,5 +96,44 @@ describe("session capability adapter", () => {
 			createHarnessV4SessionCapabilityAdapter(incompatible),
 			/Harness-v4 capability adapter requires harness-v4 session metadata/,
 		);
+	});
+
+	it("keeps legacy mutations immediately visible and surfaces queued failures at drain", async () => {
+		const manager = SessionManager.inMemory("/workspace");
+		const adapter = new LegacyV3SessionCapabilityAdapter(manager);
+		const mutations = new SessionCapabilityMutationDrain(adapter);
+
+		mutations.enqueue((session) => session.appendSessionName("Immediate"));
+		assert.equal(manager.getSessionName(), "Immediate");
+		mutations.enqueue(async () => {
+			throw new Error("durability failed");
+		});
+
+		await assert.rejects(mutations.drain(), /durability failed/);
+		await mutations.drain();
+	});
+
+	it("serializes harness-v4 mutations before drain settles", async () => {
+		const order: string[] = [];
+		let releaseFirst: (() => void) | undefined;
+		const firstBlocked = new Promise<void>((resolve) => {
+			releaseFirst = resolve;
+		});
+		const adapter = { format: "harness-v4" } as SessionCapabilityAdapter;
+		const mutations = new SessionCapabilityMutationDrain(adapter);
+
+		mutations.enqueue(async () => {
+			order.push("first-start");
+			await firstBlocked;
+			order.push("first-end");
+		});
+		mutations.enqueue(async () => {
+			order.push("second");
+		});
+		await Promise.resolve();
+		assert.deepEqual(order, ["first-start"]);
+		releaseFirst?.();
+		await mutations.drain();
+		assert.deepEqual(order, ["first-start", "first-end", "second"]);
 	});
 });

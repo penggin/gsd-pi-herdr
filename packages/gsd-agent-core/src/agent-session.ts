@@ -84,6 +84,8 @@ import { AgentSessionBashModule } from "./session/agent-session-bash.js";
 import {
 	LegacyV3SessionCapabilityAdapter,
 	type SessionCapabilityAdapter,
+	type SessionCapabilityMutation,
+	SessionCapabilityMutationDrain,
 } from "./session-capability-adapter.js";
 
 export type {
@@ -103,6 +105,7 @@ export class AgentSession implements AgentSessionHost {
 	readonly agent: Agent;
 	readonly sessionManager: SessionManager;
 	readonly sessionCapabilities: SessionCapabilityAdapter;
+	private readonly sessionMutationDrain: SessionCapabilityMutationDrain;
 	readonly settingsManager: SettingsManager;
 
 	_scopedModels: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>;
@@ -176,6 +179,7 @@ export class AgentSession implements AgentSessionHost {
 				"Harness-v4 AgentSession selection is not available until every persistence and extension path is awaitable",
 			);
 		}
+		this.sessionMutationDrain = new SessionCapabilityMutationDrain(this.sessionCapabilities);
 		this.settingsManager = config.settingsManager;
 		this._scopedModels = config.scopedModels ?? [];
 		this._resourceLoader = config.resourceLoader;
@@ -195,6 +199,14 @@ export class AgentSession implements AgentSessionHost {
 			activeToolNames: this._initialActiveToolNames,
 			includeAllExtensionTools: true,
 		});
+	}
+
+	queueSessionMutation(mutation: SessionCapabilityMutation): void {
+		this.sessionMutationDrain.enqueue(mutation);
+	}
+
+	drainSessionMutations(): Promise<void> {
+		return this.sessionMutationDrain.drain();
 	}
 
 	private async compactBeforeNextAssistantResponse(context: AgentContext): Promise<AgentContext> {
