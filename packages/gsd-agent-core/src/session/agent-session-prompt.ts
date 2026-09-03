@@ -38,7 +38,7 @@ export class AgentSessionPromptModule {
 			}
 		} finally {
 			this.host.agent.latencyMark = previousLatencyMark;
-			this.host.flushPendingBashMessages();
+			await this.host.flushPendingBashMessages();
 			await this.host.flushPendingCustomMessages();
 			await this.host._extensionRunner.emit({ type: "agent_settled" });
 			this.host.emit({ type: "agent_settled" });
@@ -151,7 +151,7 @@ export class AgentSessionPromptModule {
 			}
 
 			// Flush messages retained from a previously interrupted/settled run.
-			this.host.flushPendingBashMessages();
+			await this.host.flushPendingBashMessages();
 			await this.host.flushPendingCustomMessages();
 			this.host.markTurnLatency("session.pending_bash_flushed");
 

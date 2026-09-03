@@ -29,14 +29,18 @@ export class AgentSessionBashModule {
 				},
 			);
 
-			this.recordBashResult(command, result, options);
+			await this.recordBashResult(command, result, options);
 			return result;
 		} finally {
 			this.host._bashAbortController = undefined;
 		}
 	}
 
-	recordBashResult(command: string, result: BashResult, options?: { excludeFromContext?: boolean }): void {
+	async recordBashResult(
+		command: string,
+		result: BashResult,
+		options?: { excludeFromContext?: boolean },
+	): Promise<void> {
 		const bashMessage: BashExecutionMessage = {
 			role: "bashExecution",
 			command,
@@ -58,7 +62,7 @@ export class AgentSessionBashModule {
 			this.host.agent.state.messages.push(bashMessage);
 
 			// Save to session
-			this.host.sessionManager.appendMessage(bashMessage);
+			await this.host.sessionCapabilities.appendMessage(bashMessage);
 		}
 	}
 
@@ -74,7 +78,7 @@ export class AgentSessionBashModule {
 		return this.host._pendingBashMessages.length > 0;
 	}
 
-	flushPendingBashMessages(): void {
+	async flushPendingBashMessages(): Promise<void> {
 		if (this.host._pendingBashMessages.length === 0) return;
 
 		for (const bashMessage of this.host._pendingBashMessages) {
@@ -82,7 +86,7 @@ export class AgentSessionBashModule {
 			this.host.agent.state.messages.push(bashMessage);
 
 			// Save to session
-			this.host.sessionManager.appendMessage(bashMessage);
+			await this.host.sessionCapabilities.appendMessage(bashMessage);
 		}
 
 		this.host._pendingBashMessages = [];

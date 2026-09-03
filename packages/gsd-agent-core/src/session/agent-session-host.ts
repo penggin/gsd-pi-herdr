@@ -132,7 +132,7 @@ export interface AgentSessionHost {
 	canPrepareRetry(message: AssistantMessage): boolean;
 	runAgentPrompt(messages: AgentMessage | AgentMessage[]): Promise<void>;
 	handlePostAgentRun(): Promise<boolean>;
-	flushPendingBashMessages(): void;
+	flushPendingBashMessages(): Promise<void>;
 	flushPendingCustomMessages(): Promise<void>;
 	checkCompaction(assistantMessage: AssistantMessage, skipAbortedCheck?: boolean): Promise<boolean>;
 	getCompactionRequestAuth(model: Model<any>): Promise<{ apiKey?: string; headers?: Record<string, string> }>;
@@ -183,7 +183,7 @@ export interface AgentSessionHost {
 		onChunk?: (chunk: string) => void,
 		options?: { excludeFromContext?: boolean; operations?: BashOperations; loginShell?: boolean },
 	): Promise<BashResult>;
-	recordBashResult(command: string, result: BashResult, options?: { excludeFromContext?: boolean }): void;
+	recordBashResult(command: string, result: BashResult, options?: { excludeFromContext?: boolean }): Promise<void>;
 	getContextUsage(): ContextUsage | undefined;
 	getToolDefinition(name: string): ToolDefinition | undefined;
 	getAllTools(): ToolInfo[];

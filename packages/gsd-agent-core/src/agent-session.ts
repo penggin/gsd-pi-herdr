@@ -386,8 +386,8 @@ export class AgentSession implements AgentSessionHost {
 		return this._prompt.handlePostAgentRun();
 	}
 
-	flushPendingBashMessages(): void {
-		this._bash.flushPendingBashMessages();
+	flushPendingBashMessages(): Promise<void> {
+		return this._bash.flushPendingBashMessages();
 	}
 
 	flushPendingCustomMessages(): Promise<void> {
@@ -605,8 +605,12 @@ export class AgentSession implements AgentSessionHost {
 		return this._bash.executeBash(command, onChunk, options);
 	}
 
-	recordBashResult(command: string, result: BashResult, options?: { excludeFromContext?: boolean }): void {
-		this._bash.recordBashResult(command, result, options);
+	recordBashResult(
+		command: string,
+		result: BashResult,
+		options?: { excludeFromContext?: boolean },
+	): Promise<void> {
+		return this._bash.recordBashResult(command, result, options);
 	}
 
 	abortBash(): void {

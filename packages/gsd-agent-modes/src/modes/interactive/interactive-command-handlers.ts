@@ -208,7 +208,7 @@ export async function handleBashCommand(host: InteractiveModeDelegateHost, comma
 			);
 
 			// Record the result in session
-			host.session.recordBashResult(command, result, { excludeFromContext });
+			await host.session.recordBashResult(command, result, { excludeFromContext });
 			host.bashComponent = undefined;
 			host.ui.requestRender();
 			return;

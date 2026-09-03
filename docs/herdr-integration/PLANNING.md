@@ -2352,12 +2352,31 @@ this session does not merge, push, tag, or publish.
   AgentSession with a harness-v4 adapter throws until synchronous bash,
   thinking, navigation, and extension-context persistence have a truthful
   compatibility contract. The focused combined suite passes **24/24**, the
-  agent-core suite passes **149/149**, agent-core build and extension typecheck
+  then-current agent-core suite passed **149/149**, agent-core build and extension typecheck
   pass, and `git diff --check` passes.
 - Exact next task: implement P3.5c2b for the remaining synchronous surfaces,
   beginning with bash flush and thinking-level mutation boundaries, then
   navigation and extension callbacks. Do not remove the harness-v4 fail-closed
   guard until all mutation paths and CLI/headless characterization pass.
+- P3.5c2b now routes idle and deferred bash-result persistence through the same
+  awaited capability adapter. `executeBash`, the interactive handled-command
+  path, and prompt preflight/settlement await the write or flush; a focused test
+  proves `recordBashResult` cannot settle while its durable append is blocked.
+  The expanded focused suite passes **25/25**, the agent-core suite passes
+  **150/150**, extension typecheck passes, and the complete core build passes
+  after the public Promise contract change.
+- The inherited pi-coding-agent source harness remains non-authoritative for
+  this fork because it mixes `@earendil-works/pi-agent-core`'s old Agent with
+  the split `@gsd/agent-core` session; its focused bash file reproduced two
+  30-second event-settlement timeouts and one incomplete transcript assertion.
+  This is consistent with the previously recorded source-harness limitation;
+  production builds and the downstream agent-core tests use the awaited GSD
+  Agent implementation.
+- Exact next task: design the synchronous extension mutation bridge for
+  thinking, label/name, and custom-entry calls. It must expose immediate
+  in-memory semantics while registering durable Promises that the enclosing
+  command/run boundary drains and surfaces; do not silently ignore rejections
+  or introduce a second session writer.
 
 ## 11. Working-session protocol
 

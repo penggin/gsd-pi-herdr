@@ -226,10 +226,12 @@ legacy-compatible entry facade. The AgentSession constructor explicitly rejects
 a harness-v4 capability adapter while synchronous bash, thinking, navigation,
 and extension callback paths remain.
 
-P3.5c2b must move those remaining synchronous surfaces onto an explicit
-compatibility contract without fire-and-forget writes. The only production
-backend remains `legacy-v3`; no v4 preference, write cutover, or automatic
-migration is exposed.
+P3.5c2b has also converted direct and deferred bash-result persistence to an
+awaitable public operation; interactive command handling and prompt settlement
+now wait for it. Thinking, navigation, and extension callback mutations still
+need an explicit compatibility contract without fire-and-forget writes. The
+only production backend remains `legacy-v3`; no v4 preference, write cutover,
+or automatic migration is exposed.
 
 ### P3.6 — Integrate GSD, web, and Assessment Gates
 

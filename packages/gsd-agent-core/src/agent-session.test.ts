@@ -9,6 +9,7 @@ import { AgentSessionNavigationModule } from "./session/agent-session-navigation
 import { AgentSessionPromptModule } from "./session/agent-session-prompt.ts";
 import { AgentSessionCompactionModule } from "./session/agent-session-compaction.ts";
 import { AgentSessionEventsModule } from "./session/agent-session-events.ts";
+import { AgentSessionBashModule } from "./session/agent-session-bash.ts";
 import { createRetryingSummaryCompleteFn } from "./session/summarization-retry.ts";
 
 describe("parseSkillBlock", () => {
@@ -119,6 +120,43 @@ describe("AgentSessionEventsModule", () => {
 
     await Promise.resolve();
     assert.equal(settled, false);
+    releaseWrite?.();
+    await pending;
+    assert.equal(settled, true);
+  });
+});
+
+describe("AgentSessionBashModule", () => {
+  test("awaits idle bash persistence before recordBashResult settles", async () => {
+    let releaseWrite: (() => void) | undefined;
+    let settled = false;
+    const writeBlocked = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+    const host = {
+      isStreaming: false,
+      agent: { state: { messages: [] as unknown[] } },
+      sessionCapabilities: {
+        appendMessage: async () => {
+          await writeBlocked;
+          return "bash-entry";
+        },
+      },
+    };
+    const pending = new AgentSessionBashModule(host as any)
+      .recordBashResult("echo ok", {
+        output: "ok",
+        exitCode: 0,
+        cancelled: false,
+        truncated: false,
+      })
+      .then(() => {
+        settled = true;
+      });
+
+    await Promise.resolve();
+    assert.equal(settled, false);
+    assert.equal(host.agent.state.messages.length, 1);
     releaseWrite?.();
     await pending;
     assert.equal(settled, true);
