@@ -200,8 +200,9 @@ test("startAutoDetached reports failures asynchronously (#3733)", () => {
     "startAutoDetached should launch startAuto without awaiting it and keep the process alive",
   );
   assert.ok(
-    autoSrc.includes("ctx.ui.notify(`Auto-start failed: ${message}`, \"error\")"),
-    "startAutoDetached should surface async startup failures to the user",
+    autoSrc.includes("const liveCtx = s.cmdCtx ?? ctx") &&
+      autoSrc.includes("liveCtx.ui.notify(`Auto-start failed: ${message}`, \"error\")"),
+    "startAutoDetached should surface async startup failures through the live session context",
   );
 });
 
@@ -218,8 +219,8 @@ test("failed auto-start always clears leaked s.active so later /gsd auto is not 
   const detachedBody = autoSrc.slice(detachedIdx, autoSrc.indexOf("\n}", detachedIdx));
   assert.ok(
     detachedBody.includes("if (s.active)") &&
-      detachedBody.includes("cleanupAfterLoopExit(ctx)"),
-    "startAutoDetached failure handler must run cleanupAfterLoopExit when auto-mode is still active",
+      detachedBody.includes("cleanupAfterLoopExit(liveCtx)"),
+    "startAutoDetached failure handler must clean up through the live session context when auto-mode is still active",
   );
 
   // 2. bootstrapAutoSession sets s.active = true before some bail-outs return

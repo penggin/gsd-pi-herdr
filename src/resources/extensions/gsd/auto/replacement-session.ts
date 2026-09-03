@@ -31,5 +31,6 @@ export function bindAutoReplacementSession(
 ): { ctx: AutoReplacementContext; pi: ExtensionAPI } {
   s.cmdCtx = freshCtx;
   const pi = Object.assign(freshCtx, { events: previousPi.events }) as unknown as ExtensionAPI;
+  s.orchestration?.rebindSessionContext?.(freshCtx, pi);
   return { ctx: freshCtx, pi };
 }

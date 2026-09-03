@@ -10,6 +10,7 @@
 
 import type { GSDState } from "../types.js";
 import type { RecoveryFailureKind } from "../recovery-classification.js";
+import type { ExtensionAPI, ExtensionContext } from "@gsd/pi-coding-agent";
 
 export interface AutoSessionContext {
   basePath: string;
@@ -101,6 +102,8 @@ export type AutoAdvanceResult =
   | { kind: "error"; reason: string };
 
 export interface AutoOrchestrationModule {
+  /** Rebind session-scoped host handles after Pi replaces the active session. */
+  rebindSessionContext?(ctx: ExtensionContext, pi: ExtensionAPI): void;
   start(sessionContext: AutoSessionContext): Promise<AutoAdvanceResult>;
   advance(): Promise<AutoAdvanceResult>;
   recheckWedge?(wedge: WedgeRecheckTarget): Promise<WedgeRecheckResult>;

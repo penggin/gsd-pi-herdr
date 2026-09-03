@@ -673,7 +673,11 @@ export function startAutoDetached(
 ): void {
   void withDetachedAutoKeepalive(startAuto(ctx, pi, base, verboseMode, options)).catch(async (err) => {
     const message = getErrorMessage(err);
-    ctx.ui.notify(`Auto-start failed: ${message}`, "error");
+    // A successful newSession invalidates the command context that launched
+    // this detached coroutine. Report and clean up through the latest context
+    // instead of masking the original failure with another stale-context error.
+    const liveCtx = s.cmdCtx ?? ctx;
+    liveCtx.ui.notify(`Auto-start failed: ${message}`, "error");
     logWarning("engine", `auto start error: ${message}`, { file: "auto.ts" });
     debugLog("auto-start-failed", { error: message });
     // Backstop cleanup (#1235): if startAuto threw after auto-mode was activated
@@ -683,7 +687,7 @@ export function startAutoDetached(
     // the leaked activation here so a failed start is always recoverable.
     if (s.active) {
       try {
-        await cleanupAfterLoopExit(ctx);
+        await cleanupAfterLoopExit(liveCtx);
       } catch (cleanupErr) {
         logWarning(
           "engine",

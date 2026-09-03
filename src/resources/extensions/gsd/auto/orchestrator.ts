@@ -428,8 +428,8 @@ export class AutoOrchestrator implements AutoOrchestrationModule {
     phase: "idle",
     transitionCount: 0,
   };
-  private readonly ctx: ExtensionContext;
-  private readonly pi: ExtensionAPI;
+  private ctx: ExtensionContext;
+  private pi: ExtensionAPI;
   private readonly dispatchBasePath: string;
   private readonly runtimeBasePath: string;
   private readonly s: AutoSession;
@@ -459,6 +459,16 @@ export class AutoOrchestrator implements AutoOrchestrationModule {
     this.runtimeBasePath = context.runtimeBasePath;
     this.s = context.session;
     this.flowId = `auto-orchestrator-${Date.now()}`;
+  }
+
+  /**
+   * Pi invalidates both host objects that belonged to the previous session.
+   * Keep orchestration state, but replace the session-scoped handles before
+   * any post-unit verification or closeout work resumes.
+   */
+  public rebindSessionContext(ctx: ExtensionContext, pi: ExtensionAPI): void {
+    this.ctx = ctx;
+    this.pi = pi;
   }
 
   /**
