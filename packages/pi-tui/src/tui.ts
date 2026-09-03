@@ -562,7 +562,13 @@ export class TUI extends Container {
 			() => this.requestRender(),
 		);
 		this.terminal.hideCursor();
-		this.queryCellSize();
+		try {
+			this.queryCellSize();
+		} catch (error) {
+			if (!isStdoutClosedError(error)) throw error;
+			this.notifyOutputClosed();
+			return;
+		}
 		this.requestRender();
 	}
 

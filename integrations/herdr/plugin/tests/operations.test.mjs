@@ -118,8 +118,8 @@ test("scans private worker artifacts and formats bounded diagnostics", (t) => {
   const records = scanWorkers(runtimeRoot);
   assert.equal(records.length, 1);
   assert.equal(records[0].state.status, "completed");
-  assert.match(formatStatus(records, snapshot()), /completed=1/);
-  assert.match(formatStatus(records, snapshot()), /pane missing/);
+  assert.match(formatStatus(records, snapshot(), {}), /completed=1/);
+  assert.match(formatStatus(records, snapshot(), {}), /pane missing/);
 });
 
 test("startup reconciliation marks an active worker orphaned when its pane vanished", async (t) => {

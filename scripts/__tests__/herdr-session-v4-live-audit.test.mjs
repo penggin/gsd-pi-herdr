@@ -85,7 +85,7 @@ function validMatrix() {
   ];
   return {
     workers,
-    rootAssistantText: `${markers.join(" ")} Subagent was aborted Herdr worker pane disappeared before final exit evidence was produced`,
+    rootAssistantText: `${markers.join(" ")} Operation aborted Herdr worker pane disappeared before final exit evidence was produced`,
     finalSnapshot: { version: "0.8.2", protocol: 20, panes: ["w1:p2", "w1:p3", "w1:p4", "w1:p5"].map((pane_id) => ({ pane_id })) },
     paneReads: ["w1:p2", "w1:p3", "w1:p4", "w1:p5"].map((paneId) => ({ paneId, text: "[12:00:00] working\n[12:00:01] turn settled\n" })),
   };
@@ -133,11 +133,11 @@ test("requires stable detach topology and append-only v4 root replacement", () =
     tabs: [{ tab_id: "w1:t1" }],
     panes: [{ pane_id: "w1:p1" }, { pane_id: "w1:p2" }],
   };
-  const before = { schemaVersion: 1, rootSessionId: "session-1", rootRuntimeId: herdrRootRuntimeId("session-1"), instanceId: "instance-1", paneId: "w1:p1", startedAt: new Date(1_000).toISOString() };
-  const after = { ...before, instanceId: "instance-2", startedAt: new Date(2_000).toISOString() };
+  const before = { schemaVersion: 1, rootSessionId: "session-1", rootRuntimeId: herdrRootRuntimeId("session-1"), instanceId: "instance-1", workspaceId: "w1", tabId: "w1:t1", paneId: "w1:p1", startedAt: new Date(1_000).toISOString() };
+  const after = { ...before, instanceId: "instance-2", tabId: "w1:t2", paneId: "w1:p3", startedAt: new Date(2_000).toISOString() };
   const pass = evaluateP3V4Continuity({
     rootSessionId: "session-1",
-    rootPaneId: "w1:p1",
+    rootPaneId: "w1:p3",
     detachBefore: snapshot,
     detachAfter: structuredClone(snapshot),
     restartBeforeRecord: before,
@@ -149,7 +149,7 @@ test("requires stable detach topology and append-only v4 root replacement", () =
 
   const fail = evaluateP3V4Continuity({
     rootSessionId: "session-1",
-    rootPaneId: "w1:p1",
+    rootPaneId: "w1:p3",
     detachBefore: snapshot,
     detachAfter: { ...snapshot, panes: [{ pane_id: "w1:p1" }] },
     restartBeforeRecord: before,
@@ -161,6 +161,7 @@ test("requires stable detach topology and append-only v4 root replacement", () =
   assert.match(fail.errors.join("\n"), /changed stable paneIds/);
   assert.match(fail.errors.join("\n"), /did not replace the root instance lease/);
   assert.match(fail.errors.join("\n"), /not an append-only extension/);
+  assert.match(fail.errors.join("\n"), /does not match the live Herdr root pane identity/);
 });
 
 test("audits a complete owner-only v4 session and worker artifact tree without copying message text", (t) => {

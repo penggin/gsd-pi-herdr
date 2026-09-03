@@ -648,3 +648,33 @@ the `gsd sessions` picker consume that same result. The legacy environment name
 is a compatibility alias, not a second store. This removes the custom-directory
 cutover blocker but does not authorize public harness-v4 selection; the real
 Herdr matrix remains required.
+
+---
+
+## ADR-H036 — Separate root interrupt UX from worker interrupt delivery
+
+**Status:** Accepted
+**Date:** 2026-09-03
+
+The interactive root requests cancellation through the configured
+`app.interrupt` action, whose default key is Escape. Root Ctrl-C remains the
+editor-clear/double-press-quit action and must not be described as the normal
+subagent cancellation key. Once the root AbortSignal fires, HerdrBackend still
+targets only the leased worker pane with `ctrl+c`; the private runner then owns
+the bounded SIGINT → SIGTERM → SIGKILL process-group escalation and immutable
+abort evidence.
+
+The two semantic layers have intentionally distinct visible errors. The outer
+TUI records `Operation aborted` when it cancels the whole turn before a tool
+promise can settle. The common subagent runner retains `Subagent was aborted`
+for direct callers that observe the backend result. Live evidence may accept
+either parent surface only when it is correlated with `state=aborted`, settled
+ownership, immutable `exit.json` with `aborted=true`, and no surviving process
+group.
+
+A root-process restart may also replace the Herdr pane that owns the root lease.
+Detach evidence is therefore bound to the pre-restart root record, while the
+post-restart record must match the currently live root pane. Session ID and
+derived runtime ID remain stable; instance ID and start time must change. This
+clarification changes neither GSD/Herdr authority nor the deployed legacy-v3
+default.

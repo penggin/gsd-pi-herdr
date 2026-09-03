@@ -103,7 +103,9 @@ export function evaluateP3V4WorkerMatrix({ workers, rootAssistantText, finalSnap
     (worker) => worker.exit?.aborted === true && worker.state.status === "aborted" && worker.ownership.status === "settled",
   );
   if (aborted.length < 1) errors.push("No canonical aborted worker artifact was found");
-  if (!rootAssistantText.includes("Subagent was aborted")) errors.push("Root v4 session is missing canonical Subagent was aborted semantics");
+  if (!rootAssistantText.includes("Subagent was aborted") && !rootAssistantText.includes("Operation aborted")) {
+    errors.push("Root v4 session is missing canonical parent abort semantics");
+  }
 
   const livePaneIds = new Set(snapshot?.panes?.map((pane) => pane?.pane_id).filter(Boolean) ?? []);
   const paneLoss = workers.filter(
@@ -166,8 +168,9 @@ export function evaluateP3V4Continuity({
         errors.push(`Detach/reattach changed stable ${kind}`);
       }
     }
-    if (!beforeSnapshot.paneIds.includes(rootPaneId) || !afterSnapshot.paneIds.includes(rootPaneId)) {
-      errors.push("Root pane is not present in both detach/reattach snapshots");
+    const detachedRootPaneId = restartBeforeRecord?.paneId;
+    if (!beforeSnapshot.paneIds.includes(detachedRootPaneId) || !afterSnapshot.paneIds.includes(detachedRootPaneId)) {
+      errors.push("Pre-restart root pane is not present in both detach/reattach snapshots");
     }
   }
 
@@ -175,8 +178,11 @@ export function evaluateP3V4Continuity({
     if (record?.schemaVersion !== 1 || record?.rootSessionId !== rootSessionId || record?.rootRuntimeId !== expectedRuntimeId || typeof record?.instanceId !== "string" || !record.instanceId) {
       errors.push(`${label} root record does not match the v4 session identity`);
     }
-    if (record?.paneId !== rootPaneId) errors.push(`${label} root record does not retain the Herdr root pane identity`);
+    if (typeof record?.paneId !== "string" || !record.paneId || typeof record?.workspaceId !== "string" || !record.workspaceId || typeof record?.tabId !== "string" || !record.tabId) {
+      errors.push(`${label} root record does not retain a complete Herdr root pane identity`);
+    }
   }
+  if (restartAfterRecord?.paneId !== rootPaneId) errors.push("Post-restart root record does not match the live Herdr root pane identity");
   if (restartBeforeRecord?.rootRuntimeId !== restartAfterRecord?.rootRuntimeId) {
     errors.push("Root restart changed the derived runtime identity");
   }
@@ -311,7 +317,7 @@ function readV4SessionEvidence(path) {
   if (header?.kind !== "header" || header?.version !== 4 || typeof header?.id !== "string" || !header.id) {
     throw new Error("Root session is not a version-4 harness session");
   }
-  return { header, assistantText: collectAssistantText(lines) };
+  return { header, assistantText: collectRootSignalText(lines) };
 }
 
 function readWorkers(rootDir, rootRuntimeId) {
@@ -379,6 +385,18 @@ function collectAssistantText(values) {
     const message = value?.kind === "entry" && value?.type === "message" ? value.message : value?.message;
     if (message?.role !== "assistant") continue;
     collectTextParts(message.content, text);
+  }
+  const combined = text.join("\n");
+  return combined.length > MAX_SIGNAL_TEXT_BYTES ? combined.slice(-MAX_SIGNAL_TEXT_BYTES) : combined;
+}
+
+function collectRootSignalText(values) {
+  const text = [];
+  for (const value of values) {
+    const message = value?.kind === "entry" && value?.type === "message" ? value.message : value?.message;
+    if (message?.role === "assistant" || (message?.role === "toolResult" && message?.toolName === "subagent")) {
+      collectTextParts(message.content, text);
+    }
   }
   const combined = text.join("\n");
   return combined.length > MAX_SIGNAL_TEXT_BYTES ? combined.slice(-MAX_SIGNAL_TEXT_BYTES) : combined;

@@ -2,7 +2,7 @@
 
 Date: 2026-09-03
 
-Status: P3.0–P3.4, P3.5a–P3.5b, P3.5c1–P3.5c10, and P3.6 complete; P3.7 live validation ready; no v4 cutover
+Status: P3.0–P3.4, P3.5a–P3.5b, P3.5c1–P3.5c10, and P3.6 complete; P3.7 live gate passed; no default v4 cutover
 
 Upstream reference: `refs/pi-upstream/v0.84.4`
 
@@ -407,6 +407,14 @@ legacy-v3 and the v4 selector remains internal-only.
 
 Exit: real Herdr evidence passes; existing v3 sessions open without rewrite;
 rollback to `legacy-v3` requires no data conversion.
+
+Live gate result (2026-09-03): passed on macOS arm64 with Herdr v0.8.2 and
+protocol 20. The public subagent path passed single, chain affinity, five-way
+parallel queueing at four panes, cancellation, pane loss/recovery,
+detach/reattach, and append-only root restart under `harness-v4`. The bounded
+auditor returned `ready=true` with all ten required markers, positive usage,
+private artifacts, and no raw worker-pane JSON. This authorizes design of a
+public opt-in; it does not by itself authorize changing the default.
 
 ### P3.8 — Optional explicit migration tooling
 

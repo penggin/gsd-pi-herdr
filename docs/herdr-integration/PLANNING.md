@@ -2716,6 +2716,80 @@ this session does not merge, push, tag, or publish.
   loss, detach/reattach, and restart. Record the worker artifacts and semantic
   parent results before any opt-in or cutover decision.
 
+### 2026-09-03 — P3.7 real Herdr session-v4 live gate
+
+- Ran the clean `a0f8e6b5f8b47ea573ff798044b895722c0ccf50` candidate from an
+  actual Herdr-managed root on macOS arm64. Both pane-local preflight and the
+  packaged capability check passed Herdr **0.8.2**, protocol **20**, and the
+  internal `harness-v4` selector. Evidence is owner-only under
+  `/private/tmp/gsd-session-v4-p37-20260903T042518Z/evidence`; it contains no
+  copied provider credentials.
+- The public subagent path passed all required success markers. Root session
+  `01a06584-3a36-7260-a546-9cabe21f8c64` maps to runtime
+  `root-0d6966f203f5df44c7fe`. Single dispatch
+  `dispatch-17d5b6de80bb1ed62e26` relayed `P3V4_SINGLE_OK` with positive common
+  usage. Chain dispatch `dispatch-667cc68c766d74d5577e` reused pane `w9:p3`
+  and one affinity key for both steps, with step two launching only after step
+  one's exit evidence.
+- Five-way parallel dispatch `dispatch-58951fbbb97eed5a433b` completed 5/5
+  across exactly four panes. The active snapshot at
+  `snapshots/05-parallel-active.json` shows the four-pane cap; the fifth launch
+  reused `w9:p5` only after an earlier child settled. No duplicate artifact or
+  marker exists.
+- Cancellation with the configured root `app.interrupt` action (Escape)
+  targeted worker `w9:p4` for dispatch `dispatch-7998257fe3d345686672`.
+  Bounded process-group escalation completed in about 10 seconds with
+  `aborted=true`, `signal=SIGKILL`, settled ownership, and no surviving worker
+  or descendant. An initial operator attempt used root Ctrl-C and correctly did
+  not create an AbortSignal because Ctrl-C is the editor-clear binding; that
+  worker was then safely interrupted directly and its evidence was retained.
+  ADR-H036 and the runbook now distinguish outer TUI `Operation aborted` from
+  the common runner's direct `Subagent was aborted` mapping.
+- Pane-loss dispatch `dispatch-acd1981428b0f599fe47` was closed only after its
+  `state.json` reported the `sleep 300 & wait` tool in pane `w9:p3`. The parent
+  failed explicitly within the bounded probe window, the process tree vanished,
+  no `exit.json` was fabricated, and ownership is retained as orphaned. Recovery
+  dispatch `dispatch-02f6e6439e7c31af9131` then returned
+  `P3V4_AFTER_PANE_LOSS_OK` without Local fallback.
+- A separate test client detached and reattached to named session `default`
+  while a 45-second worker remained active. Snapshots
+  `10-before-detach.json` and `11-after-reattach.json` have identical workspace,
+  tab, and pane ID sets. Root restart changed the lease from instance
+  `d1fbba85-6b7b-4762-a1f9-f186b6831ab2`/pane `w9:p2` to
+  `c0a88124-9535-47c1-b8fe-36c8c2690d23`/pane `w9:p7` while preserving the
+  session/runtime IDs. The resumed JSONL is a strict append-only extension
+  (**104,511 → 113,246 bytes**) and `dispatch-cabcb71db957108264ae` returned
+  `P3V4_AFTER_RESTART_OK` through the same worker tab.
+- The corrected bounded postflight audit is green: `ready=true`, required
+  markers **10/10**, workers **14**, canonical aborted artifacts **2**,
+  pane-loss artifacts **1**, parallel panes **4**, pane captures **3**, and
+  detach/restart continuity both true. Every consumed `env.json` is absent,
+  directories/files are `0700`/`0600`, positive usage exists for every success,
+  and captured worker panes contain no raw JSON events or token deltas.
+- The live environment exposed two validation-harness/runtime edge cases and
+  both are fixed with regression coverage. Herdr identity inherited by the
+  test runner could accidentally scope a fixture-only operations test, so that
+  test now supplies an explicit empty environment. Separately, inline-image
+  capability probing could throw `EIO` from `queryCellSize()` before the TUI
+  render loop installed its normal dead-output handling; `TUI.start()` now
+  treats that startup write failure as an output-closed event while preserving
+  all other errors.
+- Final verification for this closeout: the focused v4 auditor suite passed
+  **5/5**, `pnpm run typecheck:extensions` passed,
+  `pnpm run test:herdr-integration` passed **30/30**,
+  `pnpm run test:changed:src` reported no focused source tests,
+  `pnpm run test:packages` passed across all workspace packages,
+  `pnpm run build:core` passed, and
+  `NPM_CONFIG_USERCONFIG=/dev/null pnpm run validate-pack` completed with
+  `Package is installable. Safe to publish.`
+- P3.7's live gate is complete. The deployed/default backend remains
+  `legacy-v3`; no automatic migration or default cutover is authorized yet.
+  Exact next task: add a documented public **new-session opt-in** for
+  `harness-v4` with strict enum validation and explicit legacy rollback, while
+  keeping existing sessions format-bound and `legacy-v3` as the default. Run
+  the complete two-backend CLI/GSD/web/Herdr regression matrix before deploying
+  that opt-in to `penglab:/srv/penglab`.
+
 ## 11. Working-session protocol
 
 For every Herdr session:

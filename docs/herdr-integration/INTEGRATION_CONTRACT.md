@@ -293,6 +293,12 @@ Worker child environment construction must strip parent copies of Herdr-managed 
 
 Parent cancellation targets one specific backend execution.
 
+At the interactive root, cancellation is requested with the configured
+`app.interrupt` action (Escape by default). Root Ctrl-C is not the cancellation
+contract; it is the current editor-clear/quit binding. The outer TUI may persist
+`Operation aborted` for the cancelled turn while the common subagent runner
+uses `Subagent was aborted` when its backend result is observed directly.
+
 Herdr initial strategy:
 
 1. send `ctrl+c` to the worker pane;
