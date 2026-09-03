@@ -3196,6 +3196,21 @@ this session does not merge, push, tag, or publish.
   feature branch, and require a successful live Actions run with retained audit
   evidence. After that, implement no speculative provider work: only verified
   Codex/GLM failures or a freshness alert should trigger the next runtime slice.
+- Committed and pushed the automation as `06b73d40e`. GitHub rejected a manual
+  dispatch from the feature ref with HTTP 404 because a newly introduced
+  `workflow_dispatch` workflow is not registered until its file exists on the
+  default branch. The branch was not merged or copied to `main` to bypass that
+  repository boundary.
+- As the strongest pre-merge substitute, loaded the committed YAML and executed
+  its exact audit and summary shell bodies locally. The live upstream query
+  exited 0, wrote `exit-code=0`, and produced a job summary containing the
+  current stable/main identities and `Status: current`. YAML policy tests also
+  prove the always-run summary/artifact steps and read-only permissions.
+- Exact next task after normal review/merge: manually dispatch
+  `pi-upstream-audit.yml` once from the default branch and confirm the 30-day
+  `pi-upstream-audit-<run-id>` artifact. Until then the code and command are
+  complete but the GitHub-hosted execution gate remains explicitly pending;
+  no `main` merge or upstream mutation is authorized by this session.
 
 ## 11. Working-session protocol
 
