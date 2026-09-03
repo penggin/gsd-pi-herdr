@@ -2674,11 +2674,13 @@ this session does not merge, push, tag, or publish.
   chain affinity/pane reuse and five-task/four-pane queue timing, correlates a
   canonical abort and missing pane, and rejects raw JSON in captured pane text.
   Reports omit transcript text and hash affinity keys. Focused audit coverage
-  passes **4/4** and the full Herdr integration suite passes **29/29**;
+  passes **5/5** and the full Herdr integration suite passes **30/30**;
   extension typecheck, `build:core`, installable package validation, packaged
   script inventory, and `git diff --check` pass. Worker/directory/pane capture
-  counts and all reads are explicitly bounded. Paired detach/reattach and root-
-  restart records remain mandatory separate evidence.
+  counts and all reads are explicitly bounded. The manifest now also requires
+  and validates stable detach/reattach topology, root lease replacement, and a
+  strict append-only v4 session across restart; original captures remain
+  mandatory review evidence.
 - Packaged clean auditor commit
   `dcd926a715f9a78f1b0cf6cce7ed3867e3e4a220` as
   `/srv/penglab/gsd-runs/artifacts/gsd-pi-herdr-1.16.2-dcd926a7-93cdd2ca.tgz`

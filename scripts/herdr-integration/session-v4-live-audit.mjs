@@ -34,6 +34,7 @@ const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const PRIVATE_FILE_MODE = 0o600;
 const PRIVATE_DIRECTORY_MODE = 0o700;
 const MAX_JSON_BYTES = 1024 * 1024;
+const MAX_SESSION_BYTES = 64 * 1024 * 1024;
 const MAX_TAIL_BYTES = 16 * 1024 * 1024;
 const MAX_TAIL_LINES = 50_000;
 const MAX_SIGNAL_TEXT_BYTES = 2 * 1024 * 1024;
@@ -143,6 +144,59 @@ export function evaluateP3V4WorkerMatrix({ workers, rootAssistantText, finalSnap
   };
 }
 
+export function evaluateP3V4Continuity({
+  rootSessionId,
+  rootPaneId,
+  detachBefore,
+  detachAfter,
+  restartBeforeRecord,
+  restartAfterRecord,
+  sessionBefore,
+  sessionAfter,
+}) {
+  const errors = [];
+  const expectedRuntimeId = herdrRootRuntimeId(rootSessionId);
+  const beforeSnapshot = validatedSnapshot(detachBefore, "pre-detach");
+  const afterSnapshot = validatedSnapshot(detachAfter, "post-reattach");
+  if (!beforeSnapshot.valid) errors.push(beforeSnapshot.error);
+  if (!afterSnapshot.valid) errors.push(afterSnapshot.error);
+  if (beforeSnapshot.valid && afterSnapshot.valid) {
+    for (const kind of ["workspaceIds", "tabIds", "paneIds"]) {
+      if (!sameStrings(beforeSnapshot[kind], afterSnapshot[kind])) {
+        errors.push(`Detach/reattach changed stable ${kind}`);
+      }
+    }
+    if (!beforeSnapshot.paneIds.includes(rootPaneId) || !afterSnapshot.paneIds.includes(rootPaneId)) {
+      errors.push("Root pane is not present in both detach/reattach snapshots");
+    }
+  }
+
+  for (const [label, record] of [["pre-restart", restartBeforeRecord], ["post-restart", restartAfterRecord]]) {
+    if (record?.schemaVersion !== 1 || record?.rootSessionId !== rootSessionId || record?.rootRuntimeId !== expectedRuntimeId || typeof record?.instanceId !== "string" || !record.instanceId) {
+      errors.push(`${label} root record does not match the v4 session identity`);
+    }
+    if (record?.paneId !== rootPaneId) errors.push(`${label} root record does not retain the Herdr root pane identity`);
+  }
+  if (restartBeforeRecord?.rootRuntimeId !== restartAfterRecord?.rootRuntimeId) {
+    errors.push("Root restart changed the derived runtime identity");
+  }
+  if (restartBeforeRecord?.instanceId === restartAfterRecord?.instanceId) {
+    errors.push("Root restart did not replace the root instance lease");
+  }
+  if (!(Date.parse(restartAfterRecord?.startedAt) > Date.parse(restartBeforeRecord?.startedAt))) {
+    errors.push("Post-restart root record does not have a later start time");
+  }
+  if (sessionAfter.length <= sessionBefore.length || !sessionAfter.subarray(0, sessionBefore.length).equals(sessionBefore)) {
+    errors.push("Resumed v4 session is not an append-only extension of the pre-restart file");
+  }
+  return {
+    ready: errors.length === 0,
+    errors,
+    detachStable: beforeSnapshot.valid && afterSnapshot.valid && errors.every((error) => !error.startsWith("Detach/") && !error.startsWith("Root pane")),
+    restartStable: errors.every((error) => !error.startsWith("Root restart") && !error.startsWith("Post-restart") && !error.startsWith("Resumed") && !error.startsWith("pre-restart") && !error.startsWith("post-restart")),
+  };
+}
+
 export function auditSessionV4LiveEvidence(manifest) {
   validateManifest(manifest);
   const sessionPath = resolve(manifest.rootSessionFile);
@@ -158,7 +212,7 @@ export function auditSessionV4LiveEvidence(manifest) {
     throw new Error("Root runtime record does not match the v4 session header");
   }
   const workers = readWorkers(rootDir, rootRuntimeId);
-  const finalSnapshot = readJsonFileBounded(resolve(manifest.finalSnapshotFile), "final Herdr snapshot");
+  const finalSnapshot = readPrivateJson(resolve(manifest.finalSnapshotFile), "final Herdr snapshot");
   const paneReads = manifest.paneReads.map((item) => ({
     paneId: item.paneId,
     text: readPrivateText(resolve(item.path), `pane capture ${item.paneId}`, MAX_PANE_CAPTURE_BYTES),
@@ -169,10 +223,35 @@ export function auditSessionV4LiveEvidence(manifest) {
     finalSnapshot,
     paneReads,
   });
+  const detachBefore = readPrivateJson(resolve(manifest.detachSnapshots.before), "pre-detach snapshot");
+  const detachAfter = readPrivateJson(resolve(manifest.detachSnapshots.after), "post-reattach snapshot");
+  const restartBeforeRecord = readPrivateJson(resolve(manifest.restart.rootRecordBefore), "pre-restart root record");
+  const restartAfterRecord = readPrivateJson(resolve(manifest.restart.rootRecordAfter), "post-restart root record");
+  const sessionBefore = readPrivateBuffer(resolve(manifest.restart.sessionBefore), "pre-restart v4 session", MAX_SESSION_BYTES);
+  const sessionAfter = readPrivateBuffer(resolve(manifest.restart.sessionAfter), "post-restart v4 session", MAX_SESSION_BYTES);
+  const liveSession = readPrivateBuffer(sessionPath, "root v4 session", MAX_SESSION_BYTES);
+  const continuity = evaluateP3V4Continuity({
+    rootSessionId: session.header.id,
+    rootPaneId: rootRecord.paneId,
+    detachBefore,
+    detachAfter,
+    restartBeforeRecord,
+    restartAfterRecord,
+    sessionBefore,
+    sessionAfter,
+  });
+  if (!liveSession.equals(sessionAfter)) continuity.errors.push("Post-restart session capture does not match the audited live v4 session");
+  continuity.ready = continuity.errors.length === 0;
   return {
     schemaVersion: 1,
     auditedAt: new Date().toISOString(),
-    ...evaluation,
+    ready: evaluation.ready && continuity.ready,
+    errors: [...evaluation.errors, ...continuity.errors],
+    counts: evaluation.counts,
+    continuity: {
+      detachStable: continuity.detachStable,
+      restartStable: continuity.restartStable && liveSession.equals(sessionAfter),
+    },
     root: {
       sessionId: session.header.id,
       runtimeId: rootRuntimeId,
@@ -209,6 +288,18 @@ function validateManifest(manifest) {
     }
     if (paneIds.has(item.paneId)) throw new Error(`Duplicate paneReads paneId: ${item.paneId}`);
     paneIds.add(item.paneId);
+  }
+  if (!manifest.detachSnapshots || typeof manifest.detachSnapshots !== "object") throw new Error("detachSnapshots is required");
+  for (const key of ["before", "after"]) {
+    if (typeof manifest.detachSnapshots[key] !== "string" || !isAbsolute(manifest.detachSnapshots[key])) {
+      throw new Error(`detachSnapshots.${key} must be an absolute path`);
+    }
+  }
+  if (!manifest.restart || typeof manifest.restart !== "object") throw new Error("restart evidence is required");
+  for (const key of ["rootRecordBefore", "rootRecordAfter", "sessionBefore", "sessionAfter"]) {
+    if (typeof manifest.restart[key] !== "string" || !isAbsolute(manifest.restart[key])) {
+      throw new Error(`restart.${key} must be an absolute path`);
+    }
   }
 }
 
@@ -313,6 +404,27 @@ function snapshotValue(value) {
   return value?.result?.snapshot ?? value?.snapshot ?? value?.result?.result?.snapshot ?? value;
 }
 
+function validatedSnapshot(value, label) {
+  const snapshot = snapshotValue(value);
+  if (snapshot?.version !== "0.8.2" || snapshot?.protocol !== 20 || !Array.isArray(snapshot?.workspaces) || !Array.isArray(snapshot?.tabs) || !Array.isArray(snapshot?.panes)) {
+    return { valid: false, error: `${label} snapshot must be Herdr v0.8.2/protocol 20 with workspace, tab, and pane arrays` };
+  }
+  return {
+    valid: true,
+    workspaceIds: uniqueSorted(snapshot.workspaces.map((item) => item?.workspace_id).filter(Boolean)),
+    tabIds: uniqueSorted(snapshot.tabs.map((item) => item?.tab_id).filter(Boolean)),
+    paneIds: uniqueSorted(snapshot.panes.map((item) => item?.pane_id).filter(Boolean)),
+  };
+}
+
+function uniqueSorted(values) {
+  return [...new Set(values)].sort();
+}
+
+function sameStrings(left, right) {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
 function safeDirectories(parent) {
   assertPrivateDirectory(parent, "artifact directory");
   const result = [];
@@ -373,6 +485,13 @@ function readPrivateText(path, label, maximumBytes) {
   const stat = lstatSync(path);
   if (stat.size > maximumBytes) throw new Error(`${label} exceeds ${maximumBytes} bytes`);
   return readFileSync(path, "utf8");
+}
+
+function readPrivateBuffer(path, label, maximumBytes) {
+  assertPrivateFile(path, label);
+  const stat = lstatSync(path);
+  if (stat.size > maximumBytes) throw new Error(`${label} exceeds ${maximumBytes} bytes`);
+  return readFileSync(path);
 }
 
 function assertPrivateFile(path, label) {

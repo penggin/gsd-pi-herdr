@@ -390,8 +390,9 @@ legacy-v3 and the v4 selector remains internal-only.
 - Run `pnpm run herdr:session-v4-live-audit -- --manifest <path>` after the
   worker matrix. The bounded auditor validates v4/root identity, private
   artifacts, exact semantic markers, usage, affinity reuse, four-pane queueing,
-  cancellation, pane loss, and raw-pane suppression without copying transcript
-  content. Detach and root-restart captures remain separately required.
+  cancellation, pane loss, raw-pane suppression, stable detach topology, root
+  lease replacement, and append-only v4 restart without copying transcript
+  content. Original captures remain required for operator review.
 - Run `pnpm run herdr:session-v4-live-preflight` from the candidate root pane
   before dispatching work. The preflight fails closed outside Herdr, from a
   child agent, when the internal v4 selector is absent, when inherited/current

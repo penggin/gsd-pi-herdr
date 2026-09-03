@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   auditSessionV4LiveEvidence,
+  evaluateP3V4Continuity,
   evaluateP3V4WorkerMatrix,
   herdrRootRuntimeId,
   P3_V4_MARKERS,
@@ -124,6 +125,44 @@ test("rejects duplicate semantics, early fifth launch, raw pane JSON, and missin
   assert.match(result.errors.join("\n"), /Final Herdr snapshot must be v0\.8\.2\/protocol 20/);
 });
 
+test("requires stable detach topology and append-only v4 root replacement", () => {
+  const snapshot = {
+    version: "0.8.2",
+    protocol: 20,
+    workspaces: [{ workspace_id: "w1" }],
+    tabs: [{ tab_id: "w1:t1" }],
+    panes: [{ pane_id: "w1:p1" }, { pane_id: "w1:p2" }],
+  };
+  const before = { schemaVersion: 1, rootSessionId: "session-1", rootRuntimeId: herdrRootRuntimeId("session-1"), instanceId: "instance-1", paneId: "w1:p1", startedAt: new Date(1_000).toISOString() };
+  const after = { ...before, instanceId: "instance-2", startedAt: new Date(2_000).toISOString() };
+  const pass = evaluateP3V4Continuity({
+    rootSessionId: "session-1",
+    rootPaneId: "w1:p1",
+    detachBefore: snapshot,
+    detachAfter: structuredClone(snapshot),
+    restartBeforeRecord: before,
+    restartAfterRecord: after,
+    sessionBefore: Buffer.from("before\n"),
+    sessionAfter: Buffer.from("before\nafter\n"),
+  });
+  assert.equal(pass.ready, true, pass.errors.join("\n"));
+
+  const fail = evaluateP3V4Continuity({
+    rootSessionId: "session-1",
+    rootPaneId: "w1:p1",
+    detachBefore: snapshot,
+    detachAfter: { ...snapshot, panes: [{ pane_id: "w1:p1" }] },
+    restartBeforeRecord: before,
+    restartAfterRecord: before,
+    sessionBefore: Buffer.from("before\n"),
+    sessionAfter: Buffer.from("rewritten\n"),
+  });
+  assert.equal(fail.ready, false);
+  assert.match(fail.errors.join("\n"), /changed stable paneIds/);
+  assert.match(fail.errors.join("\n"), /did not replace the root instance lease/);
+  assert.match(fail.errors.join("\n"), /not an append-only extension/);
+});
+
 test("audits a complete owner-only v4 session and worker artifact tree without copying message text", (t) => {
   const temporary = mkdtempSync(join(tmpdir(), "gsd-p37-live-audit-"));
   t.after(() => rmSync(temporary, { recursive: true, force: true }));
@@ -135,21 +174,32 @@ test("audits a complete owner-only v4 session and worker artifact tree without c
   privateDirectory(rootDir);
   privateDirectory(evidence);
   const matrix = validMatrix();
-  const rootSessionFile = join(evidence, "root-session.jsonl");
-  privateFile(rootSessionFile, [
-    JSON.stringify({ kind: "header", version: 4, id: sessionId, createdAt: 1, cwd: "/tmp/project" }),
+  const headerLine = JSON.stringify({ kind: "header", version: 4, id: sessionId, createdAt: 1, cwd: "/tmp/project" });
+  const beforeRestartContent = `${headerLine}\n${JSON.stringify({
+    kind: "entry",
+    seq: 1,
+    lane: "main",
+    type: "message",
+    id: "message-before",
+    parentId: null,
+    timestamp: 2,
+    message: { role: "assistant", content: [{ type: "text", text: P3_V4_MARKERS.single }], timestamp: 2 },
+  })}\n`;
+  const afterRestartContent = beforeRestartContent + [
     JSON.stringify({
       kind: "entry",
-      seq: 1,
+      seq: 2,
       lane: "main",
       type: "message",
       id: "message-1",
-      parentId: null,
-      timestamp: 2,
-      message: { role: "assistant", content: [{ type: "text", text: matrix.rootAssistantText }], timestamp: 2 },
+      parentId: "message-before",
+      timestamp: 3,
+      message: { role: "assistant", content: [{ type: "text", text: matrix.rootAssistantText }], timestamp: 3 },
     }),
-  ].join("\n") + "\n");
-  privateFile(join(rootDir, "root.json"), JSON.stringify({
+  ].join("\n") + "\n";
+  const rootSessionFile = join(evidence, "root-session.jsonl");
+  privateFile(rootSessionFile, afterRestartContent);
+  const rootRecord = {
     schemaVersion: 1,
     rootRuntimeId: runtimeId,
     rootSessionId: sessionId,
@@ -161,12 +211,28 @@ test("audits a complete owner-only v4 session and worker artifact tree without c
     workspaceId: "w1",
     cwd: "/tmp/project",
     status: "active",
-    startedAt: new Date(1).toISOString(),
-    updatedAt: new Date(2).toISOString(),
-  }));
+    startedAt: new Date(1_000).toISOString(),
+    updatedAt: new Date(2_000).toISOString(),
+  };
+  privateFile(join(rootDir, "root.json"), JSON.stringify({ ...rootRecord, instanceId: "instance-2", startedAt: new Date(3_000).toISOString() }));
   for (const worker of matrix.workers) writeWorker(rootDir, runtimeId, worker);
   const finalSnapshotFile = join(evidence, "snapshot.json");
-  writeFileSync(finalSnapshotFile, JSON.stringify(matrix.finalSnapshot));
+  matrix.finalSnapshot.workspaces = [{ workspace_id: "w1" }];
+  matrix.finalSnapshot.tabs = [{ tab_id: "w1:t1" }, { tab_id: "w1:t2" }];
+  matrix.finalSnapshot.panes.push({ pane_id: "w1:p1" });
+  privateFile(finalSnapshotFile, JSON.stringify(matrix.finalSnapshot));
+  const detachBefore = join(evidence, "detach-before.json");
+  const detachAfter = join(evidence, "detach-after.json");
+  privateFile(detachBefore, JSON.stringify(matrix.finalSnapshot));
+  privateFile(detachAfter, JSON.stringify(matrix.finalSnapshot));
+  const rootRecordBefore = join(evidence, "root-before.json");
+  const rootRecordAfter = join(evidence, "root-after.json");
+  privateFile(rootRecordBefore, JSON.stringify(rootRecord));
+  privateFile(rootRecordAfter, JSON.stringify({ ...rootRecord, instanceId: "instance-2", startedAt: new Date(3_000).toISOString() }));
+  const sessionBefore = join(evidence, "session-before.jsonl");
+  const sessionAfter = join(evidence, "session-after.jsonl");
+  privateFile(sessionBefore, beforeRestartContent);
+  privateFile(sessionAfter, afterRestartContent);
   const paneReads = matrix.paneReads.map((item) => {
     const path = join(evidence, `${item.paneId.replaceAll(":", "-")}.txt`);
     privateFile(path, item.text);
@@ -178,6 +244,8 @@ test("audits a complete owner-only v4 session and worker artifact tree without c
     rootSessionFile,
     finalSnapshotFile,
     paneReads,
+    detachSnapshots: { before: detachBefore, after: detachAfter },
+    restart: { rootRecordBefore, rootRecordAfter, sessionBefore, sessionAfter },
   });
   assert.equal(result.ready, true, result.errors.join("\n"));
   assert.equal(result.root.backend, "harness-v4");
