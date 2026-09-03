@@ -3236,6 +3236,28 @@ this session does not merge, push, tag, or publish.
   runtime is healthy and requires no reinstall for the documentation/CI-only
   freshness changes.
 
+### 2026-09-03 — Noninteractive SSH runtime repair
+
+- Reproduced an installation usability failure on `penglab`: interactive shell
+  setup made `gsd` visible, but both a direct SSH command and `bash -lc` lacked
+  Node, so the installed `#!/usr/bin/env node` launcher exited 127. The stable
+  toolchain PATH existed only after `.bashrc`'s noninteractive early return.
+- Preserved `/home/penglab/.bashrc.pre-gsd-remote-path-20260903`, then added one
+  idempotently marked PATH export before the early return. It exposes only the
+  stable `/srv/penglab/gsd-runs/toolchains/bin` and existing user-local bin;
+  no credential, command output, or service startup was added to shell init.
+- Direct `ssh penglab 'node --version; gsd --version'` and `bash -lc` now both
+  resolve the managed Node v22.19.0 and GSD v1.16.2 and exit 0. Existing Herdr,
+  GSD, OpenCodex, and project service processes were not restarted.
+- Updated the operations runbook with this noninteractive shebang/PATH contract,
+  atomic-link rule, and bounded probe cleanup requirement. Also removed its
+  obsolete prohibition on read-only upstream fetches so it matches the current
+  repository policy; upstream mutation remains prohibited without explicit
+  user authority.
+- Exact next task: no runtime reinstall is needed. Preserve this PATH invariant
+  on future toolchain rotations and continue to gate new product work on a
+  concrete Codex/GLM/Herdr failure or the automated upstream freshness signal.
+
 ## 11. Working-session protocol
 
 For every Herdr session:

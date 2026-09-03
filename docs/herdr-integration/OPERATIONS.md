@@ -8,8 +8,11 @@
 
 ## Repository impact workflow
 
-Normal work uses this repository only. Do not add or fetch an original-project
-remote. Compare the downstream integration base to the candidate checkout:
+Normal runtime, CI, install, and release work uses this downstream repository
+only. Read-only upstream research, ref queries, fetches, and source comparisons
+are permitted; never push to or otherwise mutate an upstream source project
+unless the user explicitly authorizes that external action. Compare the
+downstream integration base to the candidate checkout:
 
 ```bash
 pnpm run herdr:repository-impact -- \
@@ -35,6 +38,28 @@ pnpm run test:unit
 Run narrower tests during active development, then the appropriate upstream verification commands before integration.
 
 Herdr integration E2E needs a supported Herdr binary and should use isolated named sessions/workspaces so tests do not mutate a developer's normal Herdr state.
+
+## Remote SSH runtime path
+
+Remote automation must not depend on an interactive version-manager hook. Both
+the `gsd` launcher and the Node binary required by its `#!/usr/bin/env node`
+shebang must be available before a noninteractive shell's early return.
+
+For an immutable toolchain rooted outside the home directory, prepend its
+stable `bin` directory near the top of the remote shell startup file, before
+the usual `case $- ... return` block. Keep the previous file as a recoverable
+backup and make the edit idempotent. Verify both shell modes:
+
+```bash
+ssh <host> 'command -v node && command -v gsd && node --version && gsd --version'
+ssh <host> "bash -lc 'command -v node && command -v gsd && gsd --version'"
+```
+
+Deployment and smoke commands should still use explicit immutable paths while
+changing the shared link. Only after the candidate passes should the stable
+`bin` links move atomically. Live probes need a bounded timeout or cancellation
+path and must close listeners and remove their exact temporary files before the
+remote shell exits; never clean an ambiguous GSD worker as if it were a probe.
 
 ## Herdr capability preflight
 
