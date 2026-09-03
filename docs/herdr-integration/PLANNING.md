@@ -2982,6 +2982,23 @@ this session does not merge, push, tag, or publish.
   risk is limited to platforms where both junction creation and recursive copy
   are unavailable; the existing fail-closed startup diagnostic remains in
   force for that case.
+- Committed and pushed the repair as
+  `d3a4868c1f4660630d08c624e98289a5c26be144`. The clean remote artifact is
+  `/srv/penglab/gsd-runs/artifacts/gsd-pi-herdr-1.16.2-d3a4868c-79eeb73d.tgz`
+  (`sha256:79eeb73da179eceef0b74375bcc6ac0e92e32b13aaae3ed6908d27e0783bf497`),
+  installed at immutable prefix
+  `/srv/penglab/gsd-runs/toolchains/gsd-pi-herdr-1.16.2-d3a4868c-79eeb73d`.
+- Remote validation began from a global `--ignore-scripts` install with both
+  `@gsd/native` and `@opengsd/contracts` absent. Without invoking
+  `link-workspace-packages.cjs`, the first public `gsd --build-info` reported
+  `GSD repaired 10 internal package link(s) on first run`; all ten symlinks and
+  all three `@opengsd/*` entries were then present. Build identity is the exact
+  clean commit, the Linux x64 addon reports 98 exports, and the installed
+  external-engine policy smoke remains green.
+- Shared remote `gsd` and `gsd-mcp-server` links now target this prefix. The
+  preceding `d720ea88-043e9bd6` and `53dc2f2a-d75b4f67` installations remain
+  intact for rollback. No running process was killed or restarted and no local
+  global installation changed.
 - Exact next task: extract the remaining loop, pending/deferred gate, queue,
   planning, worktree, and context-depth decisions into one shared
   pre-execution evaluator. Consume it from native `tool_call` and external SDK
