@@ -92,6 +92,7 @@
     "herdr:repository-impact": "node scripts/herdr-integration/upstream-impact.mjs",
     "herdr:capability-check": "node scripts/herdr-integration/capability-check.mjs",
     "herdr:session-v4-live-preflight": "node scripts/herdr-integration/session-v4-live-preflight.mjs",
+    "herdr:session-v4-live-audit": "node scripts/herdr-integration/session-v4-live-audit.mjs",
     "herdr:release-stamp": "node scripts/herdr-integration/release-stamp.mjs",
     "test:packages": "pnpm run test:compile && pnpm run test:packages:compiled",
     "test:packages:compiled": "node scripts/run-package-tests.cjs",

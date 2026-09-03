@@ -2668,6 +2668,17 @@ this session does not merge, push, tag, or publish.
   checks, and final promotion gates. Partial or manually asserted results are
   explicitly non-promotable. This standardizes the still-unrun live evidence;
   it does not mark P3.7 complete or change the legacy-v3 default.
+- Added a bounded P3.7 postflight auditor. It derives the exact root runtime ID
+  from the v4 header, validates owner-only artifact identity and `env.json`
+  consumption, requires each exact success marker plus positive usage, proves
+  chain affinity/pane reuse and five-task/four-pane queue timing, correlates a
+  canonical abort and missing pane, and rejects raw JSON in captured pane text.
+  Reports omit transcript text and hash affinity keys. Focused audit coverage
+  passes **4/4** and the full Herdr integration suite passes **29/29**;
+  extension typecheck, `build:core`, installable package validation, packaged
+  script inventory, and `git diff --check` pass. Worker/directory/pane capture
+  counts and all reads are explicitly bounded. Paired detach/reattach and root-
+  restart records remain mandatory separate evidence.
 - Exact next task: from an actual Herdr-managed root pane (`HERDR_ENV=1`), run
   the pinned-Herdr P3.7 root/worker matrix with an internal harness-v4 root
   session: single dispatch, affinity reuse, parallel >4, cancellation, pane

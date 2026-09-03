@@ -209,3 +209,6 @@ worker scenario in section 8 before cutover.
 The complete isolated-path setup, exact marker protocol, public-subagent
 scenario order, topology capture, restart evidence, and closeout gates are in
 [`spikes/P3.7-SESSION-V4-LIVE-RUNBOOK.md`](spikes/P3.7-SESSION-V4-LIVE-RUNBOOK.md).
+The packaged `herdr:session-v4-live-audit` command mechanically checks the
+worker/artifact half of that runbook; it cannot replace the paired
+detach/reattach and root-instance restart evidence.
