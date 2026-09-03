@@ -2679,6 +2679,18 @@ this session does not merge, push, tag, or publish.
   script inventory, and `git diff --check` pass. Worker/directory/pane capture
   counts and all reads are explicitly bounded. Paired detach/reattach and root-
   restart records remain mandatory separate evidence.
+- Packaged clean auditor commit
+  `dcd926a715f9a78f1b0cf6cce7ed3867e3e4a220` as
+  `/srv/penglab/gsd-runs/artifacts/gsd-pi-herdr-1.16.2-dcd926a7-93cdd2ca.tgz`
+  (`sha256:93cdd2cacc850794e60891400e2c61829d660f0f4df18b675d4589370d316504`)
+  and installed it at immutable prefix
+  `/srv/penglab/gsd-runs/toolchains/gsd-pi-herdr-1.16.2-dcd926a7-93cdd2ca`.
+  The installed auditor and preflight are present, first launch repaired seven
+  internal links, the verified Linux x64 addon reports `nativeLoaded: true`
+  with 98 exports, and the auditor fails closed without its explicit manifest.
+  Shared remote `gsd` and `gsd-mcp-server` links now target this clean
+  candidate. Previous prefixes remain intact for rollback; running processes
+  were not killed and acquire it on their normal restart.
 - Exact next task: from an actual Herdr-managed root pane (`HERDR_ENV=1`), run
   the pinned-Herdr P3.7 root/worker matrix with an internal harness-v4 root
   session: single dispatch, affinity reuse, parallel >4, cancellation, pane
