@@ -3494,6 +3494,130 @@ this session does not merge, push, tag, or publish.
   supported runtime-executable Playwright form; do not reopen either
   replacement-session incident for that policy decision.
 
+### 2026-09-04 — Browser tool registry replacement repair
+
+- Reproduced the paused `run-uat` capability failure independently of the UAT
+  policy: the first ExtensionAPI registry received the complete browser tool
+  contract, while a fresh registry created in the same process received zero
+  tools. The browser extension incorrectly cached registration completion in
+  process-global `legacyRegistrationPromise` and
+  `managedRegistrationPromise` values even though session replacement creates
+  a new tool registry.
+- Replaced those process-global registration promises with per-ExtensionAPI
+  `WeakMap` caches. Browser engine/runtime ownership remains process-global,
+  but every fresh registry now receives its own registrations exactly once.
+  Failed registration deletes only that registry's cache entry so a retry is
+  still possible.
+- Added replacement regressions for both managed `gsd-browser` and legacy
+  Playwright registrations. `test:browser-tools` passes **128/128**,
+  `test:changed:src` passes **1/1**, and `typecheck:extensions`, `build:core`,
+  `validate-pack`, and `git diff --check` pass. Package validation ended with
+  **Package is installable. Safe to publish.**
+- Under the standing remote-only installation policy, deployed the dirty
+  development artifact
+  `/srv/penglab/gsd-runs/artifacts/gsd-pi-herdr-1.16.2-5ba1bde2-e3570f72.tgz`
+  (SHA-256
+  `e3570f72cfc2ab2d0b5563d17e09c248beb163f16f89fc5ac065bde84722b64b`)
+  to immutable prefix
+  `/srv/penglab/gsd-runs/toolchains/gsd-pi-herdr-1.16.2-5ba1bde2-e3570f72`.
+  The copied Linux x64 native addon retains SHA-256
+  `b1d5b33b59cc1578eed207544a4020699f0c9d123c0247481df1914002b51da7`
+  with 98 exports. Shared launcher links were switched atomically; remote GSD
+  PID 948361 was not restarted and the prior prefix remains rollback-ready.
+- An installed-package smoke created two independent tool registries in one
+  remote process; both received 18 managed tools and both included
+  `browser_navigate`. Exact next operational task: restart GSD from the attached
+  remote Herdr root pane so it loads this prefix, then resume `run-uat`. The
+  existing process cannot acquire extension code in place. Separately, the Mac
+  managed daemon requires an explicit Edge browser path because Google Chrome
+  is not installed; that machine-local configuration is not part of this
+  registry fix.
+- On the operator's explicit follow-up request, installed the same artifact into
+  the Mac's fnm-managed global prefix as well. The local Darwin arm64 addon
+  retains SHA-256
+  `d2e14a7060fff0c02d539a24cc0e4510eabf2d9234e87cb20f52290a55576f53`
+  with 98 exports. An installed-code smoke gave both the first and replacement
+  registries 18 managed tools including `browser_navigate`. Existing local GSD
+  PIDs 5833 and 10395 and remote PID 948361 were not restarted; each must be
+  relaunched from its owning Herdr root pane before that process uses the fix.
+
+### 2026-09-04 — Strict phase model routing and Sol reasoning ceiling
+
+- Added opt-in `uok.model_policy.enforce_phase_routes`. Auto-mode now ignores
+  session `/gsd model` pins and pre-dispatch/sidecar overrides, rejects
+  `/gsd auto --model`, and selects only the explicit per-phase primary plus its
+  ordered fallbacks. An absent or unavailable route fails closed with
+  `ModelPolicyDispatchBlockedError` instead of falling through to an arbitrary
+  registry model.
+- Enabled the policy in the Mac user/project preferences and the remote user
+  preferences. Planning/discuss remain `gsd-fable/gpt-5.6-sol` at `high`;
+  research/execution/completion/validation/subagent/UAT remain GLM Coding Plan
+  at `max` with the configured Luna `max` fallback. The three custom Sol model
+  definitions now advertise only `low`, `medium`, and `high`, so even a direct
+  `max` request capability-clamps to `high` before provider submission.
+- Regression evidence: focused model/preference suite **58/58**, auto-loop
+  **138/138**, Browser Tools **128/128**, changed-source **46/46**,
+  `typecheck:extensions`, `build:core`, `validate-pack`, and `git diff --check`
+  pass. Package validation again reports **Package is installable. Safe to
+  publish.**
+- Installed the dirty development artifact with SHA-256
+  `5fd8dd4cced6098b35b887e11905f0d33e29eff4aa13f7ab6d2e9e284b18d5ed`
+  locally and remotely. The remote immutable prefix is
+  `/srv/penglab/gsd-runs/toolchains/gsd-pi-herdr-1.16.2-5ba1bde2-5fd8dd4c`;
+  the preserved Linux x64 native addon SHA-256 is
+  `b1d5b33b59cc1578eed207544a4020699f0c9d123c0247481df1914002b51da7`
+  and loads with 98 exports. Shared remote launchers were switched atomically,
+  while PID 948361 remained alive.
+- Known limitation / exact next task: already-running local and remote sessions
+  retain their loaded extension registry. Restart each owning Herdr root pane,
+  start the main session on Sol/max, run `/gsd auto`, and confirm dispatch
+  metadata shows Sol/high only for planning/discuss and GLM-or-Luna/max for all
+  other configured phases.
+
+### 2026-09-04 — OpenCodex Codex transport repair and startup model-settle ordering
+
+- Reproduced the GSD-only `codex websocket closed before a Responses terminal
+  event (close 1011)` independently of extensions and Herdr. The same serialized
+  Responses body succeeded through OpenCodex until the Pi provider's automatic
+  `OpenAI-Beta: responses=experimental` header was added. OpenCodex negotiates
+  the current upstream WebSocket beta itself, so combining the obsolete direct
+  ChatGPT beta with that negotiation caused the upstream Codex socket to close.
+- Limited the legacy beta header to the canonical ChatGPT Codex endpoint.
+  `openai-codex-responses` models using the `responses` proxy endpoint now omit
+  the automatic beta header, while explicit caller headers and the direct
+  ChatGPT behavior remain unchanged.
+- Removed the fire-and-forget startup `--model` transition. Startup now awaits
+  `session.setModel()` before applying `--thinking` or issuing the first request,
+  so persistence, target-model capability clamping, and model-select hooks
+  settle in order. This closes the race where a Luna/GLM session-level `max`
+  value could survive briefly while Sol became active.
+- Regression evidence: the complete Codex stream file passes **31/31**, the CLI
+  override file passes **5/5**, and focused phase-routing/preferences coverage
+  passes **45/45**. Changed-source coverage passes **52/52**;
+  `typecheck:extensions`, `build:core`, `validate-pack`, and `git diff --check`
+  pass; package validation reports **Package is installable. Safe to publish.**
+- Live evidence: the local development binary completed a real
+  `gsd-opus/gpt-5.6-sol` OpenCodex request with exact response `hi`. A second
+  invocation deliberately requested `--thinking max`; the provider completed
+  successfully and OpenCodex recorded `requestedEffort=high`, proving the Sol
+  ceiling at the serialized request boundary.
+- Under the standing remote-only installation policy, deployed artifact
+  `/srv/penglab/gsd-runs/artifacts/gsd-pi-herdr-1.16.2-5ba1bde2-1fe6dbcd.tgz`
+  (SHA-256
+  `1fe6dbcdeaf917d583b13de5c6c0dbab524cbe60c7786dca2d864e7de7ad111f`)
+  to immutable prefix
+  `/srv/penglab/gsd-runs/toolchains/gsd-pi-herdr-1.16.2-5ba1bde2-1fe6dbcd`.
+  The preserved Linux x64 native addon SHA-256 remains
+  `b1d5b33b59cc1578eed207544a4020699f0c9d123c0247481df1914002b51da7`;
+  shared launchers were switched atomically and remote PID 948361 was not
+  restarted. An installed remote request using Sol with an explicit `max`
+  request returned `hi`, status 200, and again recorded
+  `requestedEffort=high`.
+- Exact next operational task: restart the long-running remote Herdr root GSD
+  pane when its current work reaches a safe boundary. New processes already use
+  the repaired prefix; PID 948361 retains its previously loaded code until that
+  restart. The prior `5ba1bde2-5fd8dd4c` prefix remains rollback-ready.
+
 ## 11. Working-session protocol
 
 For every Herdr session:
