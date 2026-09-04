@@ -99,6 +99,7 @@ describe("openai-codex streaming", () => {
 			const headers = init?.headers instanceof Headers ? init.headers : new Headers(init?.headers);
 			expect(headers.get("Authorization")).toBe("Bearer local-admission-secret");
 			expect(headers.has("chatgpt-account-id")).toBe(false);
+			expect(headers.has("OpenAI-Beta")).toBe(false);
 			return new Response(buildSSEPayload({ status: "completed" }), {
 				status: 200,
 				headers: { "content-type": "text/event-stream" },

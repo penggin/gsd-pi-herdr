@@ -9,7 +9,7 @@ function createModelRegistry(available: Array<{ provider: string; id: string }>)
   } as any
 }
 
-test('applyModelOverride calls setModel without awaiting when model matches by id', () => {
+test('applyModelOverride calls setModel when model matches by id', async () => {
   const calls: Array<{ provider: string; id: string }> = []
   const session = {
     setModel: (model: { provider: string; id: string }) => {
@@ -21,13 +21,13 @@ test('applyModelOverride calls setModel without awaiting when model matches by i
     { provider: 'other', id: 'model-2' },
   ])
 
-  const result = applyModelOverride(session, modelRegistry, 'model-1')
+  const result = await applyModelOverride(session, modelRegistry, 'model-1')
 
-  assert.equal(result, undefined, 'applyModelOverride must return void')
+  assert.equal(result, undefined)
   assert.deepEqual(calls, [{ provider: 'test', id: 'model-1' }])
 })
 
-test('applyModelOverride calls setModel without awaiting when model matches by provider/id', () => {
+test('applyModelOverride calls setModel when model matches by provider/id', async () => {
   const calls: Array<{ provider: string; id: string }> = []
   const session = {
     setModel: (model: { provider: string; id: string }) => {
@@ -39,12 +39,12 @@ test('applyModelOverride calls setModel without awaiting when model matches by p
     { provider: 'other', id: 'model-2' },
   ])
 
-  applyModelOverride(session, modelRegistry, 'other/model-2')
+  await applyModelOverride(session, modelRegistry, 'other/model-2')
 
   assert.deepEqual(calls, [{ provider: 'other', id: 'model-2' }])
 })
 
-test('applyModelOverride warns on stderr when model is not found', () => {
+test('applyModelOverride warns on stderr when model is not found', async () => {
   const previousWrite = process.stderr.write
   const stderrLines: string[] = []
   process.stderr.write = ((chunk: string | Uint8Array) => {
@@ -53,7 +53,7 @@ test('applyModelOverride warns on stderr when model is not found', () => {
   }) as typeof process.stderr.write
 
   try {
-    applyModelOverride(
+    await applyModelOverride(
       { setModel: () => {} },
       createModelRegistry([{ provider: 'test', id: 'model-1' }]),
       'missing/model',
@@ -68,7 +68,7 @@ test('applyModelOverride warns on stderr when model is not found', () => {
   }
 })
 
-test('applyModelOverride does nothing when modelFlag is undefined', () => {
+test('applyModelOverride does nothing when modelFlag is undefined', async () => {
   let setModelCalled = false
   const session = {
     setModel: () => {
@@ -76,25 +76,34 @@ test('applyModelOverride does nothing when modelFlag is undefined', () => {
     },
   }
 
-  applyModelOverride(session, createModelRegistry([{ provider: 'test', id: 'model-1' }]), undefined)
+  await applyModelOverride(session, createModelRegistry([{ provider: 'test', id: 'model-1' }]), undefined)
 
   assert.equal(setModelCalled, false)
 })
 
-test('applyModelOverride does not await a setModel promise', () => {
+test('applyModelOverride waits for the model transition before resolving', async () => {
   let setModelCalled = false
+  let releaseModelTransition: (() => void) | undefined
+  let overrideSettled = false
   const session = {
     setModel: () => {
       setModelCalled = true
-      return new Promise(() => {
-        // Never resolves — if applyModelOverride awaited, this test would hang.
+      return new Promise<void>((resolve) => {
+        releaseModelTransition = resolve
       })
     },
   }
   const modelRegistry = createModelRegistry([{ provider: 'test', id: 'model-1' }])
 
-  const result = applyModelOverride(session, modelRegistry, 'test/model-1')
+  const pending = applyModelOverride(session, modelRegistry, 'test/model-1').then(() => {
+    overrideSettled = true
+  })
 
   assert.equal(setModelCalled, true)
-  assert.equal(result, undefined)
+  await Promise.resolve()
+  assert.equal(overrideSettled, false)
+
+  releaseModelTransition?.()
+  await pending
+  assert.equal(overrideSettled, true)
 })

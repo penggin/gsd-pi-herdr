@@ -203,7 +203,14 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 				body = nextBody as RequestBody;
 			}
 			const websocketRequestId = options?.sessionId || createCodexRequestId();
-			const sseHeaders = buildSSEHeaders(model.headers, options?.headers, accountId, apiKey, options?.sessionId);
+			const sseHeaders = buildSSEHeaders(
+				model.headers,
+				options?.headers,
+				accountId,
+				apiKey,
+				options?.sessionId,
+				compat.codexEndpoint,
+			);
 			const websocketHeaders = buildWebSocketHeaders(
 				model.headers,
 				options?.headers,
@@ -1427,9 +1434,16 @@ function buildSSEHeaders(
 	accountId: string | undefined,
 	token: string,
 	sessionId?: string,
+	endpoint: OpenAICodexResponsesCompat["codexEndpoint"] = "chatgpt",
 ): Headers {
 	const headers = buildBaseCodexHeaders(initHeaders, accountId, token);
-	headers.set("OpenAI-Beta", "responses=experimental");
+	// The legacy Responses beta is required by the direct ChatGPT Codex endpoint.
+	// Codex-compatible proxies own their upstream protocol negotiation and may add
+	// a newer responses_websockets beta. Automatically combining both values can
+	// make the upstream Codex websocket reject the request with close code 1011.
+	if (endpoint === "chatgpt") {
+		headers.set("OpenAI-Beta", "responses=experimental");
+	}
 	headers.set("accept", "text/event-stream");
 	headers.set("content-type", "application/json");
 

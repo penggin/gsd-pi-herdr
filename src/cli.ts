@@ -881,7 +881,7 @@ if (isPrintMode) {
   printExtensionErrors(extensionsResult.errors)
   printExtensionWarnings(extensionsResult.warnings)
 
-  applyModelOverride(session, modelRegistry, cliFlags.model)
+  await applyModelOverride(session, modelRegistry, cliFlags.model)
   if (cliFlags.thinking) session.setThinkingLevel(cliFlags.thinking)
 
   const mode = cliFlags.mode || 'text'
@@ -1137,7 +1137,7 @@ await reapplyValidatedModelOnFallback(session, modelRegistry, settingsManager, i
 printExtensionErrors(extensionsResult.errors)
 printExtensionWarnings(extensionsResult.warnings)
 
-applyModelOverride(session, modelRegistry, cliFlags.model)
+await applyModelOverride(session, modelRegistry, cliFlags.model)
 if (cliFlags.thinking) session.setThinkingLevel(cliFlags.thinking)
 
 // Restore scoped models from settings on startup.
