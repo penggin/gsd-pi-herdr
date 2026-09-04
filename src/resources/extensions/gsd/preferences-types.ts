@@ -451,6 +451,13 @@ export interface UokPreferences {
   };
   model_policy?: {
     enabled?: boolean;
+    /**
+     * Make configured per-phase routes authoritative during auto-mode.
+     * Session pins and `/gsd auto --model` cannot override them, and an
+     * unavailable configured primary/fallback chain fails closed.
+     * Default: false (backward compatible).
+     */
+    enforce_phase_routes?: boolean;
   };
   execution_graph?: {
     enabled?: boolean;

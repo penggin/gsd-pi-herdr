@@ -255,3 +255,107 @@ test("research-slice: unauthenticated registry throws actionable deny reasons", 
     env.cleanup();
   }
 });
+
+test("strict phase routing ignores a session model pin and applies the configured phase route", async () => {
+  const env = makeTempProject();
+  const setModelCalls: string[] = [];
+  try {
+    writeFileSync(
+      join(env.dir, ".gsd", "PREFERENCES.md"),
+      [
+        "---",
+        "models:",
+        "  execution:",
+        "    model: gsd-sonnet/zai/glm-5.3-flash",
+        "    fallbacks:",
+        "      - gsd-sonnet/gpt-5.6-luna",
+        "    thinking: max",
+        "uok:",
+        "  model_policy:",
+        "    enabled: true",
+        "    enforce_phase_routes: true",
+        "---",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const sol = { id: "gpt-5.6-sol", provider: "gsd-fable", api: "openai-codex-responses" };
+    const glm = { id: "zai/glm-5.3-flash", provider: "gsd-sonnet", api: "openai-codex-responses" };
+    const luna = { id: "gpt-5.6-luna", provider: "gsd-sonnet", api: "openai-codex-responses" };
+    const pi = makePi(setModelCalls);
+    clearToolBaseline(pi);
+
+    const result = await selectAndApplyModel(
+      makeRegistryCtx({ available: [sol, glm, luna], all: [sol, glm, luna], session: sol }),
+      pi,
+      "execute-task",
+      "M013/S01/T01",
+      env.dir,
+      {
+        uok: { model_policy: { enabled: true, enforce_phase_routes: true } },
+      },
+      false,
+      { provider: "gsd-fable", id: "gpt-5.6-sol" },
+      undefined,
+      true,
+      { provider: "gsd-fable", id: "gpt-5.6-sol" },
+      "max",
+    );
+
+    assert.deepEqual(setModelCalls, ["gsd-sonnet/zai/glm-5.3-flash"]);
+    assert.equal(result.appliedModel?.provider, "gsd-sonnet");
+    assert.equal(result.appliedModel?.id, "zai/glm-5.3-flash");
+  } finally {
+    env.restoreEnv();
+    env.cleanup();
+  }
+});
+
+test("strict phase routing fails closed instead of using an arbitrary registry model", async () => {
+  const env = makeTempProject();
+  const setModelCalls: string[] = [];
+  try {
+    writeFileSync(
+      join(env.dir, ".gsd", "PREFERENCES.md"),
+      [
+        "---",
+        "models:",
+        "  execution:",
+        "    model: missing-provider/missing-primary",
+        "    fallbacks:",
+        "      - missing-provider/missing-fallback",
+        "uok:",
+        "  model_policy:",
+        "    enabled: true",
+        "    enforce_phase_routes: true",
+        "---",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const sol = { id: "gpt-5.6-sol", provider: "gsd-fable", api: "openai-codex-responses" };
+    const pi = makePi(setModelCalls);
+    clearToolBaseline(pi);
+
+    await assert.rejects(
+      selectAndApplyModel(
+        makeRegistryCtx({ available: [sol], all: [sol], session: sol }),
+        pi,
+        "execute-task",
+        "M013/S01/T01",
+        env.dir,
+        { uok: { model_policy: { enabled: true, enforce_phase_routes: true } } },
+        false,
+        { provider: "gsd-fable", id: "gpt-5.6-sol" },
+        undefined,
+        true,
+        { provider: "gsd-fable", id: "gpt-5.6-sol" },
+      ),
+      ModelPolicyDispatchBlockedError,
+    );
+    assert.deepEqual(setModelCalls, []);
+  } finally {
+    env.restoreEnv();
+    env.cleanup();
+  }
+});

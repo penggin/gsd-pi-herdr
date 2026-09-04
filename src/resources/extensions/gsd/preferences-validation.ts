@@ -386,7 +386,7 @@ export function validatePreferences(preferences: GSDPreferences): {
       }
 
       const parseEnabledBlock = (
-        key: "legacy_fallback" | "gates" | "model_policy" | "execution_graph" | "audit_unified" | "plan_v2",
+        key: "legacy_fallback" | "gates" | "execution_graph" | "audit_unified" | "plan_v2",
       ): void => {
         const value = raw[key];
         if (value === undefined) return;
@@ -411,7 +411,32 @@ export function validatePreferences(preferences: GSDPreferences): {
 
       parseEnabledBlock("legacy_fallback");
       parseEnabledBlock("gates");
-      parseEnabledBlock("model_policy");
+      if (raw.model_policy !== undefined) {
+        if (typeof raw.model_policy !== "object" || raw.model_policy === null) {
+          errors.push("uok.model_policy must be an object");
+        } else {
+          const modelPolicy = raw.model_policy as Record<string, unknown>;
+          const parsed: NonNullable<NonNullable<GSDPreferences["uok"]>["model_policy"]> = {};
+          if (modelPolicy.enabled !== undefined) {
+            if (typeof modelPolicy.enabled === "boolean") parsed.enabled = modelPolicy.enabled;
+            else errors.push("uok.model_policy.enabled must be a boolean");
+          }
+          if (modelPolicy.enforce_phase_routes !== undefined) {
+            if (typeof modelPolicy.enforce_phase_routes === "boolean") {
+              parsed.enforce_phase_routes = modelPolicy.enforce_phase_routes;
+            } else {
+              errors.push("uok.model_policy.enforce_phase_routes must be a boolean");
+            }
+          }
+          const unknown = Object.keys(modelPolicy).filter(
+            (key) => !["enabled", "enforce_phase_routes"].includes(key),
+          );
+          for (const key of unknown) {
+            warnings.push(`unknown uok.model_policy key "${key}" — ignored`);
+          }
+          if (Object.keys(parsed).length > 0) valid.model_policy = parsed;
+        }
+      }
       parseEnabledBlock("execution_graph");
       parseEnabledBlock("audit_unified");
       parseEnabledBlock("plan_v2");

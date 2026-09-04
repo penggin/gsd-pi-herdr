@@ -604,9 +604,15 @@ export async function selectAndApplyModel(
     );
   }
   let appliedThinkingLevel: ReturnType<ExtensionAPI["getThinkingLevel"]> | null | undefined = null;
-  const effectiveSessionModelOverride = sessionModelOverride === undefined
+  const configuredSessionModelOverride = sessionModelOverride === undefined
     ? getSessionModelOverride(ctx.sessionManager.getSessionId())
     : (sessionModelOverride ?? undefined);
+  // Strict phase routing makes PREFERENCES.md the sole auto-mode routing
+  // authority. A session-level `/gsd model` pin must not silently replace a
+  // configured phase route, including after session replacement/reload.
+  const effectiveSessionModelOverride = uokFlags.enforcePhaseRoutes && isAutoMode
+    ? undefined
+    : configuredSessionModelOverride;
   // Enrich the start model with a flat-rate context up front so routing
   // synthesis and the dispatch-time guard see the same signals (built-in
   // list + user `flat_rate_providers` preference + externalCli auto-
@@ -656,6 +662,14 @@ export async function selectAndApplyModel(
   // overwriting any tool changes made interactively between auto sessions.
   // The baseline is structurally an auto-mode concept; gate it accordingly.
   if (isAutoMode) restoreToolBaseline(pi);
+
+  if (uokFlags.enforcePhaseRoutes && isAutoMode && !modelConfig) {
+    throw new ModelPolicyDispatchBlockedError(unitType, unitId, [{
+      provider: "(config)",
+      modelId: "(missing)",
+      reason: `strict phase routing requires an explicit models route for ${unitPhaseLabel(unitType)}`,
+    }]);
+  }
 
   if (modelConfig) {
     let availableModels = buildModelPolicyCandidates(
@@ -1009,6 +1023,22 @@ export async function selectAndApplyModel(
           ctx.ui.notify(`All preferred models unavailable for ${unitType}. Using default.`, "warning");
         }
       }
+    }
+
+    // In strict mode only the configured primary and ordered fallbacks may be
+    // used. Never synthesize a registry-wide fallback: doing so can revive the
+    // ambient session model (for example Sol/max) and violate phase policy.
+    if (uokFlags.enforcePhaseRoutes && isAutoMode && !appliedModel) {
+      throw new ModelPolicyDispatchBlockedError(
+        unitType,
+        unitId,
+        buildModelPolicyBlockReasons(
+          policyDenyReasons,
+          availableModels,
+          routingEligibleModels,
+          modelsToTry,
+        ),
+      );
     }
 
     if (uokFlags.modelPolicy && policyAllowedModelKeys && !attemptedPolicyEligible) {

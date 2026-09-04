@@ -9,7 +9,7 @@ test("uok preferences validate nested flags and turn_action", () => {
       enabled: true,
       legacy_fallback: { enabled: false },
       gates: { enabled: true },
-      model_policy: { enabled: true },
+      model_policy: { enabled: true, enforce_phase_routes: true },
       execution_graph: { enabled: false },
       gitops: {
         enabled: true,
@@ -25,8 +25,23 @@ test("uok preferences validate nested flags and turn_action", () => {
   assert.equal(result.errors.length, 0);
   assert.equal(result.preferences.uok?.enabled, true);
   assert.equal(result.preferences.uok?.legacy_fallback?.enabled, false);
+  assert.equal(result.preferences.uok?.model_policy?.enforce_phase_routes, true);
   assert.equal(result.preferences.uok?.gitops?.turn_action, "status-only");
   assert.equal(result.preferences.uok?.plan_v2?.enabled, true);
+});
+
+test("uok preferences reject a non-boolean strict phase routing flag", () => {
+  const result = validatePreferences({
+    uok: {
+      model_policy: {
+        enforce_phase_routes: "yes",
+      },
+    },
+  } as never);
+
+  assert.ok(result.errors.some((error) =>
+    error.includes("uok.model_policy.enforce_phase_routes must be a boolean")
+  ));
 });
 
 test("uok preferences reject invalid turn_action", () => {

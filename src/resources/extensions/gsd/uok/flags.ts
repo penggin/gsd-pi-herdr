@@ -6,6 +6,7 @@ export interface UokFlags {
   legacyFallback: boolean;
   gates: boolean;
   modelPolicy: boolean;
+  enforcePhaseRoutes: boolean;
   executionGraph: boolean;
   gitops: boolean;
   gitopsTurnAction: "commit" | "snapshot" | "status-only";
@@ -30,6 +31,7 @@ export function resolveUokFlags(prefs: GSDPreferences | undefined): UokFlags {
     legacyFallback,
     gates: uok?.gates?.enabled ?? true,
     modelPolicy: uok?.model_policy?.enabled ?? true,
+    enforcePhaseRoutes: uok?.model_policy?.enforce_phase_routes === true,
     executionGraph: uok?.execution_graph?.enabled ?? true,
     gitops: uok?.gitops?.enabled ?? true,
     gitopsTurnAction: uok?.gitops?.turn_action ?? "commit",

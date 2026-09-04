@@ -56,6 +56,7 @@ import {
 } from "./phase-helpers.js";
 import type { IterationContext, IterationData, LoopState, PhaseResult } from "./types.js";
 import { MAX_RECOVERY_CHARS } from "./types.js";
+import { resolveUokFlags } from "../uok/flags.js";
 
 const ZERO_TOOL_PROVIDER_ERROR_PREFIX_RE =
   /^(?:api error(?::|$|\s*\()|provider error(?::|$|\s*\()|request failed\b|(?:http\s*)?(?:429|500|502|503)\b|\b(?:econnreset|etimedout|econnrefused|epipe)\b|socket hang up\b|fetch failed\b|(?:network|connection|server) error(?::|$)|connection (?:reset|refused)(?::|$|\s+by\b)|dns\b.*(?:fail|error|timeout)|unexpected eof\b|stream idle timeout\b|partial response received\b|stream_exhausted\b|terminated(?::|$)|(?:connection|stream|request)\b.{0,40}\bterminated\b|other side closed\b|rate.?limit(?:ed| exceeded| reached| error)|too many requests\b|you(?:'ve| have) (?:hit|reached) your (?:\w+ )?limit\b|.*\b(?:usage|session|weekly|daily|monthly|quota) limit\b|limit\b.{0,40}\bresets?\b|out of extra usage\b|service.?unavailable\b|internal(?: server)? error(?::|$)|internal(?:[_-]server)?[_-]error\b|server[_-]error\b|(?:provider|server|api|model|codex|claude|openai|anthropic|gemini)\b.{0,80}\boverloaded\b|overloaded\b.{0,80}\b(?:provider|server|api|model)\b|context (?:window|length) exceed|context window exceed)/i;
@@ -372,7 +373,13 @@ export async function runUnitPhase(
 
   // Apply sidecar/pre-dispatch hook model override (takes priority over standard model selection)
   const hookModelOverride = sidecarItem?.model ?? iterData.hookModelOverride;
-  if (hookModelOverride) {
+  const strictPhaseRoutes = resolveUokFlags(prefs).enforcePhaseRoutes;
+  if (hookModelOverride && strictPhaseRoutes) {
+    ctx.ui.notify(
+      `Hook model override "${hookModelOverride}" ignored because strict phase routing is enabled.`,
+      "warning",
+    );
+  } else if (hookModelOverride) {
     const availableModels = ctx.modelRegistry.getAvailable();
     const match = deps.resolveModelId(hookModelOverride, availableModels, ctx.model?.provider);
     if (match) {

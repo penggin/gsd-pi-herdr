@@ -10,6 +10,8 @@ import { notifyPreferenceDiagnostics } from "../../preferences-diagnostics.js";
 import { setSessionModelOverride } from "../../session-model-override.js";
 import { guardRemoteSession, projectRoot } from "../context.js";
 import { findMilestoneIds } from "../../milestone-ids.js";
+import { loadEffectiveGSDPreferences } from "../../preferences.js";
+import { resolveUokFlags } from "../../uok/flags.js";
 
 async function hasUnresolvedCloseoutBlocker(ctx: ExtensionCommandContext, basePath: string): Promise<boolean> {
   const { ensureDbOpen } = await import("../../bootstrap/dynamic-tools.js");
@@ -135,6 +137,17 @@ export async function handleAutoCommand(trimmed: string, ctx: ExtensionCommandCo
 
     if (await hasUnresolvedCloseoutBlocker(ctx, basePath)) return true;
     notifyPreferenceDiagnostics(ctx, basePath, { surface: "auto-preflight" });
+
+    if (modelQuery) {
+      const prefs = loadEffectiveGSDPreferences(basePath)?.preferences;
+      if (resolveUokFlags(prefs).enforcePhaseRoutes) {
+        ctx.ui.notify(
+          "--model is disabled while uok.model_policy.enforce_phase_routes is enabled. Configure models.<phase> routes in PREFERENCES.md instead.",
+          "error",
+        );
+        return true;
+      }
+    }
 
     // Validate the milestone target exists and is not already complete.
     if (milestoneId) {

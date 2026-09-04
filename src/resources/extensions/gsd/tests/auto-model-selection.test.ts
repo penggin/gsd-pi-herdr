@@ -830,7 +830,7 @@ test("selectAndApplyModel raises minimal thinking to the floor for execute-task"
   mkdirSync(join(tempProject, ".gsd"), { recursive: true });
   writeFileSync(
     join(tempProject, ".gsd", "PREFERENCES.md"),
-    ["---", "models:", "  execute-task: claude-sonnet-4-6", "---"].join("\n"),
+    ["---", "models:", "  execution: claude-sonnet-4-6", "---"].join("\n"),
     "utf-8",
   );
   process.chdir(tempProject);

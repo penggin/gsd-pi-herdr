@@ -74,6 +74,7 @@ import { emitWorktreeOrphaned } from "./worktree-telemetry.js";
 import { initMetrics } from "./metrics.js";
 import { initRoutingHistory } from "./routing-history.js";
 import { restoreHookState, resetHookState, reconcileRestoredHookDispatch } from "./post-unit-hooks.js";
+import { resolveUokFlags } from "./uok/flags.js";
 import { resetProactiveHealing, setLevelChangeCallback } from "./doctor-proactive.js";
 import { snapshotSkills } from "./skill-discovery.js";
 import {
@@ -1103,7 +1104,10 @@ export async function bootstrapAutoSession(
   // providers, so honoring it would silently reroute auto-mode to a built-in
   // provider the user is not logged into and surface as "Not logged in · Please
   // run /login" before pausing and resetting to claude-code/claude-sonnet-4-6.
-  const manualSessionOverride = getSessionModelOverride(ctx.sessionManager.getSessionId());
+  const bootstrapPreferences = loadEffectiveGSDPreferences(base)?.preferences;
+  const strictPhaseRoutes = resolveUokFlags(bootstrapPreferences).enforcePhaseRoutes;
+  const configuredSessionOverride = getSessionModelOverride(ctx.sessionManager.getSessionId());
+  const manualSessionOverride = strictPhaseRoutes ? undefined : configuredSessionOverride;
   const sessionProviderIsCustom = isCustomProvider(ctx.model?.provider, ctx.modelRegistry);
   const profileModelIds = modelIdsForProfileResolution(
     ctx.modelRegistry,

@@ -276,6 +276,7 @@ In `"parent"` mode, slice/task `targetRepositories` default to the declared chil
     - Runtime override: set `GSD_UOK_FORCE_LEGACY=1` (or `GSD_UOK_LEGACY_FALLBACK=1`) to force legacy behavior for the current process.
   - `gates.enabled`: boolean — route checks through the unified gate runner and persist `gate_runs`. Default: `true`.
   - `model_policy.enabled`: boolean — enforce policy filtering before model capability scoring. Default: `true`.
+  - `model_policy.enforce_phase_routes`: boolean — make explicit `models.<phase>` routes authoritative in auto-mode. When enabled, `/gsd model` session pins and pre-dispatch/sidecar model overrides are ignored by auto-mode, `/gsd auto --model` is rejected, and GSD stops with a configuration error if neither the configured primary nor an ordered fallback can be selected. It never falls back to an arbitrary registry model. Every dispatched phase must have an explicit route. Default: `false`.
   - `execution_graph.enabled`: boolean — enable DAG scheduler facade/adapters for execution. Default: `true`.
   - `gitops.enabled`: boolean — persist turn-level git transaction records. Default: `true`.
   - `gitops.turn_action`: `"commit"` | `"snapshot"` | `"status-only"` — turn transaction mode. Default: `"commit"` (per-task atomic commits).

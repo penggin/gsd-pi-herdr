@@ -9,6 +9,7 @@ test("uok flags default to enabled when preference is unset", () => {
   assert.equal(flags.legacyFallback, false);
   assert.equal(flags.gates, true);
   assert.equal(flags.modelPolicy, true);
+  assert.equal(flags.enforcePhaseRoutes, false);
   assert.equal(flags.executionGraph, true);
   assert.equal(flags.gitops, true);
   assert.equal(flags.auditUnified, true);
@@ -22,7 +23,7 @@ test("uok nested flags support explicit opt-out", () => {
     uok: {
       enabled: true,
       gates: { enabled: false },
-      model_policy: { enabled: false },
+      model_policy: { enabled: false, enforce_phase_routes: true },
       execution_graph: { enabled: false },
       gitops: { enabled: false, turn_action: "commit", turn_push: true },
       audit_unified: { enabled: false },
@@ -32,6 +33,7 @@ test("uok nested flags support explicit opt-out", () => {
   assert.equal(flags.enabled, true);
   assert.equal(flags.gates, false);
   assert.equal(flags.modelPolicy, false);
+  assert.equal(flags.enforcePhaseRoutes, true);
   assert.equal(flags.executionGraph, false);
   assert.equal(flags.gitops, false);
   assert.equal(flags.auditUnified, false);
