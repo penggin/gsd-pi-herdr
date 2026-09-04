@@ -3617,6 +3617,15 @@ this session does not merge, push, tag, or publish.
   pane when its current work reaches a safe boundary. New processes already use
   the repaired prefix; PID 948361 retains its previously loaded code until that
   restart. The prior `5ba1bde2-5fd8dd4c` prefix remains rollback-ready.
+- On the operator's explicit follow-up request, installed the same verified
+  artifact into the Mac's fnm-managed global prefix. The installed Darwin arm64
+  addon retains SHA-256
+  `d2e14a7060fff0c02d539a24cc0e4510eabf2d9234e87cb20f52290a55576f53`.
+  An installed-code Sol invocation with explicit `--thinking max` returned
+  exact text `hi`; OpenCodex recorded status 200 and
+  `requestedEffort=high`. Already-running Mac GSD processes retain their loaded
+  code and must be restarted from their owning Herdr panes before they use this
+  transport repair.
 
 ## 11. Working-session protocol
 
