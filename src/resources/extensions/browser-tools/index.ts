@@ -6,13 +6,20 @@ import { commitBrowserEngineResolution, resolveAmbientBrowserEngineResolution, t
 import { setArtifactRootForCwd } from "./state.js";
 import { detectWebApp } from "./web-app-detect.js";
 
-let legacyRegistrationPromise: Promise<void> | null = null;
-let managedRegistrationPromise: Promise<void> | null = null;
+// AgentSession replacement creates a fresh ExtensionAPI/tool registry while
+// keeping extension modules alive in the same process. Registration therefore
+// belongs to the registry, not the process: cache once per ExtensionAPI so a
+// repeated session_start cannot duplicate tools, but a replacement registry
+// still receives the complete browser contract.
+const legacyRegistrationPromises = new WeakMap<ExtensionAPI, Promise<void>>();
+const managedRegistrationPromises = new WeakMap<ExtensionAPI, Promise<void>>();
+let hasLegacyRegistrations = false;
 let registeredEngine: Exclude<BrowserEngineMode, "off"> | null = null;
 
 async function registerLegacyBrowserTools(pi: ExtensionAPI): Promise<void> {
-  if (!legacyRegistrationPromise) {
-    legacyRegistrationPromise = (async () => {
+  let registration = legacyRegistrationPromises.get(pi);
+  if (!registration) {
+    registration = (async () => {
       const [
         lifecycle,
         capture,
@@ -143,13 +150,15 @@ async function registerLegacyBrowserTools(pi: ExtensionAPI): Promise<void> {
       actionCache.registerActionCacheTools(cwdScopedPi, deps);
       injectionDetection.registerInjectionDetectionTools(cwdScopedPi, deps);
       verify.registerVerifyTools(cwdScopedPi, deps);
+      hasLegacyRegistrations = true;
     })().catch((error) => {
-      legacyRegistrationPromise = null;
+      legacyRegistrationPromises.delete(pi);
       throw error;
     });
+    legacyRegistrationPromises.set(pi, registration);
   }
 
-  return legacyRegistrationPromise;
+  return registration;
 }
 
 function withBrowserArtifactCwdScope(pi: ExtensionAPI): ExtensionAPI {
@@ -205,14 +214,13 @@ async function registerBrowserTools(pi: ExtensionAPI, ctx: ExtensionContext): Pr
     }
   }
 
-  // Browser tool registrations are process-global and cannot be swapped once
-  // live. When an earlier session in this process already registered an engine
-  // and this project resolved a different one (per-project probe resolution can
-  // diverge across projects in a multi-session process), adopt the registered
-  // engine rather than throwing — a throw surfaces as "browser-tools failed to
-  // load" and leaves this session with no browser tools at all. Commit the
-  // adoption so ambient readers (UAT guidance, warm-up) describe the engine
-  // actually in use.
+  // Browser engine state is process-global even though tool registration is
+  // registry-scoped. When an earlier session in this process already selected
+  // an engine and this project resolves a different one (per-project probe
+  // resolution can diverge across projects in a multi-session process), adopt
+  // the live engine rather than trying to swap the shared runtime underneath
+  // existing sessions. Commit the adoption so ambient readers (UAT guidance,
+  // warm-up) describe the engine actually in use.
   if (registeredEngine && registeredEngine !== engine) {
     engine = registeredEngine;
     commitBrowserEngineResolution(projectRoot, {
@@ -225,18 +233,16 @@ async function registerBrowserTools(pi: ExtensionAPI, ctx: ExtensionContext): Pr
   let registration: Promise<void>;
   if (engine === "legacy") {
     registration = registerLegacyBrowserTools(pi);
-  } else if (!managedRegistrationPromise) {
-    managedRegistrationPromise = Promise.resolve()
+  } else {
+    registration = managedRegistrationPromises.get(pi) ?? Promise.resolve()
       .then(() => {
         registerManagedGsdBrowserTools(pi);
       })
       .catch((error) => {
-        managedRegistrationPromise = null;
+        managedRegistrationPromises.delete(pi);
         throw error;
       });
-    registration = managedRegistrationPromise;
-  } else {
-    registration = managedRegistrationPromise;
+    managedRegistrationPromises.set(pi, registration);
   }
 
   registeredEngine = engine;
@@ -289,7 +295,7 @@ function maybeWarmUpManagedEngine(pi: ExtensionAPI, ctx: ExtensionContext): void
 
 async function closeActiveBrowserEngines(): Promise<void> {
   await closeManagedGsdBrowser();
-  if (legacyRegistrationPromise) {
+  if (hasLegacyRegistrations) {
     const { closeBrowser } = await importExtensionModule<typeof import("./lifecycle.js")>(import.meta.url, "./lifecycle.js");
     await closeBrowser();
   }
