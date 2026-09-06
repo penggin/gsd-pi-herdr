@@ -89,11 +89,13 @@ Direct `/gsd quick`, `/gsd auto`, `/gsd ship` and other explicit commands keep
 their existing semantics. Unknown freeform text no longer implicitly means
 quick; use `/gsd quick <task>` if the shorthand does not recognize the phrasing.
 No provider call, persistent record or additional startup policy is needed to
-classify input. Resolver/handler tests: 133/133 after review also rejected
+classify input. Resolver/handler tests also reject
 non-colon capture prohibitions (`메모 금지`, `capture 안돼`) while preserving
-`메모: 금지` as explicit data. The combined resolver/dispatcher/core matrix
-passed 277/277 before those last capture cases; extension typecheck passed.
-All final paths are included again at the final verification boundary.
+`메모: 금지` as explicit data. Final independent review aligned the read-route
+`--save` check with the existing report handler, also refusing `--saved` and
+embedded `--save` strings. The final resolver/dispatcher/core matrix passed
+265/265 actual Node tests (19 suites), with extension typecheck. Earlier compact
+reporter totals included suites; final evidence uses Node's actual test totals.
 
 ### F-02 — Korean quick/debug descriptions
 

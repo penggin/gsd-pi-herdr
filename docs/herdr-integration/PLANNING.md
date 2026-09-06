@@ -3697,6 +3697,12 @@ this session does not merge, push, tag, or publish.
   read-only Pengbot probes now choose pnpm for api/web/penglava and omit invalid
   root Cargo commands; no commands/services were executed there. Next: final
   combined regression, Korean usage guide verification, build/package gates.
+- Final review found and fixed a narrow F-06 flag mismatch: the downstream
+  report handler recognizes any `--save` substring, so freeform informational
+  routing now also blocks `--saved`/embedded variants. Direct report behavior is
+  unchanged. Final relevant command/dispatcher/core regression passed 265/265
+  actual tests, with typecheck. Earlier compact totals counted suites as well;
+  final whole-audit test totals are taken from Node's actual counters.
 
 ## 11. Working-session protocol
 

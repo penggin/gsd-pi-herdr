@@ -141,7 +141,9 @@ export function resolveDoIntent(input: string): DoIntent {
 
     if (READ_COMMANDS.has(route.command)) {
       // Never smuggle mutating options through an informational request.
-      if (/^(?:clear|delete|remove)\b|(?:^|\s)--save\b/iu.test(remainingArgs)) return { kind: "clarify" };
+      // Match the existing report handler's substring flag check as well:
+      // it treats --saved and embedded --save as requests to write a report.
+      if (/^(?:clear|delete|remove)\b/iu.test(remainingArgs) || remainingArgs.toLowerCase().includes("--save")) return { kind: "clarify" };
       if (route.command === "status" && remainingArgs && !/^[?？.]$/u.test(remainingArgs)) return { kind: "clarify" };
       if (!/^[?？.]$/u.test(remainingArgs) && lacksExecutionIntent(remainingArgs)) return { kind: "clarify" };
       return commandIntent(route.command, /^[?？.]$/u.test(remainingArgs) ? "" : remainingArgs);

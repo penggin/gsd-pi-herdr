@@ -115,6 +115,8 @@ const clarificationInputs = [
   "debug logs clear",
   "session report --save",
   "show me session report --save",
+  "show me session report --saved",
+  "session report output--save",
   "merge could we",
   "ship should we",
   "capture 하지 마",
