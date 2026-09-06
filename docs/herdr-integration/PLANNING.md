@@ -3683,6 +3683,12 @@ this session does not merge, push, tag, or publish.
   automatic translation was performed. Activation red reproduced 5 failures;
   green 26/26 and combined skill/preferences/assessment regression 188/188 actual
   tests passed, with typecheck. Next: F-04/F-05 and final cross-workflow gates.
+- F-04 implemented: root verification command detection uses the original root
+  manifest evidence, not recursively flattened ecosystem markers. Nested
+  Rust/Go/Python signals remain visible while invalid bare root commands are
+  omitted. Mixed pnpm/Bun roots and existing native root commands are covered;
+  red reproduced 7 failures and the detection/init/preferences/PM matrix passed
+  289/289 with typecheck. Next: F-05 declared-workspace package-manager inheritance.
 
 ## 11. Working-session protocol
 

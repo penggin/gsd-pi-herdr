@@ -368,6 +368,65 @@ test("detectProjectSignals: Python project", (t) => {
   assert.ok(signals.verificationCommands.includes("pytest"));
 });
 
+const verificationManifestCases = [
+  { file: "Cargo.toml", content: '[package]\nname = "nested"\n', commands: ["cargo test", "cargo clippy"], recursive: true },
+  { file: "go.mod", content: "module example.com/nested\n", commands: ["go test ./...", "go vet ./..."], recursive: true },
+  { file: "pyproject.toml", content: "[project]\nname = 'nested'\n", commands: ["pytest"], recursive: true },
+  { file: "setup.py", content: "from setuptools import setup\nsetup(name='nested')\n", commands: ["pytest"], recursive: true },
+  { file: "requirements.txt", content: "fastapi\npytest\n", commands: ["pytest"], recursive: true },
+  { file: "Gemfile", content: 'source "https://rubygems.org"\n', commands: ["bundle exec rake test"], recursive: false },
+  { file: "Makefile", content: "test:\n\techo tested\n", commands: ["make test"], recursive: false },
+];
+
+for (const fixture of verificationManifestCases) {
+  test(`detectProjectSignals: ${fixture.file} verification stays in its manifest directory`, (t) => {
+    const dir = makeTempDir("signals-nested-verification");
+    t.after(() => cleanup(dir));
+    const app = join(dir, "apps", "native");
+    mkdirSync(app, { recursive: true });
+    writeFileSync(join(app, fixture.file), fixture.content, "utf-8");
+
+    const rootSignals = detectProjectSignals(dir);
+    assert.equal(rootSignals.detectedFiles.includes(fixture.file), fixture.recursive);
+    assert.deepEqual(rootSignals.verificationCommands, [], "nested manifests cannot authorize root commands");
+
+    const appSignals = detectProjectSignals(app);
+    assert.ok(appSignals.detectedFiles.includes(fixture.file));
+    assert.deepEqual(appSignals.verificationCommands, fixture.commands, "commands remain valid at the manifest directory");
+  });
+}
+
+for (const { packageManager, lockfile, commands } of [
+  { packageManager: "pnpm", lockfile: "pnpm-lock.yaml", commands: ["pnpm test", "pnpm build", "pnpm lint", "pnpm typecheck"] },
+  { packageManager: "bun", lockfile: "bun.lock", commands: ["bun run test", "bun run build", "bun run lint", "bun run typecheck"] },
+]) {
+  test(`detectProjectSignals: mixed ${packageManager} monorepo only suggests root verification`, (t) => {
+    const dir = makeTempDir(`signals-mixed-${packageManager}`);
+    t.after(() => cleanup(dir));
+    writeFileSync(join(dir, "package.json"), JSON.stringify({
+      name: "mixed-workspace",
+      workspaces: ["apps/*"],
+      scripts: { test: "node --test", build: "tsc", lint: "eslint .", typecheck: "tsc --noEmit" },
+    }), "utf-8");
+    writeFileSync(join(dir, lockfile), "", "utf-8");
+    for (const [index, fixture] of verificationManifestCases.entries()) {
+      const app = join(dir, "apps", `app-${index}`);
+      mkdirSync(app, { recursive: true });
+      writeFileSync(join(app, fixture.file), fixture.content, "utf-8");
+    }
+
+    const signals = detectProjectSignals(dir);
+    assert.equal(signals.isMonorepo, true);
+    assert.equal(signals.primaryLanguage, "javascript/typescript");
+    assert.equal(signals.packageManager, packageManager);
+    for (const fixture of verificationManifestCases.filter((entry) => entry.recursive)) {
+      assert.ok(signals.detectedFiles.includes(fixture.file), `retains nested ${fixture.file} ecosystem signal`);
+    }
+    assert.ok(signals.detectedFiles.includes("dep:fastapi"));
+    assert.deepEqual(signals.verificationCommands, commands);
+  });
+}
+
 test("detectProjectSignals: monorepo detection via workspaces", (t) => {
   const dir = makeTempDir("signals-monorepo");
   t.after(() => cleanup(dir));

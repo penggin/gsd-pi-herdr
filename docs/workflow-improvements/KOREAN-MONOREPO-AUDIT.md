@@ -14,7 +14,7 @@ Findings are implemented separately with regression tests and explicit commits.
 | F-01 | Snapshot absorption restages unrelated source after a scoped commit, and can leave it staged after a rejecting hook. | High | Fixed: retain separate snapshots for scoped/excluded commits. |
 | F-02 | All-Korean quick/debug descriptions lose their slug, preventing valid branch recovery or debug session creation. | High | Fixed: NFC normalization and deterministic bounded ASCII fallback. |
 | F-03 | Skill context tokenization discards Korean text, including explicitly configured exact token rules. | Medium | Fixed: NFC Unicode tokens/phrases in structured matching, including exclusions. |
-| F-04 | Recursive Cargo discovery emits bare root Cargo verification commands without a root manifest. | Medium | Reproduced on consumer; separate language detection from executable-root evidence. |
+| F-04 | Recursive Cargo discovery emits bare root Cargo verification commands without a root manifest. | Medium | Fixed: root-manifest evidence alone produces bare root verification commands. |
 | F-05 | Workspace members lacking local lockfiles inherit npm instead of their declared parent pnpm manager. | Medium | Reproduced on consumer; inherit only from verified workspace membership. |
 | F-06 | Freeform Korean questions/negations fall into quick execution, and mixed `merge 하지 말고 ...` can route to ship. | High | Fixed: bounded explicit-intent shorthand and non-executing clarification. |
 
@@ -128,3 +128,16 @@ assessment policies remain unchanged.
 Public activation RED: 21 passed / 5 failed. GREEN: 26/26. Combined activation,
 manifest, preferences and assessment registry/tool-policy tests: 188/188 actual
 Node tests, no skipped tests or suites. Extension typecheck and diff review pass.
+
+### F-04 — Verification commands belong to their execution root
+
+Detection preserves its root marker list before recursive ecosystem enrichment.
+Only root markers supply default root verification commands. A nested
+`apps/penglava/Cargo.toml` remains a Rust signal without suggesting `cargo test`
+at a root lacking that manifest; Go/Python follow the same rule. Existing root
+Rust/Go/Python/Ruby/Makefile commands and nested framework hints remain intact.
+No recursive aggregate command or new workspace execution policy was added.
+
+Nine new tests include mixed pnpm/Bun roots and root/nested manifest cases; the
+original source fails seven of them. Detection/init/preferences/package-manager
+regression passes 289/289, no skips, with extension typecheck and diff review.

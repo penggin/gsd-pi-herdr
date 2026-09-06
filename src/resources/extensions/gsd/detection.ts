@@ -424,6 +424,8 @@ export function detectProjectSignals(basePath: string): ProjectSignals {
       }
     }
   }
+  // Verification commands run at basePath; nested markers are ecosystem hints only.
+  const rootDetectedFiles = [...detectedFiles];
 
   // Bounded recursive scan for nested markers and dependency files.
   // This covers common brownfield layouts like src/App/App.csproj,
@@ -542,7 +544,7 @@ export function detectProjectSignals(basePath: string): ProjectSignals {
   const packageManager = detectPackageManager(basePath);
 
   // Verification commands
-  const verificationCommands = detectVerificationCommands(basePath, detectedFiles, packageManager);
+  const verificationCommands = detectVerificationCommands(basePath, rootDetectedFiles, packageManager);
 
   return {
     detectedFiles,
@@ -762,7 +764,7 @@ function detectXcodePlatforms(basePath: string): XcodePlatform[] {
 // ─── Verification Command Detection ─────────────────────────────────────────────
 
 /**
- * Auto-detect verification commands from project files.
+ * Auto-detect verification commands from project files present at basePath.
  * Returns commands in priority order (test first, then build, then lint).
  */
 function detectVerificationCommands(
