@@ -819,6 +819,11 @@ process.exit(result.status ?? 0);
     const repo = initTempRepo();
     const svc = new GitServiceImpl(repo);
 
+    createFile(repo, "snapshot.ts", "snapshot work\n");
+    runGit(repo, ["add", "snapshot.ts"]);
+    runGit(repo, ["commit", "-m", "gsd snapshot: before scoped hook retry"]);
+    const snapshotHead = run("git rev-parse HEAD", repo);
+
     const hookPath = join(repo, ".git", "hooks", "pre-commit");
     const countFile = join(repo, ".git", "pre-commit-count");
     writeFileSync(
@@ -853,6 +858,8 @@ process.exit(result.status ?? 0);
 
     assert.ok(msg !== null, "autoCommit succeeds after retry with task-scoped staging");
     assert.equal(readFileSync(countFile, "utf-8").trim(), "2", "pre-commit hook ran twice");
+    assert.equal(run("git rev-parse HEAD~1", repo), snapshotHead, "snapshot remains separate after scoped retry");
+    assert.equal(readFileSync(join(repo, "src/task.ts"), "utf-8"), "export const fixed = true;\n");
 
     const committed = run("git show --name-only --format= HEAD", repo);
     assert.ok(committed.includes("src/task.ts"), "task file is committed after retry");
@@ -2180,6 +2187,103 @@ process.exit(result.status ?? 0);
   });
 
   // ─── autoCommit: absorbs preceding gsd snapshot commits ─────────────────
+
+  for (const scope of ["keyFiles", "extraExclusions"] as const) {
+    for (const rejectingHook of [false, true]) {
+      test(`autoCommit: snapshot preserves ${scope} scope${rejectingHook ? " with rejecting hook" : ""}`, (t) => {
+        const repo = initTempRepo();
+        t.after(() => rmSync(repo, { recursive: true, force: true }));
+
+        createFile(repo, "snapshot.ts", "snapshot work\n");
+        createFile(repo, "packages/other/existing.ts", "original\n");
+        runGit(repo, ["add", "snapshot.ts", "packages/other/existing.ts"]);
+        runGit(repo, ["commit", "-m", "gsd snapshot: before scoped task"]);
+        const snapshotHead = run("git rev-parse HEAD", repo);
+
+        createFile(repo, "packages/feature/task.ts", "task work\n");
+        createFile(repo, "packages/other/existing.ts", "uncommitted other work\n");
+        createFile(repo, "packages/other/unrelated.ts", "untracked other work\n");
+
+        const countFile = join(repo, ".git", "pre-commit-count");
+        if (rejectingHook) {
+          const hookPath = join(repo, ".git", "hooks", "pre-commit");
+          writeFileSync(hookPath, [
+            "#!/bin/sh",
+            'echo run >> "$(git rev-parse --git-dir)/pre-commit-count"',
+            // Accept the task commit, but reject any later attempt to stage unrelated work.
+            "git diff --cached --quiet -- packages/other/",
+            "",
+          ].join("\n"), "utf-8");
+          chmodSync(hookPath, 0o755);
+        }
+
+        const taskContext: TaskCommitContext | undefined = scope === "keyFiles" ? {
+          taskId: "S01/T-scope",
+          taskTitle: "implement scoped task",
+          oneLiner: "Added scoped task implementation",
+          keyFiles: ["packages/feature/task.ts"],
+        } : undefined;
+        const svc = new GitServiceImpl(repo);
+        const msg = svc.autoCommit(
+          "execute-task", "S01/T-scope",
+          scope === "extraExclusions" ? ["packages/other/"] : [],
+          taskContext,
+        );
+
+        assert.ok(msg !== null, "autoCommit succeeds for the allowed task file");
+        assert.equal(run("git diff --cached --name-only", repo), "", "unrelated changes are not left staged");
+        assert.equal(run("git show --name-only --format= HEAD", repo), "packages/feature/task.ts", "task commit contains only allowed work");
+        assert.equal(run("git diff --name-only", repo), "packages/other/existing.ts", "tracked unrelated changes remain unstaged");
+        assert.equal(run("git ls-files --others --exclude-standard", repo), "packages/other/unrelated.ts", "new unrelated file remains untracked");
+        assert.equal(run("git rev-list --count HEAD", repo), "3", "snapshot and task remain separate commits");
+        assert.equal(run("git rev-parse HEAD~1", repo), snapshotHead, "snapshot commit is preserved unchanged");
+        assert.equal(run("git show HEAD:packages/other/existing.ts", repo), "original", "committed unrelated content remains unchanged");
+        assert.equal(readFileSync(join(repo, "packages/other/existing.ts"), "utf-8"), "uncommitted other work\n");
+        assert.equal(readFileSync(join(repo, "packages/other/unrelated.ts"), "utf-8"), "untracked other work\n");
+        if (rejectingHook) {
+          assert.equal(readFileSync(countFile, "utf-8"), "run\n", "hook runs only for the task commit, without an unsafe absorption attempt");
+        }
+      });
+    }
+  }
+
+  test('autoCommit: missing keyFiles fallback still absorbs snapshots', (t) => {
+    const repo = initTempRepo();
+    t.after(() => rmSync(repo, { recursive: true, force: true }));
+    createFile(repo, "snapshot.ts", "snapshot work\n");
+    runGit(repo, ["add", "snapshot.ts"]);
+    runGit(repo, ["commit", "-m", "gsd snapshot: before fallback"]);
+    createFile(repo, "feature.ts", "task work\n");
+
+    const svc = new GitServiceImpl(repo);
+    const msg = svc.autoCommit("execute-task", "S01/T-fallback", [], {
+      taskId: "S01/T-fallback",
+      taskTitle: "implement task",
+      keyFiles: ["missing.ts"],
+    });
+
+    assert.ok(msg !== null, "unscoped fallback still commits");
+    assert.equal(run("git rev-list --count HEAD", repo), "2", "failed scoped staging still permits unscoped absorption");
+    assert.equal(run("git show --name-only --format= HEAD", repo), "feature.ts\nsnapshot.ts");
+    assert.equal(run("git status --porcelain", repo), "");
+  });
+
+  test('autoCommit: snapshot absorption opt-out preserves separate commits', (t) => {
+    const repo = initTempRepo();
+    t.after(() => rmSync(repo, { recursive: true, force: true }));
+    createFile(repo, "snapshot.ts", "snapshot work\n");
+    runGit(repo, ["add", "snapshot.ts"]);
+    runGit(repo, ["commit", "-m", "gsd snapshot: before opt-out"]);
+    const snapshotHead = run("git rev-parse HEAD", repo);
+    createFile(repo, "feature.ts", "task work\n");
+
+    const svc = new GitServiceImpl(repo, { absorb_snapshot_commits: false });
+    assert.ok(svc.autoCommit("execute-task", "S01/T-optout") !== null);
+    assert.equal(run("git rev-list --count HEAD", repo), "3", "explicit opt-out preserves snapshot history");
+    assert.equal(run("git rev-parse HEAD~1", repo), snapshotHead);
+    assert.equal(run("git show --name-only --format= HEAD", repo), "feature.ts");
+    assert.equal(run("git status --porcelain", repo), "");
+  });
 
   test('autoCommit: absorbs preceding gsd snapshot commits', () => {
     const repo = initTempRepo();

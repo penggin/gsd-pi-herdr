@@ -1,8 +1,8 @@
 # GSD–Herdr Living Plan
 
 > **Status:** M0–M7 and final downstream-isolation revalidation complete
-> **Last updated:** 2026-09-03
-> **Current milestone:** Complete — downstream-only install and release validation passed
+> **Last updated:** 2026-09-07
+> **Current milestone:** Korean-input / monorepo workflow audit fixes in progress; original Herdr M0–M7 remain complete
 > **Canonical rule:** Every Herdr-integration development session starts by reading this file and ends by updating it.
 
 ## 1. Mission
@@ -3626,6 +3626,40 @@ this session does not merge, push, tag, or publish.
   `requestedEffort=high`. Already-running Mac GSD processes retain their loaded
   code and must be restarted from their owning Herdr panes before they use this
   transport repair.
+
+### 2026-09-07 — Korean-input / Pengbot monorepo audit initiated
+
+- Started from the user-requested pre-Astra baseline `4de9a5ee1`, on focused
+  branch `feature/korean-monorepo-workflow`. Astra source remains archived on
+  `feature/codex-app-server-delegation` at `6d9296fca`; do not resume or cherry-pick
+  that abandoned integration as part of this work.
+- Read Pengbot's root agent guide, current preferences and lean workflow docs.
+  Reference code navigation used its existing CodeGraph index. Its checkout has
+  substantial active user/state changes and remains read-only: no migration,
+  project DB writes, source edits, service starts or preference changes.
+- The installed audit-fix UAT query has no phase directory in this fork; used
+  current source reproductions instead. Findings F-01–F-06 and their limits are
+  tracked in `docs/workflow-improvements/KOREAN-MONOREPO-AUDIT.md`. Scope includes
+  scoped Git absorption, Korean quick/debug identifiers and skill matching,
+  nested-manifest command detection, workspace package-manager inheritance,
+  and freeform request/negation routing. No new runtime, DB schema, persistent
+  gate or model-selection policy is proposed.
+- Consumer preferences explicitly suspend automatic Git because snapshot
+  absorption stages unrelated workspace files. A disposable Git reproduction
+  confirms this in both successful and rejecting-hook paths. The consumer's
+  current safety override remains unchanged until the maintainer explicitly
+  adopts a verified runtime update.
+- Exact next task: implement F-01 with real Git red/green tests, then fix the
+  freeform authorization and Korean identifier/matching issues and scoped
+  workspace detection; run focused plus existing workflow regression and update
+  this log with per-finding evidence. Do not push or install as part of the audit.
+- F-01 implemented: task-scoped/excluded commits no longer enter the unrestricted
+  snapshot absorption pass. Earlier snapshots remain separate, and native
+  unscoped absorption, hooks/signing and explicit opt-out remain unchanged.
+  Real-Git red matrix exposed 5 failures; targeted green 8/8 and full Git service
+  integration 80/80 passed with extension typecheck. Existing consumer files,
+  preferences and staged changes were not touched. Next: F-06 freeform routing,
+  then F-02/F-03 Korean names and matching, F-04/F-05 workspace detection.
 
 ## 11. Working-session protocol
 

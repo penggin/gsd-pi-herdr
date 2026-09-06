@@ -1010,7 +1010,7 @@ export class GitServiceImpl {
     if (knownDirty === false) return null;
     if (knownDirty !== true && !nativeHasChanges(this.basePath)) return null;
 
-    const scoped = taskContext
+    let scoped = taskContext
       ? this.scopedStageTaskFiles(taskContext, extraExclusions)
       : false;
     if (!scoped) this.smartStage(extraExclusions);
@@ -1032,6 +1032,7 @@ export class GitServiceImpl {
         ? this.scopedStageTaskFiles(taskContext, extraExclusions)
         : false;
       if (!retriedScoped) this.smartStage(extraExclusions);
+      scoped = scoped || retriedScoped;
       if (!nativeHasStagedChanges(this.basePath)) throw err;
       nativeCommit(this.basePath, message, { allowEmpty: false });
     }
@@ -1042,7 +1043,11 @@ export class GitServiceImpl {
     // Absorb any preceding gsd snapshot commits into this real commit.
     // Walk backwards from HEAD~1 counting consecutive snapshot subjects,
     // then soft-reset to before them and re-commit with the same message.
-    this.absorbSnapshotCommits(message);
+    // Absorption re-stages the whole tree, so keep snapshots separate when
+    // staging succeeded with task scope or the caller supplied exclusions.
+    if (!scoped && extraExclusions.length === 0) {
+      this.absorbSnapshotCommits(message);
+    }
 
     return message;
   }
