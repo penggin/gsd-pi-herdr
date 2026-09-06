@@ -173,6 +173,11 @@ skill_rules:
 
 Supported matchers are exact `token`, normalized consecutive `phrase`, `workspace`, `unitType`, `lifecycle`, `requirementClass`, and `riskTag`, composed with `all`, `any`, and `none`. Arbitrary regular expressions are not supported.
 
+Structured matching normalizes Unicode to NFC, including Korean token/phrase
+conditions and `none` exclusions. It does not stem or translate words; `결제`
+does not match `결제처리`. Legacy `when` remains the loose ASCII matcher. See
+[한국어 입력과 모노레포](korean-monorepos.md) for opt-in configuration examples.
+
 ### Resolution Order
 
 Skills can be referenced by:

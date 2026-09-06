@@ -163,3 +163,38 @@ passes 300/300 actual Node tests with no skips; extension typecheck and diff
 review pass. Read-only probes on the real consumer now identify apps/api,
 apps/web and apps/penglava as pnpm members. Root verification no longer emits
 unscoped Cargo commands. No discovered command was executed in Pengbot.
+
+## Final audit verification
+
+- All six recorded fixable findings have implementation and regression tests.
+- Full changed-source compiled selection since `4de9a5ee1`: 492 actual Node
+  tests passed, zero failures/skips (12 suites), after the last F-06 guard edit.
+- Cross-workflow matrix: 531 actual tests passed, zero failures/skips (28 suites),
+  covering Git/quick lifecycle, auto loop/recovery, model policy, skills and
+  assessment policies, command guards, Local/Cmux/Herdr execution and browser
+  session replacement. The final report-flag edge then passed the separate
+  265-test command/dispatcher/core matrix. These overlapping totals are not
+  added together as unique tests.
+- Extension typecheck and `build:core` pass. `build:web-host` passes and stages
+  standalone output; its pre-existing nonfatal `module.createRequire` warning
+  through `db/engine.ts` remains.
+- Korean guide YAML examples pass the existing preference validator. Real
+  consumer discovery probes pass without running commands or editing its files.
+- The role resolver, model preferences, execution backends, DB schema, package
+  dependencies and loader are unchanged from the pre-Astra baseline. Source
+  and rebuilt runtime have no Astra delegation extension directory.
+- `validate-pack` passes, including isolated install/CLI/MCP, standalone web,
+  native subpath and package dependency checks. Temporary pack manifest changes
+  were restored. No user install, remote deployment, push or consumer
+  preference/state mutation was performed.
+
+The audit-fix method supplied per-finding classification, red/green checks and
+atomic commits; missing phase UAT metadata was handled by source-based repros,
+not fabricated UAT completion. The opt-in [Korean/monorepo guide](../user-docs/korean-monorepos.md)
+explains the deliberate compatibility limits and how to use the existing policy.
+
+Status: the six audited code fixes and their documentation/verification are
+complete. Operational adoption (push/install or changing the consumer's optional
+preferences) remains a separate explicit operator action. This is not a claim
+that every possible natural-language request is recognized or that all unrelated
+legacy workflow behavior was redesigned.

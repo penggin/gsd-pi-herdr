@@ -2,7 +2,7 @@
 
 > **Status:** M0–M7 and final downstream-isolation revalidation complete
 > **Last updated:** 2026-09-07
-> **Current milestone:** Korean-input / monorepo workflow audit fixes in progress; original Herdr M0–M7 remain complete
+> **Current milestone:** Korean-input / monorepo workflow audit fixes complete and verified; original Herdr M0–M7 remain complete
 > **Canonical rule:** Every Herdr-integration development session starts by reading this file and ends by updating it.
 
 ## 1. Mission
@@ -3703,6 +3703,24 @@ this session does not merge, push, tag, or publish.
   unchanged. Final relevant command/dispatcher/core regression passed 265/265
   actual tests, with typecheck. Earlier compact totals counted suites as well;
   final whole-audit test totals are taken from Node's actual counters.
+- Final compiled changed-source selection since `4de9a5ee1` passed 492/492
+  actual tests with zero skips after the final guard edit. Cross-workflow
+  regression passed 531/531 (auto/recovery/model/skills/assessment/Git/quick/
+  Local-Cmux-Herdr/browser replacement); the final guard received an additional
+  265/265 command/dispatcher/core check. Totals overlap. Typecheck, core build
+  and web standalone build pass; the existing nonfatal webpack createRequire
+  warning remains. Korean guide examples validate, actual consumer discovery
+  probes pass read-only, and Astra remains absent. Package validation is the
+  last running gate; no consumer state/config or user installation was changed.
+- Final `validate-pack` passed after the completed core/web builds, including
+  isolated install, CLI/MCP handshake, native subpath, standalone web dependency
+  and optional pack discovery checks. Pack-time manifest rewrites were restored.
+  Final diff review confirms all source changes are the six audited fixes; no
+  model resolver, backend, DB schema, loader or dependency changes were made.
+  The Korean guide and exact compatibility limits are documented. All six
+  finding implementations are complete; exact next action is operator review
+  and, only if requested, push/install and adoption of optional Korean/structured
+  preferences. Do not re-enable Pengbot's temporary Git override automatically.
 
 ## 11. Working-session protocol
 
