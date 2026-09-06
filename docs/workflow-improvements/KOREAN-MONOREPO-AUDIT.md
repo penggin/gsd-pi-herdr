@@ -13,7 +13,7 @@ Findings are implemented separately with regression tests and explicit commits.
 | --- | --- | --- | --- |
 | F-01 | Snapshot absorption restages unrelated source after a scoped commit, and can leave it staged after a rejecting hook. | High | Fixed: retain separate snapshots for scoped/excluded commits. |
 | F-02 | All-Korean quick/debug descriptions lose their slug, preventing valid branch recovery or debug session creation. | High | Fixed: NFC normalization and deterministic bounded ASCII fallback. |
-| F-03 | Skill context tokenization discards Korean text, including explicitly configured exact token rules. | Medium | Reproduced; Unicode-aware normalization with exact structured matching. |
+| F-03 | Skill context tokenization discards Korean text, including explicitly configured exact token rules. | Medium | Fixed: NFC Unicode tokens/phrases in structured matching, including exclusions. |
 | F-04 | Recursive Cargo discovery emits bare root Cargo verification commands without a root manifest. | Medium | Reproduced on consumer; separate language detection from executable-root evidence. |
 | F-05 | Workspace members lacking local lockfiles inherit npm instead of their declared parent pnpm manager. | Medium | Reproduced on consumer; inherit only from verified workspace membership. |
 | F-06 | Freeform Korean questions/negations fall into quick execution, and mixed `merge 하지 말고 ...` can route to ship. | High | Fixed: bounded explicit-intent shorthand and non-executing clarification. |
@@ -110,3 +110,21 @@ return/merge cleanup, NFC/NFD equivalence, debug collisions and traversal refusa
 Final related quick/debug suite: 106/106, no skips. Extension typecheck and diff
 review pass. The earlier dot output included suite markers; the three-file
 focused run has 42 actual tests, not 48.
+
+### F-03 — Structured Korean skill matching
+
+Structured `token`, `phrase` and metadata operands now normalize to NFC;
+tokens retain Unicode letters, numbers and combining marks plus existing
+technical delimiters. Korean include and `none` exclusions work through the
+real activation builder. Matching remains exact: `결제` does not match
+`결제처리`, and English substring-negative rules remain intact.
+
+Legacy `when` and heuristic discovery remain the existing loose ASCII matcher
+for compatibility. They are not silently translated or rewritten. Projects can
+explicitly choose Korean/English structured alternatives; no method becomes a
+new mandatory gate. Installed-skill filtering, avoid rules, manual/suggest and
+assessment policies remain unchanged.
+
+Public activation RED: 21 passed / 5 failed. GREEN: 26/26. Combined activation,
+manifest, preferences and assessment registry/tool-policy tests: 188/188 actual
+Node tests, no skipped tests or suites. Extension typecheck and diff review pass.

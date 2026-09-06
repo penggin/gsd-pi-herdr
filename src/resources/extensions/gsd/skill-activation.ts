@@ -26,6 +26,8 @@ function normalizeSkillReference(ref: string): string {
   return name.trim().toLowerCase();
 }
 
+// Legacy `when` and discovery matching intentionally retain their loose ASCII
+// token variants and substring semantics, independently of structured rules.
 function tokenizeSkillContext(...parts: Array<string | null | undefined>): Set<string> {
   const tokens = new Set<string>();
   const addVariants = (raw: string) => {
@@ -108,23 +110,27 @@ interface StructuredSkillContext {
   riskTags: string[];
 }
 
+function normalizeStructuredText(value: string): string {
+  return value.normalize("NFC").toLowerCase();
+}
+
 function normalizeExact(value: string): string {
-  return value.trim().toLowerCase().replace(/[_\s]+/g, "-");
+  return normalizeStructuredText(value).trim().replace(/[_\s]+/g, "-");
 }
 
 function atomMatches(atom: GSDSkillMatchAtom, context: StructuredSkillContext): boolean {
-  if ("token" in atom) return context.tokens.has(atom.token.trim().toLowerCase());
+  if ("token" in atom) return context.tokens.has(normalizeStructuredText(atom.token).trim());
   if ("phrase" in atom) {
-    const phrase = atom.phrase.trim().toLowerCase().replace(/[-_\s]+/g, " ");
+    const phrase = normalizeStructuredText(atom.phrase).trim().replace(/[-_\s]+/g, " ");
     if (!phrase) return false;
     const words = context.phraseText.split(" ").filter(Boolean);
     const expected = phrase.split(" ").filter(Boolean);
     return words.some((_, index) => expected.every((word, offset) => words[index + offset] === word));
   }
   if ("workspace" in atom) {
-    const expected = atom.workspace.replace(/\\/g, "/").replace(/\/$/, "").toLowerCase();
+    const expected = normalizeStructuredText(atom.workspace).replace(/\\/g, "/").replace(/\/$/, "");
     return context.workspaces.some((workspace) => {
-      const current = workspace.replace(/\\/g, "/").replace(/\/$/, "").toLowerCase();
+      const current = normalizeStructuredText(workspace).replace(/\\/g, "/").replace(/\/$/, "");
       return current === expected || current.startsWith(`${expected}/`);
     });
   }
@@ -262,19 +268,16 @@ export function buildSkillActivationBlock(params: {
     params.taskId,
     params.taskTitle,
   );
-  const structuredContext: StructuredSkillContext = {
-    tokens: new Set(
-      [params.milestoneTitle, params.sliceTitle, params.taskTitle]
-        .filter((value): value is string => Boolean(value))
-        .join(" ")
-        .toLowerCase()
-        .match(/[a-z0-9][a-z0-9+.#_-]*/g) ?? [],
-    ),
-    phraseText: [params.milestoneTitle, params.sliceTitle, params.taskTitle]
+  const structuredTitleText = normalizeStructuredText(
+    [params.milestoneTitle, params.sliceTitle, params.taskTitle]
       .filter((value): value is string => Boolean(value))
-      .join(" ")
-      .toLowerCase()
-      .replace(/[-_\s]+/g, " "),
+      .join(" "),
+  );
+  const structuredContext: StructuredSkillContext = {
+    // Keep whole Unicode words (including combining marks) and the existing
+    // technical delimiters. Explicit atoms may be a single letter or syllable.
+    tokens: new Set(structuredTitleText.match(/[\p{L}\p{N}][\p{L}\p{N}\p{M}+.#_-]*/gu) ?? []),
+    phraseText: structuredTitleText.replace(/[-_\s]+/g, " "),
     workspaces: params.workspaces ?? [],
     unitType: params.unitType,
     lifecycle: params.lifecycle,

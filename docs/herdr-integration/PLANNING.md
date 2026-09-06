@@ -3676,6 +3676,13 @@ this session does not merge, push, tag, or publish.
   is rejected before state/branch creation. Related quick/debug regression
   passed 106/106 with extension typecheck; next fixes are F-03 skill matching
   and F-04/F-05 workspace command/package-manager detection.
+- F-03 implemented: structured skill tokens and operands now normalize Unicode
+  to NFC, including Korean include/exclude conditions and phrases. Whole-token
+  boundaries, existing technical delimiters, manual/suggest filtering and
+  legacy ASCII `when` behavior remain unchanged. No project rule migration or
+  automatic translation was performed. Activation red reproduced 5 failures;
+  green 26/26 and combined skill/preferences/assessment regression 188/188 actual
+  tests passed, with typecheck. Next: F-04/F-05 and final cross-workflow gates.
 
 ## 11. Working-session protocol
 

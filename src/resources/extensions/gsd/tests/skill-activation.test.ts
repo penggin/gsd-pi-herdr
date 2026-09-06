@@ -517,6 +517,189 @@ test("structured token matcher never uses substring matches", () => {
   }
 });
 
+test("structured tokens match Unicode title words and configured atoms in either canonical form", () => {
+  const base = makeTempBase();
+  try {
+    writeSkill(base, "unicode-policy", "An explicitly configured policy.");
+    loadOnlyTestSkills(base);
+    for (const field of ["milestoneTitle", "sliceTitle", "taskTitle"] as const) {
+      for (const titleForm of ["NFC", "NFD"] as const) {
+        for (const atomForm of ["NFC", "NFD"] as const) {
+          for (const token of ["결제", "글", "café", "عَرَبِيّ", "東京", "버전２"]) {
+            const result = buildBlock(base, { [field]: `검토 ${token} 동작`.normalize(titleForm) }, {
+              skill_rules: [{
+                match: { any: [{ token: ` ${token.normalize(atomForm)} ` }] },
+                use: ["unicode-policy"],
+              }],
+            });
+            assert.ok(result.includes(expectedSkillRead(base, "unicode-policy")),
+              `${field}: ${token}, title ${titleForm}, atom ${atomForm}`);
+          }
+        }
+      }
+    }
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("structured Unicode tokens retain exact word and technical identifier boundaries", () => {
+  const base = makeTempBase();
+  try {
+    writeSkill(base, "exact-policy", "An explicitly configured policy.");
+    loadOnlyTestSkills(base);
+    for (const [token, title] of [
+      ["결제", "결제처리 개선"],
+      ["결제", "결제를 처리"],
+      ["결제", "payment processing"],
+      ["글", "한글 처리"],
+      ["media", "remediation"],
+      ["결제", "API결제 검토"],
+      ["café", "caféine"],
+      ["api", "API_v2"],
+      ["cross", "cross-service"],
+      ["node", "Node.js"],
+    ]) {
+      assert.equal(buildBlock(base, { taskTitle: title }, {
+        skill_rules: [{ match: { any: [{ token }] }, use: ["exact-policy"] }],
+      }), "", `${token} must not match ${title}`);
+    }
+    for (const token of ["C++", "C#", "Node.js", "API_v2", "cross-service", "결제_API", "WebM"]) {
+      const result = buildBlock(base, { taskTitle: `검토 (${token}) 동작` }, {
+        skill_rules: [{ match: { all: [{ token: token.toLowerCase() }] }, use: ["exact-policy"] }],
+      });
+      assert.ok(result.includes(expectedSkillRead(base, "exact-policy")), token);
+    }
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("structured none excludes a matching Korean token in either canonical form", () => {
+  const base = makeTempBase();
+  try {
+    writeSkill(base, "excluded-policy", "An explicitly configured policy.");
+    loadOnlyTestSkills(base);
+    for (const titleForm of ["NFC", "NFD"] as const) {
+      for (const atomForm of ["NFC", "NFD"] as const) {
+        const preferences: GSDPreferences = {
+          skill_rules: [{
+            match: { none: [{ token: "결제".normalize(atomForm) }] },
+            use: ["excluded-policy"],
+          }],
+        };
+        assert.equal(buildBlock(base, { taskTitle: "결제 검토".normalize(titleForm) }, preferences), "");
+        assert.ok(buildBlock(base, { taskTitle: "결제처리 검토".normalize(titleForm) }, preferences)
+          .includes(expectedSkillRead(base, "excluded-policy")));
+      }
+    }
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("structured Unicode all, any and none compose with exact workspace and metadata constraints", () => {
+  const base = makeTempBase();
+  try {
+    writeSkill(base, "scoped-policy", "An explicitly configured policy.");
+    loadOnlyTestSkills(base);
+    const preferences: GSDPreferences = {
+      skill_rules: [{
+        match: {
+          all: [
+            { token: "권한".normalize("NFD") },
+            { workspace: "apps/결제".normalize("NFD") },
+            { unitType: "execute_task" },
+            { lifecycle: "구현".normalize("NFD") },
+            { requirementClass: "보안".normalize("NFD") },
+            { riskTag: "높음".normalize("NFD") },
+          ],
+          any: [{ token: "결제" }, { token: "환불".normalize("NFD") }],
+          none: [{ token: "문서".normalize("NFD") }, { phrase: "읽기 전용".normalize("NFD") }],
+        },
+        use: ["scoped-policy"],
+      }],
+    };
+    const params = {
+      taskTitle: "결제 권한 검토".normalize("NFD"),
+      workspaces: ["apps/결제/src"],
+      unitType: "execute-task",
+      lifecycle: "구현",
+      requirementClasses: ["보안"],
+      riskTags: ["높음"],
+    };
+    for (const taskTitle of ["결제 권한 검토", "환불 권한 검토"]) {
+      assert.ok(buildBlock(base, { ...params, taskTitle: taskTitle.normalize("NFD") }, preferences)
+        .includes(expectedSkillRead(base, "scoped-policy")));
+    }
+    for (const override of [
+      { taskTitle: "결제 검토" },
+      { taskTitle: "권한 검토" },
+      { taskTitle: "결제 권한 문서" },
+      { taskTitle: "결제 권한 읽기_전용".normalize("NFD") },
+      { workspaces: ["apps/결제서비스/src"] },
+      { workspaces: [] },
+      { unitType: "plan-slice" },
+      { lifecycle: "검증" },
+      { requirementClasses: ["성능"] },
+      { riskTags: ["낮음"] },
+    ]) {
+      assert.equal(buildBlock(base, { ...params, ...override }, preferences), "", JSON.stringify(override));
+    }
+    assert.ok(buildBlock(base, { ...params, workspaces: ["apps\\결제\\src".normalize("NFD")] }, preferences)
+      .includes(expectedSkillRead(base, "scoped-policy")));
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("structured Unicode phrases normalize titles and operands without inferring word forms", () => {
+  const base = makeTempBase();
+  try {
+    writeSkill(base, "unicode-phrase", "An explicitly configured policy.");
+    loadOnlyTestSkills(base);
+    for (const titleForm of ["NFC", "NFD"] as const) {
+      for (const atomForm of ["NFC", "NFD"] as const) {
+        const preferences: GSDPreferences = {
+          skill_rules: [{
+            match: { all: [{ phrase: " 결제_권한 ".normalize(atomForm) }] },
+            use: ["unicode-phrase"],
+          }],
+        };
+        assert.ok(buildBlock(base, { taskTitle: "결제-권한 검토".normalize(titleForm) }, preferences)
+          .includes(expectedSkillRead(base, "unicode-phrase")));
+        for (const taskTitle of ["결제 처리 권한", "결제 권한이 필요", "결제권한 검토", "payment authorization"]) {
+          assert.equal(buildBlock(base, { taskTitle: taskTitle.normalize(titleForm) }, preferences), "", taskTitle);
+        }
+      }
+    }
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("legacy when rules preserve loose ASCII substring and variant matching", () => {
+  const base = makeTempBase();
+  try {
+    writeSkill(base, "legacy-policy", "An explicitly configured policy.");
+    loadOnlyTestSkills(base);
+    for (const [when, taskTitle] of [
+      ["media", "remediation"],
+      ["remediation", "media"],
+      ["database schema", "schema update"],
+      ["cross_service", "cross-service"],
+      ["PrIsMa", "PRISMA migration"],
+    ]) {
+      const result = buildBlock(base, { taskTitle }, {
+        skill_rules: [{ when, use: ["legacy-policy"] }],
+      });
+      assert.ok(result.includes(expectedSkillRead(base, "legacy-policy")), `${when}: ${taskTitle}`);
+    }
+  } finally {
+    cleanup(base);
+  }
+});
+
 test("structured phrase matcher requires a normalized consecutive word sequence", () => {
   const base = makeTempBase();
   try {
