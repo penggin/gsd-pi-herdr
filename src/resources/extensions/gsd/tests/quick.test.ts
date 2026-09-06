@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { buildQuickQualityInstructions, parseQuickArgs } from "../quick.ts";
+import { buildQuickQualityInstructions, handleQuick, parseQuickArgs } from "../quick.ts";
 
 describe("quick task right-sizing flags", () => {
   test("preserves the lightweight default", () => {
@@ -51,4 +54,33 @@ describe("quick task right-sizing flags", () => {
     assert.doesNotMatch(instructions, /### Discussion/);
     assert.doesNotMatch(instructions, /Post-execution verification/);
   });
+});
+
+test("quick rejects symbol-only descriptions before creating task state or dispatching", async () => {
+  const base = mkdtempSync(join(tmpdir(), "gsd-quick-invalid-slug-"));
+  const previousCwd = process.cwd();
+  const notifications: Array<{ message: string; level?: string }> = [];
+  const messages: unknown[] = [];
+  try {
+    mkdirSync(join(base, ".gsd"));
+    process.chdir(base);
+    for (const description of ["🔥🔥🔥", "../", "--- !!!", "\u0301"]) {
+      await handleQuick(description, {
+        ui: { notify: (message: string, level?: string) => notifications.push({ message, level }) },
+      } as any, {
+        sendMessage: (message: unknown) => messages.push(message),
+      } as any);
+    }
+    assert.equal(notifications.length, 4);
+    for (const notification of notifications) {
+      assert.equal(notification.level, "error");
+      assert.match(notification.message, /at least one (letter or number|alphanumeric character)/i);
+    }
+    assert.deepEqual(messages, []);
+    assert.equal(existsSync(join(base, ".gsd", "quick")), false);
+    assert.equal(existsSync(join(base, ".gsd", "runtime")), false);
+  } finally {
+    process.chdir(previousCwd);
+    rmSync(base, { recursive: true, force: true });
+  }
 });

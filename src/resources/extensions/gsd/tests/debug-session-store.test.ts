@@ -1,6 +1,6 @@
 import test, { describe } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,6 +8,7 @@ import {
   assertValidDebugSessionSlug,
   createDebugSession,
   debugSessionArtifactPath,
+  debugSessionLogPath,
   debugSessionsDir,
   listDebugSessions,
   loadDebugSession,
@@ -64,6 +65,27 @@ describe("debug-session-store: create/list/load/update", () => {
       assert.ok(existsSync(debugSessionArtifactPath(base, "auth-issue")));
       assert.ok(existsSync(debugSessionArtifactPath(base, "auth-issue-2")));
       assert.ok(existsSync(debugSessionArtifactPath(base, "auth-issue-3")));
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
+  });
+
+  test("Korean sessions round-trip with canonical-equivalent collision suffixes", () => {
+    const base = makeBase();
+    try {
+      const issue = "로그인 오류 수정";
+      const a = createDebugSession(base, { issue });
+      const b = createDebugSession(base, { issue: issue.normalize("NFD") });
+      const c = createDebugSession(base, { issue });
+
+      assert.match(a.session.slug, /^task-[a-z0-9]+$/);
+      assert.equal(b.session.slug, `${a.session.slug}-2`);
+      assert.equal(c.session.slug, `${a.session.slug}-3`);
+      assert.equal(a.artifactPath, join(debugSessionsDir(base), `${a.session.slug}.json`));
+      assert.equal(a.session.logPath, join(realpathSync(base), ".gsd", "debug", `${a.session.slug}.log`));
+      assert.equal(loadDebugSession(base, a.session.slug)?.session.issue, issue);
+      assert.equal(listDebugSessions(base).sessions.length, 3);
+      assert.equal(listDebugSessions(base).malformed.length, 0);
     } finally {
       rmSync(base, { recursive: true, force: true });
     }
@@ -168,11 +190,38 @@ describe("debug-session-store: malformed artifacts + negative paths", () => {
     );
   });
 
+  test("Unicode-only issues get stable bounded ASCII slugs after NFC normalization", () => {
+    for (const issue of ["로그인 오류 수정", "中文", "é", "１２３", "한".repeat(200)]) {
+      const slug = slugifyDebugSessionIssue(issue);
+      assert.match(slug, /^task-[a-z0-9]+$/);
+      assert.ok(slug.length <= 64);
+      assert.equal(slugifyDebugSessionIssue(issue.normalize("NFD")), slug);
+      assert.equal(slugifyDebugSessionIssue(`  ${issue}  `), slug);
+      assert.doesNotThrow(() => assertValidDebugSessionSlug(slug));
+    }
+    assert.notEqual(slugifyDebugSessionIssue("로그인 오류 수정"), slugifyDebugSessionIssue("결제 오류 수정"));
+  });
+
+  test("preserves ASCII and mixed-language slugs and rejects symbol-only issues", () => {
+    assert.equal(slugifyDebugSessionIssue("Fix LOGIN / Error!"), "fix-login-error");
+    assert.equal(slugifyDebugSessionIssue("로그인 API 오류 수정"), "api");
+    assert.equal(slugifyDebugSessionIssue("API 로그인 오류 123"), "api-123");
+    assert.equal(slugifyDebugSessionIssue("a".repeat(80)), "a".repeat(64));
+    for (const issue of ["🔥🔥🔥", "../", "--- !!!", "\u0301"]) {
+      assert.throws(() => slugifyDebugSessionIssue(issue), /alphanumeric/i);
+    }
+  });
+
   test("invalid slug tokens are rejected for load/path validation", () => {
     const base = makeBase();
     try {
-      assert.throws(() => assertValidDebugSessionSlug("../escape"), /Invalid debug session slug/);
-      assert.throws(() => loadDebugSession(base, "../escape"), /Invalid debug session slug/);
+      for (const slug of ["../escape", "..\\escape", "/absolute", "nested/path", "로그인", "", "a--b"]) {
+        assert.throws(() => assertValidDebugSessionSlug(slug), /Invalid debug session slug/);
+        assert.throws(() => debugSessionArtifactPath(base, slug), /Invalid debug session slug/);
+        assert.throws(() => debugSessionLogPath(base, slug), /Invalid debug session slug/);
+        assert.throws(() => loadDebugSession(base, slug), /Invalid debug session slug/);
+        assert.throws(() => updateDebugSession(base, slug, { phase: "triage" }), /Invalid debug session slug/);
+      }
     } finally {
       rmSync(base, { recursive: true, force: true });
     }

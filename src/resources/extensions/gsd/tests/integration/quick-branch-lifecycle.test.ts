@@ -9,14 +9,15 @@
 
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { execSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
 
 import { captureIntegrationBranch, getCurrentBranch } from "../../worktree.ts";
 import { readIntegrationBranch, QUICK_BRANCH_RE } from "../../git-service.ts";
 import { disableDebug, enableDebug, getDebugCounters } from "../../debug-logger.ts";
+import { cleanupQuickBranch, handleQuick, inferQuickReturnFromBranch, parseQuickBranchName } from "../../quick.ts";
 
 function run(command: string, cwd: string): string {
   return execSync(command, { cwd, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8" }).trim();
@@ -41,6 +42,77 @@ function createTestRepo(): string {
 
 
 describe('quick-branch-lifecycle', () => {
+test('Korean quick handler creates safe recoverable branches and preserves ASCII slugs', async () => {
+  const repo = realpathSync(createTestRepo());
+  const previousCwd = process.cwd();
+  const descriptions = [
+    "로그인 오류 수정",
+    "로그인 오류 수정".normalize("NFD"),
+    "결제 오류 수정",
+    "Fix LOGIN / Error!",
+    "로그인 API 오류 수정",
+    "a".repeat(80),
+  ];
+  let firstSlug = "";
+  try {
+    process.chdir(repo);
+    writeFileSync(join(repo, ".gsd", "PREFERENCES.md"), "---\ngit:\n  isolation: branch\nuok:\n  gitops:\n    enabled: true\n---\n");
+    for (const [index, description] of descriptions.entries()) {
+      const taskNum = index + 1;
+      const notifications: Array<{ message: string; level?: string }> = [];
+      const messages: Array<{ content: string }> = [];
+      await handleQuick(description, {
+        ui: { notify: (message: string, level?: string) => notifications.push({ message, level }) },
+      } as any, {
+        sendMessage: (message: { content: string }) => messages.push(message),
+      } as any);
+
+      const branch = getCurrentBranch(repo);
+      const parsed = parseQuickBranchName(branch);
+      assert.ok(parsed, `handler must create a recoverable branch for ${description}: ${JSON.stringify(notifications)}`);
+      assert.equal(parsed.taskNum, taskNum);
+      assert.match(parsed.slug, /^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+      assert.ok(parsed.slug.length <= 40);
+      assert.equal(spawnSync("git", ["check-ref-format", "--branch", branch], { cwd: repo }).status, 0);
+      if (index === 0) {
+        assert.match(parsed.slug, /^task-[a-z0-9]+$/);
+        firstSlug = parsed.slug;
+      } else if (index === 1) {
+        assert.equal(parsed.slug, firstSlug, "NFC and NFD use the same slug but independent task numbers");
+      } else if (index === 2) {
+        assert.notEqual(parsed.slug, firstSlug, "different Korean descriptions get different tokens");
+      } else {
+        assert.equal(parsed.slug, ["fix-login-error", "api", "a".repeat(40)][index - 3]);
+      }
+      const taskDir = join(repo, ".gsd", "quick", `${taskNum}-${parsed.slug}`);
+      assert.ok(existsSync(taskDir));
+      assert.equal(messages.length, 1);
+      assert.ok(messages[0].content.includes(description));
+      assert.equal(notifications.some(notification => notification.level === "warning"), false);
+
+      writeFileSync(join(repo, `fix-${taskNum}.txt`), "fixed\n");
+      run(`git add fix-${taskNum}.txt`, repo);
+      run('git commit -m "test: quick fix"', repo);
+      assert.deepEqual(inferQuickReturnFromBranch(repo), {
+        basePath: repo,
+        originalBranch: "main",
+        quickBranch: branch,
+        taskNum,
+        slug: parsed.slug,
+        description: parsed.slug.replace(/-/g, " "),
+      });
+      assert.ok(cleanupQuickBranch(repo));
+      assert.equal(getCurrentBranch(repo), "main");
+      assert.ok(existsSync(join(repo, `fix-${taskNum}.txt`)));
+      assert.equal(existsSync(join(repo, ".gsd", "runtime", "quick-return.json")), false);
+      assert.notEqual(spawnSync("git", ["show-ref", "--verify", `refs/heads/${branch}`], { cwd: repo }).status, 0);
+    }
+  } finally {
+    process.chdir(previousCwd);
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test('QUICK_BRANCH_RE: matches quick-task branches', () => {
   assert.ok(QUICK_BRANCH_RE.test("gsd/quick/1-fix-typo"), "matches standard quick branch");
 });

@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { atomicWriteSync, type AtomicWriteSyncOps } from "./atomic-write.js";
 import { gsdRoot } from "./paths.js";
+import { slugifyDescription } from "./description-slug.js";
 
 export type DebugSessionStatus = "active" | "paused" | "resolved" | "failed";
 
@@ -117,14 +118,7 @@ function ensureSessionsDir(basePath: string): string {
 }
 
 export function slugifyDebugSessionIssue(issue: string): string {
-  const normalized = issue
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .replace(/-{2,}/g, "-")
-    .slice(0, MAX_SLUG_LENGTH)
-    .replace(/-+$/g, "");
+  const normalized = slugifyDescription(issue, MAX_SLUG_LENGTH);
 
   if (!normalized) {
     throw new Error("Issue text must contain at least one alphanumeric character.");

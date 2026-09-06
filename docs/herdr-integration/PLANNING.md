@@ -3669,6 +3669,13 @@ this session does not merge, push, tag, or publish.
   now import production code rather than duplicate its route table; 133/133
   resolver/handler cases pass. Next implementation remains F-02–F-05; no consumer
   preference, runtime install or model policy was changed.
+- F-02 implemented: a shared bounded description slug preserves existing ASCII
+  names and uses a deterministic ASCII token for NFC-normalized Unicode-only
+  titles. Real Korean quick branch creation/recovery and debug-session collision
+  paths pass; supplied path validation remains strict. Symbol-only quick input
+  is rejected before state/branch creation. Related quick/debug regression
+  passed 106/106 with extension typecheck; next fixes are F-03 skill matching
+  and F-04/F-05 workspace command/package-manager detection.
 
 ## 11. Working-session protocol
 

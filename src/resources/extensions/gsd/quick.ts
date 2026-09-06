@@ -13,6 +13,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@gsd/pi-coding-agent
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { QUICK_BRANCH_RE } from "./branch-patterns.js";
+import { slugifyDescription } from "./description-slug.js";
 import { loadPrompt } from "./prompt-loader.js";
 import { gsdRoot } from "./paths.js";
 import { GitServiceImpl, runGit, taskBranchArgs } from "./git-service.js";
@@ -110,19 +111,6 @@ let pendingQuickReturn: QuickReturnState | null = null;
 const pendingQuickReturnMisses = new Map<string, string>();
 
 // ─── Quick Task Helpers ───────────────────────────────────────────────────────
-
-/**
- * Generate a URL-friendly slug from a description.
- * Lowercase, hyphens, max 40 chars.
- */
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 40)
-    .replace(/-$/, "");
-}
 
 /**
  * Determine the next quick task number by scanning existing directories.
@@ -432,7 +420,11 @@ export async function handleQuick(
   // Setup
   const quickDir = join(root, "quick");
   const taskNum = getNextTaskNum(quickDir);
-  const slug = slugify(description);
+  const slug = slugifyDescription(description, 40);
+  if (!slug) {
+    ctx.ui.notify("Quick task description must contain at least one letter or number.", "error");
+    return;
+  }
   const taskDir = ensureQuickDir(basePath, taskNum, slug);
   const taskDirRel = `.gsd/quick/${taskNum}-${slug}`;
   const date = new Date().toISOString().split("T")[0];

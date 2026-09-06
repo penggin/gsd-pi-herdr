@@ -12,7 +12,7 @@ Findings are implemented separately with regression tests and explicit commits.
 | ID | Finding | Severity | Disposition |
 | --- | --- | --- | --- |
 | F-01 | Snapshot absorption restages unrelated source after a scoped commit, and can leave it staged after a rejecting hook. | High | Fixed: retain separate snapshots for scoped/excluded commits. |
-| F-02 | All-Korean quick/debug descriptions lose their slug, preventing valid branch recovery or debug session creation. | High | Reproduced; preserve bounded safe identifier contracts. |
+| F-02 | All-Korean quick/debug descriptions lose their slug, preventing valid branch recovery or debug session creation. | High | Fixed: NFC normalization and deterministic bounded ASCII fallback. |
 | F-03 | Skill context tokenization discards Korean text, including explicitly configured exact token rules. | Medium | Reproduced; Unicode-aware normalization with exact structured matching. |
 | F-04 | Recursive Cargo discovery emits bare root Cargo verification commands without a root manifest. | Medium | Reproduced on consumer; separate language detection from executable-root evidence. |
 | F-05 | Workspace members lacking local lockfiles inherit npm instead of their declared parent pnpm manager. | Medium | Reproduced on consumer; inherit only from verified workspace membership. |
@@ -94,3 +94,19 @@ non-colon capture prohibitions (`메모 금지`, `capture 안돼`) while preserv
 `메모: 금지` as explicit data. The combined resolver/dispatcher/core matrix
 passed 277/277 before those last capture cases; extension typecheck passed.
 All final paths are included again at the final verification boundary.
+
+### F-02 — Korean quick/debug descriptions
+
+Quick/debug descriptions now share a small NFC-normalized slug helper. Existing
+readable ASCII/mixed-text slugs remain unchanged; Unicode-only descriptions use
+`task-<12 hex characters>` instead of producing an empty name. Original issue
+and task descriptions remain intact. Existing task numbers and debug collision
+suffixes still distinguish separate sessions; supplied slug/path validators are
+not widened. Symbol-only quick requests stop before creating a directory/branch.
+
+The real quick handler previously created `gsd/quick/1-`, which its own recovery
+parser rejected. Regression tests cover actual Korean branch creation, inferred
+return/merge cleanup, NFC/NFD equivalence, debug collisions and traversal refusal.
+Final related quick/debug suite: 106/106, no skips. Extension typecheck and diff
+review pass. The earlier dot output included suite markers; the three-file
+focused run has 42 actual tests, not 48.
