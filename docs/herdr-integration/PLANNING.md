@@ -3689,6 +3689,14 @@ this session does not merge, push, tag, or publish.
   omitted. Mixed pnpm/Bun roots and existing native root commands are covered;
   red reproduced 7 failures and the detection/init/preferences/PM matrix passed
   289/289 with typecheck. Next: F-05 declared-workspace package-manager inheritance.
+- F-05 implemented: child packages inherit the nearest explicitly declared
+  workspace manager only after physical-path membership/exclusion checks and
+  within the Git boundary. Local lock/Corepack precedence and independent/npm
+  fallback remain intact. Review added nested-workspace boundary regressions;
+  final PM/detection/verification-gate suite passed 300/300 and typecheck. Real
+  read-only Pengbot probes now choose pnpm for api/web/penglava and omit invalid
+  root Cargo commands; no commands/services were executed there. Next: final
+  combined regression, Korean usage guide verification, build/package gates.
 
 ## 11. Working-session protocol
 

@@ -17,7 +17,7 @@
 
 import { describe, test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
@@ -204,6 +204,31 @@ describe("verification-gate: discovery", () => {
       "pnpm test",
     ]);
     assert.equal(result.source, "package-json");
+  });
+
+  test("workspace children discover pnpm scripts while preserving Bun script bodies", () => {
+    mkdirSync(join(tmp, ".git"));
+    writeFileSync(join(tmp, "package.json"), JSON.stringify({
+      packageManager: "pnpm@10.0.0",
+      scripts: { test: "pnpm -r test", lint: "pnpm -r lint" },
+    }));
+    writeFileSync(join(tmp, "pnpm-workspace.yaml"), "packages: ['apps/*', '!apps/standalone']\n");
+    for (const app of ["api", "penglava", "standalone"]) {
+      const cwd = join(tmp, "apps", app);
+      mkdirSync(cwd, { recursive: true });
+      const manifest = JSON.stringify({
+        scripts: { typecheck: "bun run check-types", lint: "bunx biome check .", test: "bun test", build: "bun build ./index.ts" },
+      });
+      writeFileSync(join(cwd, "package.json"), manifest);
+      const result = discoverCommands({ cwd });
+      assert.deepStrictEqual(result, {
+        commands: app === "standalone"
+          ? ["npm run typecheck", "npm run lint", "npm test"]
+          : ["pnpm typecheck", "pnpm lint", "pnpm test"],
+        source: "package-json",
+      });
+      assert.equal(readFileSync(join(cwd, "package.json"), "utf-8"), manifest);
+    }
   });
 
   test("yarn.lock present → uses yarn commands", () => {

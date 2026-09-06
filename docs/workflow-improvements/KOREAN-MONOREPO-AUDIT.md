@@ -15,7 +15,7 @@ Findings are implemented separately with regression tests and explicit commits.
 | F-02 | All-Korean quick/debug descriptions lose their slug, preventing valid branch recovery or debug session creation. | High | Fixed: NFC normalization and deterministic bounded ASCII fallback. |
 | F-03 | Skill context tokenization discards Korean text, including explicitly configured exact token rules. | Medium | Fixed: NFC Unicode tokens/phrases in structured matching, including exclusions. |
 | F-04 | Recursive Cargo discovery emits bare root Cargo verification commands without a root manifest. | Medium | Fixed: root-manifest evidence alone produces bare root verification commands. |
-| F-05 | Workspace members lacking local lockfiles inherit npm instead of their declared parent pnpm manager. | Medium | Reproduced on consumer; inherit only from verified workspace membership. |
+| F-05 | Workspace members lacking local lockfiles inherit npm instead of their declared parent pnpm manager. | Medium | Fixed: nearest explicit workspace membership with local precedence and repository boundaries. |
 | F-06 | Freeform Korean questions/negations fall into quick execution, and mixed `merge 하지 말고 ...` can route to ship. | High | Fixed: bounded explicit-intent shorthand and non-executing clarification. |
 
 The later F-06 authorization finding expands this audit beyond its initial five
@@ -141,3 +141,23 @@ No recursive aggregate command or new workspace execution policy was added.
 Nine new tests include mixed pnpm/Bun roots and root/nested manifest cases; the
 original source fails seven of them. Detection/init/preferences/package-manager
 regression passes 289/289, no skips, with extension typecheck and diff review.
+
+### F-05 — Declared workspace package-manager inheritance
+
+Local lockfiles and explicit local `packageManager` retain precedence. A package
+without them can inherit from the nearest JSON/YAML workspace declaration only
+if its physical path matches the declared include/exclude patterns. Inheritance
+stops at that declaration or the nearest Git directory/file, so excluded members,
+nonmembers and nested repositories do not borrow a more distant manager. No Git
+process, recursive source scan, package installation or script execution is used.
+
+YAML establishes workspace membership; a root with neither a lockfile nor
+Corepack field retains the existing npm default. The detector does not infer a
+custom repository wrapper or replace the actual Bun/Node/Rust script contents.
+
+Initial RED reproduced 13 failures; review exposed four further nearest-workspace
+boundary failures. Final package-manager/detection/verification-gate regression
+passes 300/300 actual Node tests with no skips; extension typecheck and diff
+review pass. Read-only probes on the real consumer now identify apps/api,
+apps/web and apps/penglava as pnpm members. Root verification no longer emits
+unscoped Cargo commands. No discovered command was executed in Pengbot.
