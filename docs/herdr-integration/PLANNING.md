@@ -3660,6 +3660,15 @@ this session does not merge, push, tag, or publish.
   integration 80/80 passed with extension typecheck. Existing consumer files,
   preferences and staged changes were not touched. Next: F-06 freeform routing,
   then F-02/F-03 Korean names and matching, F-04/F-05 workspace detection.
+- F-06 implemented: `/gsd do` now recognizes bounded explicit intent, Korean
+  read/capture aliases and normalized matching; unsupported or negated requests
+  no longer become unconditional quick work. Mixed `merge 하지 말고 상태만
+  알려줘` shows status, not ship. Exact task/capture body text survives dispatch,
+  including decomposed Hangul; filename substrings do not trigger workflow
+  commands. Direct commands and their existing guards remain unchanged. Tests
+  now import production code rather than duplicate its route table; 133/133
+  resolver/handler cases pass. Next implementation remains F-02–F-05; no consumer
+  preference, runtime install or model policy was changed.
 
 ## 11. Working-session protocol
 

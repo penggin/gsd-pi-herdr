@@ -1,189 +1,218 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import type { ExtensionAPI, ExtensionCommandContext } from "@gsd/pi-coding-agent";
+import * as commands from "../commands-do.ts";
 
-// ─── Mock dispatcher to capture routed commands ─────────────────────────
+const routes = [
+  ["show me progress", "status", ""],
+  ["STATUS", "status", ""],
+  ["status?", "status", ""],
+  ["show me status?", "status", ""],
+  ["run autonomously", "auto", ""],
+  ["clean up old branches", "cleanup", "old branches"],
+  ["create pr for milestone", "ship", "for milestone"],
+  ["add tests for S03", "add-tests", "for S03"],
+  ["check health of the system", "doctor", "of the system"],
+  ["debug this flaky oauth callback", "debug", "this flaky oauth callback"],
+  ["show me debug logs for today", "logs", "for today"],
+  ["debug logs for the last run", "logs", "for the last run"],
+  ["show me the session report", "session-report", ""],
+  ["what is my context usage", "usage", ""],
+  ["show me a context breakdown", "context", ""],
+  ["what is using context", "context", ""],
+  ["history --cost 5", "history", "--cost 5"],
+  ["logs tail 10", "logs", "tail 10"],
+  ["context --json", "context", "--json"],
+  ["diagnose issue with oauth callback", "debug", "with oauth callback"],
+  ["investigate flaky test in CI", "debug", "flaky test in CI"],
+  ["diagnose my project", "doctor", "my project"],
+  ["pr branch M002", "pr-branch", "M002"],
+  ["migrate old project", "migrate", "old project"],
+  ["steer toward smaller tasks", "steer", "toward smaller tasks"],
+  ["park M002", "park", "M002"],
+  ["toggle widget", "widget", ""],
+  ["next", "next", ""],
+  ["what's next", "status", ""],
+  ["what’s next?", "status", ""],
+  ["what is next", "status", ""],
+  ["현재 상태 알려줘", "status", ""],
+  ["현재 상태가 어때?", "status", ""],
+  ["현재 상태가 어때?".normalize("NFD"), "status", ""],
+  ["진행 상황 보여줘", "status", ""],
+  ["상태 보여줘".normalize("NFD"), "status", ""],
+  ["작업 이력 보여줘", "history", ""],
+  ["히스토리 알려줘", "history", ""],
+  ["로그 보여줘", "logs", ""],
+  ["debug 로그 보여줘", "logs", ""],
+  ["컨텍스트 사용량 알려줘", "usage", ""],
+  ["토큰 사용량 보여줘", "usage", ""],
+  ["컨텍스트 구성 보여줘", "context", ""],
+  ["context 사용량 보여줘", "usage", ""],
+  ["컨텍스트 알려줘", "context", ""],
+  ["merge 하지 말고 상태만 알려줘", "status", ""],
+  ["cleanup 하지 말고 로그만 보여줘", "logs", ""],
+] as const;
 
-let lastRouted: string | null = null;
-let lastQuick: string | null = null;
-
-const mockCtx = {
-  ui: {
-    notify: (_msg: string, _level: string) => {},
-  },
-} as any;
-
-// We test the keyword matching logic directly since the handler imports
-// the dispatcher dynamically (which requires the full extension runtime).
-
-// Inline the route-matching logic from commands-do.ts for unit testing.
-interface Route {
-  keywords: string[];
-  command: string;
+for (const [input, command, remainingArgs] of routes) {
+  test("/gsd do resolves " + JSON.stringify(input) + " through production code", () => {
+    assert.deepEqual(commands.resolveDoIntent(input), { kind: "command", command, remainingArgs });
+  });
 }
 
-const ROUTES: Route[] = [
-  { keywords: ["progress", "status", "dashboard", "how far", "where are we"], command: "status" },
-  { keywords: ["auto", "autonomous", "run all", "keep going", "start auto"], command: "auto" },
-  { keywords: ["stop", "halt", "abort"], command: "stop" },
-  { keywords: ["pause", "break", "take a break"], command: "pause" },
-  { keywords: ["history", "past", "what happened", "previous"], command: "history" },
-  { keywords: ["doctor", "health", "diagnose", "check health"], command: "doctor" },
-  { keywords: ["clean up", "cleanup", "remove old", "prune", "tidy"], command: "cleanup" },
-  { keywords: ["ship", "pull request", "create pr", "open pr", "merge"], command: "ship" },
-  { keywords: ["discuss", "talk about", "architecture", "design"], command: "discuss" },
-  { keywords: ["undo", "revert", "rollback", "take back"], command: "undo" },
-  { keywords: ["skip", "skip task", "skip this"], command: "skip" },
-  { keywords: ["visualize", "viz", "graph", "chart", "show graph"], command: "visualize" },
-  { keywords: ["capture", "note", "idea", "thought", "remember"], command: "capture" },
-  { keywords: ["inspect", "database", "sqlite", "db state"], command: "inspect" },
-  { keywords: ["context usage", "context window", "how much context", "token usage", "tokens used"], command: "usage" },
-  { keywords: ["context breakdown", "what is using context", "skills in context", "agents in context"], command: "context" },
-  { keywords: ["session report", "session summary", "cost summary", "how much"], command: "session-report" },
-  { keywords: ["backlog", "parking lot", "later", "someday"], command: "backlog" },
-  { keywords: ["add tests", "write tests", "generate tests", "test coverage"], command: "add-tests" },
-  { keywords: ["next", "step", "next step", "what's next"], command: "next" },
-  { keywords: ["logs", "debug logs", "log files"], command: "logs" },
-  { keywords: ["debug", "debug session", "investigate", "troubleshoot", "diagnose issue"], command: "debug" },
+const clarificationInputs = [
+  "florbinate the gizmo",
+  "안녕하세요",
+  "도와줘",
+  "로그인",
+  "자동차",
+  "자동완성",
+  "shipping label",
+  "autofocus input",
+  "contextual hints",
+  "captureless group",
+  "nextdoor",
+  "what happens if we merge?",
+  "what happens if we merge",
+  "should we cleanup old branches",
+  "could you run all tasks",
+  "can you fix the login bug?",
+  "why debug this issue",
+  "merge?",
+  "cleanup if tests pass",
+  "auto when ready",
+  "next is dangerous",
+  "merge 하지 마",
+  "merge 말아줘",
+  "merge 금지",
+  "ship 안돼",
+  "ship 안 돼",
+  "merge 하지 말아줘",
+  "ship 하면 어떻게 돼",
+  "cleanup 가능한가요",
+  "auto 실행하지마",
+  "다음 단계 실행하지 말아줘",
+  "로그인 오류를 수정해줄까?",
+  "로그인 오류를 수정하지 말아줘",
+  "로그인 오류를 수정해줘도 될까",
+  "로그인 오류 수정할 수 있어?",
+  "do not merge",
+  "don't cleanup",
+  "don’t run all",
+  "never ship",
+  "no auto",
+  "please do not fix the bug",
+  "fix the login bug only if approved",
+  "fix nothing",
+  "I am thinking about merge",
+  "tell me about auto",
+  "the word cleanup is in a message",
+  "status page needs cleanup",
+  "note",
+  "메모",
+  "capture? do not merge",
+  "note this if approved",
+  "show me logs clear",
+  "debug logs clear",
+  "session report --save",
+  "show me session report --save",
+  "merge could we",
+  "ship should we",
+  "capture 하지 마",
+  "메모 금지",
+  "메모해 말아줘",
+  "capture 안돼",
+  "capture 안 돼",
 ];
 
-interface MatchResult {
-  command: string;
-  remainingArgs: string;
-  score: number;
+for (const input of clarificationInputs) {
+  test("/gsd do leaves ambiguous input " + JSON.stringify(input) + " unrouted", () => {
+    assert.deepEqual(commands.resolveDoIntent(input), { kind: "clarify" });
+  });
 }
 
-function matchRoute(input: string): MatchResult | null {
-  const lower = input.toLowerCase();
-  let bestMatch: MatchResult | null = null;
+for (const input of [
+  "fix the login bug",
+  "please fix the login bug",
+  "implement a history button",
+  "fix the merge button",
+  "merge.md 파일을 수정해줘",
+  "ship.ts 오류를 수정해줘",
+  "add a cleanup reminder",
+  "로그인 오류를 수정해줘",
+  "로그인 오류를 수정해줘".normalize("NFD"),
+  "로그인 페이지를 만들어줘",
+]) {
+  test("/gsd do quick requires explicit task intent: " + JSON.stringify(input), () => {
+    assert.deepEqual(commands.resolveDoIntent(input), { kind: "quick", remainingArgs: input });
+  });
+}
 
-  for (const route of ROUTES) {
-    for (const keyword of route.keywords) {
-      if (lower.includes(keyword)) {
-        const score = keyword.length;
-        if (!bestMatch || score > bestMatch.score) {
-          const idx = lower.indexOf(keyword);
-          const remaining = (input.slice(0, idx) + input.slice(idx + keyword.length)).trim();
-          bestMatch = { command: route.command, remainingArgs: remaining, score };
-        }
-      }
-    }
+for (const [input, body] of [
+  ["note: merge later; do not ship", "merge later; do not ship"],
+  ["capture fix the login bug later", "fix the login bug later"],
+  ["remember: don't cleanup the branch", "don't cleanup the branch"],
+  ["remember don't cleanup later", "don't cleanup later"],
+  ["메모: 나중에 merge; 자동 실행하지 마", "나중에 merge; 자동 실행하지 마"],
+  ["메모: 금지", "금지"],
+  ["메모해 다음에 결제 검증 추가", "다음에 결제 검증 추가"],
+  ["기억해줘: 로그인 오류는 나중에 수정해줘", "로그인 오류는 나중에 수정해줘"],
+  ["메모해줘: 나중에  merge\n하지 마  ", "나중에  merge\n하지 마  "],
+  ["메모: 로그인 오류".normalize("NFD"), "로그인 오류".normalize("NFD")],
+]) {
+  test("/gsd do capture preserves its body: " + JSON.stringify(input), () => {
+    assert.deepEqual(commands.resolveDoIntent(input), { kind: "command", command: "capture", remainingArgs: body });
+  });
+}
+
+function recordingHandler() {
+  const notifications: Array<{ message: string; level: string | undefined }> = [];
+  const executions: Array<{ kind: "command" | "quick"; args: string }> = [];
+  const ctx = { ui: { notify: (message: string, level?: string) => notifications.push({ message, level }) } } as unknown as ExtensionCommandContext;
+  const pi = {} as ExtensionAPI;
+  const dispatch = {
+    command: async (args: string) => { executions.push({ kind: "command", args }); },
+    quick: async (args: string) => { executions.push({ kind: "quick", args }); },
+  };
+  return { notifications, executions, ctx, pi, dispatch };
+}
+
+test("/gsd do handler notifies with the unchanged request and never executes unclear input", async () => {
+  for (const input of clarificationInputs) {
+    const record = recordingHandler();
+    await commands.handleDo(input, record.ctx, record.pi, record.dispatch);
+    assert.deepEqual(record.executions, [], input);
+    assert.equal(record.notifications.length, 1, input);
+    assert.equal(record.notifications[0].level, "warning", input);
+    assert.ok(record.notifications[0].message.includes(input), input);
+    assert.match(record.notifications[0].message, /\/gsd help/);
   }
-
-  return bestMatch;
-}
-
-// ─── Tests ──────────────────────────────────────────────────────────────
-
-test("/gsd do: routes 'show me progress' to status", () => {
-  const match = matchRoute("show me progress");
-  assert.ok(match);
-  assert.equal(match.command, "status");
 });
 
-test("/gsd do: routes 'run autonomously' to auto", () => {
-  const match = matchRoute("run autonomously");
-  assert.ok(match);
-  assert.equal(match.command, "auto");
+test("/gsd do handler can reject unclear input without loading any runtime dependencies", async () => {
+  const record = recordingHandler();
+  await commands.handleDo("florbinate the gizmo", record.ctx, record.pi);
+  assert.equal(record.notifications.length, 1);
+  assert.equal(record.notifications[0].level, "warning");
 });
 
-test("/gsd do: routes 'clean up old branches' to cleanup", () => {
-  const match = matchRoute("clean up old branches");
-  assert.ok(match);
-  assert.equal(match.command, "cleanup");
-  assert.equal(match.remainingArgs, "old branches");
+test("/gsd do handler dispatches the resolver result exactly once", async () => {
+  for (const [input, expected] of [
+    ["merge 하지 말고 상태만 알려줘", { kind: "command", args: "status" }],
+    ["show me debug logs for today", { kind: "command", args: "logs for today" }],
+    ["what’s next?", { kind: "command", args: "status" }],
+    ["note: later, do not merge", { kind: "command", args: "capture later, do not merge" }],
+    ["로그인 오류를 수정해줘", { kind: "quick", args: "로그인 오류를 수정해줘" }],
+  ] as const) {
+    const record = recordingHandler();
+    await commands.handleDo(input, record.ctx, record.pi, record.dispatch);
+    assert.deepEqual(record.executions, [expected]);
+    assert.equal(record.notifications.length, 1);
+  }
 });
 
-test("/gsd do: routes 'create pr for milestone' to ship", () => {
-  const match = matchRoute("create pr for milestone");
-  assert.ok(match);
-  assert.equal(match.command, "ship");
-});
-
-test("/gsd do: routes 'add tests for S03' to add-tests", () => {
-  const match = matchRoute("add tests for S03");
-  assert.ok(match);
-  assert.equal(match.command, "add-tests");
-});
-
-test("/gsd do: routes 'what is next' to next", () => {
-  const match = matchRoute("what's next");
-  assert.ok(match);
-  assert.equal(match.command, "next");
-});
-
-test("/gsd do: returns null for unrecognized input", () => {
-  const match = matchRoute("florbinate the gizmo");
-  assert.equal(match, null);
-});
-
-test("/gsd do: prefers longer keyword match", () => {
-  // "check health" (12 chars) should beat "health" (6 chars)
-  const match = matchRoute("check health of the system");
-  assert.ok(match);
-  assert.equal(match.command, "doctor");
-  assert.ok(match.score >= 12);
-});
-
-test("/gsd do: routes debug troubleshooting intent to debug", () => {
-  const match = matchRoute("debug this flaky oauth callback");
-  assert.ok(match);
-  assert.equal(match.command, "debug");
-});
-
-test("/gsd do: keeps 'debug logs' routed to logs (longer keyword wins)", () => {
-  const match = matchRoute("show me debug logs for today");
-  assert.ok(match);
-  assert.equal(match.command, "logs");
-});
-
-test("/gsd do: routes 'session report' to session-report", () => {
-  const match = matchRoute("show me the session report");
-  assert.ok(match);
-  assert.equal(match.command, "session-report");
-});
-
-test("/gsd do: routes 'context usage' to usage", () => {
-  const match = matchRoute("what is my context usage");
-  assert.ok(match);
-  assert.equal(match.command, "usage");
-});
-
-test("/gsd do: routes 'context breakdown' to context", () => {
-  const match = matchRoute("show me a context breakdown");
-  assert.ok(match);
-  assert.equal(match.command, "context");
-});
-
-test("/gsd do: routes 'diagnose issue' to debug (not doctor)", () => {
-  // 'diagnose issue' is an explicit keyword on the debug route to distinguish
-  // session-level issue diagnosis from /gsd doctor health checks.
-  const match = matchRoute("diagnose issue with oauth callback");
-  assert.ok(match);
-  assert.equal(match.command, "debug");
-});
-
-test("/gsd do: routes 'investigate flaky test' to debug", () => {
-  const match = matchRoute("investigate flaky test in CI");
-  assert.ok(match);
-  assert.equal(match.command, "debug");
-});
-
-test("/gsd do: 'debug logs' keyword wins over bare 'debug' (longer keyword precedence)", () => {
-  // 'debug logs' (10 chars) > 'debug' (5 chars)
-  const logsMatch = matchRoute("debug logs for the last run");
-  assert.ok(logsMatch);
-  assert.equal(logsMatch.command, "logs");
-  assert.ok(logsMatch.score >= 10, `expected score >= 10, got ${logsMatch.score}`);
-
-  // Bare 'debug' without 'logs' should still route to debug.
-  const debugMatch = matchRoute("debug the payment timeout issue");
-  assert.ok(debugMatch);
-  assert.equal(debugMatch.command, "debug");
-});
-
-test("/gsd do: 'diagnose' alone routes to doctor (health check), not debug", () => {
-  // 'diagnose' maps to the doctor route; 'diagnose issue' maps to debug.
-  const match = matchRoute("diagnose my project");
-  assert.ok(match);
-  assert.equal(match.command, "doctor");
+test("/gsd do handler empty input shows usage without executing", async () => {
+  const record = recordingHandler();
+  await commands.handleDo("   ", record.ctx, record.pi, record.dispatch);
+  assert.deepEqual(record.executions, []);
+  assert.match(record.notifications[0].message, /Usage: \/gsd do/);
 });

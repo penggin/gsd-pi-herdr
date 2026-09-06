@@ -16,7 +16,7 @@ Findings are implemented separately with regression tests and explicit commits.
 | F-03 | Skill context tokenization discards Korean text, including explicitly configured exact token rules. | Medium | Reproduced; Unicode-aware normalization with exact structured matching. |
 | F-04 | Recursive Cargo discovery emits bare root Cargo verification commands without a root manifest. | Medium | Reproduced on consumer; separate language detection from executable-root evidence. |
 | F-05 | Workspace members lacking local lockfiles inherit npm instead of their declared parent pnpm manager. | Medium | Reproduced on consumer; inherit only from verified workspace membership. |
-| F-06 | Freeform Korean questions/negations fall into quick execution, and mixed `merge 하지 말고 ...` can route to ship. | High | Reproduced; distinguish information/negation from explicit command intent and test the real resolver. |
+| F-06 | Freeform Korean questions/negations fall into quick execution, and mixed `merge 하지 말고 ...` can route to ship. | High | Fixed: bounded explicit-intent shorthand and non-executing clarification. |
 
 The later F-06 authorization finding expands this audit beyond its initial five
 items. It takes priority over the remaining medium-severity fixes. Runtime
@@ -61,3 +61,36 @@ scoped retry hook ran an extra time. After the fix the targeted matrix passes
 8/8 and the full Git service integration file passes 80/80. Extension typecheck
 and diff review pass. The consumer's temporary automatic-Git override is not
 removed; adopting a built runtime and re-enabling it remains an operator action.
+
+### F-06 — Freeform requests are not blanket execution approval
+
+`/gsd do` now uses a pure production resolver tested through its real handler.
+English commands match anchored words/phrases instead of arbitrary substrings.
+Common Korean status/history/log/context requests and explicit capture prefixes
+are normalized for matching while original task/capture text is preserved.
+Negated, hypothetical and unsupported requests get an explicit-command hint,
+not an unconditional quick task. This is a bounded shorthand grammar, not a
+general language classifier or a replacement for existing command guards.
+
+Examples:
+
+| Input | Result |
+| --- | --- |
+| `현재 상태가 어때?` | Show status. |
+| `merge 하지 말고 상태만 알려줘` | Show status; do not ship. |
+| `what happens if we merge?` | Clarify; do not execute. |
+| `what's next?` | Show status; do not advance a task. |
+| `메모해 다음에 결제 검증 추가` | Capture the unchanged note body. |
+| `로그인 오류를 수정해줘` | Explicit quick task. |
+| `merge.md 파일을 수정해줘` | Quick task for the file, not ship. |
+| `show me logs clear` | Clarify; do not clear logs. |
+
+Direct `/gsd quick`, `/gsd auto`, `/gsd ship` and other explicit commands keep
+their existing semantics. Unknown freeform text no longer implicitly means
+quick; use `/gsd quick <task>` if the shorthand does not recognize the phrasing.
+No provider call, persistent record or additional startup policy is needed to
+classify input. Resolver/handler tests: 133/133 after review also rejected
+non-colon capture prohibitions (`메모 금지`, `capture 안돼`) while preserving
+`메모: 금지` as explicit data. The combined resolver/dispatcher/core matrix
+passed 277/277 before those last capture cases; extension typecheck passed.
+All final paths are included again at the final verification boundary.
