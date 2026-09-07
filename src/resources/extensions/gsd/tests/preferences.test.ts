@@ -810,6 +810,29 @@ test("auto_visualize, auto_report, context_selection reject invalid values", () 
   assert.ok(e4.some(e => e.includes("context_selection")));
 });
 
+test("Codex CLI experimental context management is diagnosed rather than silently enabled in GSD", () => {
+  for (const experimentalMode of [true, false]) {
+    const result = validatePreferences({
+      context_management: {
+        experimental_mode: experimentalMode,
+        observation_masking: true,
+        codex_remote_compaction: { enabled: false },
+      },
+    } as never);
+    assert.equal(result.errors.length, 0);
+    assert.ok(result.warnings.some((warning) =>
+      warning.includes("features.context_management.experimental_mode") &&
+      warning.includes("Codex CLI") && warning.includes("does not affect GSD Pi")));
+    assert.deepEqual(result.preferences.context_management, {
+      observation_masking: true,
+      codex_remote_compaction: { enabled: false },
+    });
+  }
+
+  const ordinary = validatePreferences({ context_management: { observation_masking: true } });
+  assert.ok(!ordinary.warnings.some((warning) => warning.includes("experimental_mode")));
+});
+
 test("Codex Remote V2 context-management settings validate bounded values", () => {
   const valid = validatePreferences({
     context_management: {

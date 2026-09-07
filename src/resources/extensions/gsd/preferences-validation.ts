@@ -1105,6 +1105,14 @@ export function validatePreferences(preferences: GSDPreferences): {
       const cm = preferences.context_management as unknown as Record<string, unknown>;
       const validCm: Record<string, unknown> = {};
 
+      if (cm.experimental_mode !== undefined) {
+        warnings.push(
+          "context_management.experimental_mode is not a GSD Pi setting and was ignored. " +
+          "features.context_management.experimental_mode belongs to Codex CLI configuration and does not affect GSD Pi. " +
+          "GSD Pi uses context_management.codex_remote_compaction for its separate Remote V2 integration.",
+        );
+      }
+
       if (cm.observation_masking !== undefined) {
         if (typeof cm.observation_masking === "boolean") validCm.observation_masking = cm.observation_masking;
         else errors.push("context_management.observation_masking must be a boolean");

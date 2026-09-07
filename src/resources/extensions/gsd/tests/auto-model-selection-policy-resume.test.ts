@@ -359,3 +359,78 @@ test("strict phase routing fails closed instead of using an arbitrary registry m
     env.cleanup();
   }
 });
+
+for (const resumeWithEmptyAvailable of [false, true]) {
+  test(`migrated Astra roles keep medium without leaking into GLM/Luna max${resumeWithEmptyAvailable ? " after registry resume" : ""}`, async () => {
+    const env = makeTempProject();
+    const policies = { uok: { model_policy: { enabled: true, enforce_phase_routes: true } } };
+    const sol = {
+      id: "gpt-5.6-sol", provider: "gsd-fable", api: "openai-codex-responses",
+      reasoning: true, thinkingLevelMap: { max: "max" },
+    };
+    const planner = {
+      ...sol, id: "gpt-6-astra",
+      thinkingLevelMap: { off: null, minimal: "low", max: "max" },
+    };
+    const discuss = { ...planner, provider: "gsd-opus" };
+    const glm = { ...sol, id: "zai/glm-5.3-flash", provider: "gsd-sonnet" };
+    const luna = { ...sol, id: "gpt-5.6-luna", provider: "gsd-sonnet" };
+    const all = [sol, planner, discuss, glm, luna];
+    const originalModels = JSON.stringify(all);
+    const calls: string[] = [];
+    const thinkingCalls: string[] = [];
+    let failGlm = false;
+    const ctx = makeRegistryCtx({ available: resumeWithEmptyAvailable ? [] : all, all, session: sol });
+    const pi = {
+      ...makePi(calls),
+      setModel: async (model: RegistryModel) => {
+        calls.push(`${model.provider}/${model.id}`);
+        if (failGlm && model.id === glm.id) return false;
+        ctx.model = model;
+        return true;
+      },
+      setThinkingLevel: (level: string) => { thinkingCalls.push(level); },
+    };
+    clearToolBaseline(pi);
+    try {
+      const preferencesPath = join(env.dir, ".gsd", "PREFERENCES.md");
+      const preferences = [
+        "---", "token_profile: burn-max", "models:",
+        "  planning:", "    model: gsd-fable/gpt-6-astra", "    thinking: medium",
+        "  discuss:", "    model: gsd-opus/gpt-6-astra", "    thinking: medium",
+        "  execution:", "    model: gsd-sonnet/zai/glm-5.3-flash", "    thinking: max",
+        "    fallbacks:", "      - gsd-sonnet/gpt-5.6-luna",
+        "uok:", "  model_policy:", "    enabled: true", "    enforce_phase_routes: true", "---",
+      ].join("\n");
+      writeFileSync(preferencesPath, preferences);
+      const start = { provider: sol.provider, id: sol.id };
+      for (const [index, step] of [
+        { unit: "plan-milestone", expected: planner, thinking: "medium" },
+        { unit: "discuss-milestone", expected: discuss, thinking: "medium" },
+        { unit: "execute-task", expected: glm, thinking: "max" },
+        { unit: "execute-task", expected: luna, thinking: "max", fallback: true },
+        { unit: "plan-slice", expected: planner, thinking: "medium", resume: true },
+      ].entries()) {
+        failGlm = step.fallback ?? false;
+        if (step.resume) ctx.model = sol;
+        const result = await selectAndApplyModel(
+          ctx, pi, step.unit, `M001/S01/T0${index + 1}`, env.dir, policies, false,
+          start, undefined, true, start, "high",
+        );
+        assert.equal(result.appliedModel?.provider, step.expected.provider);
+        assert.equal(result.appliedModel?.id, step.expected.id);
+        assert.equal(result.appliedThinkingLevel, step.thinking);
+      }
+      assert.deepEqual(calls, [
+        "gsd-fable/gpt-6-astra", "gsd-opus/gpt-6-astra", "gsd-sonnet/zai/glm-5.3-flash",
+        "gsd-sonnet/zai/glm-5.3-flash", "gsd-sonnet/gpt-5.6-luna", "gsd-fable/gpt-6-astra",
+      ]);
+      assert.deepEqual(thinkingCalls, ["medium", "medium", "max", "max", "medium"]);
+      assert.equal(JSON.stringify(all), originalModels);
+    } finally {
+      clearToolBaseline(pi);
+      env.restoreEnv();
+      env.cleanup();
+    }
+  });
+}

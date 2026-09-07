@@ -11,7 +11,7 @@ import { loadPrompt, getTemplatesDir } from "../prompt-loader.js";
 import { readForensicsMarker } from "../forensics.js";
 import { resolveAllSkillReferences, renderPreferencesForSystemPrompt, loadEffectiveGSDPreferences } from "../preferences.js";
 import { renderRuntimeContractForSystemPrompt } from "../runtime-contract.js";
-import { resolveModelWithFallbacksForUnit } from "../preferences-models.js";
+import { resolveModelWithFallbacksForUnit, resolveThinkingLevelForUnit } from "../preferences-models.js";
 import { gsdRoot, resolveGsdRootFile, resolveSliceFile, resolveSlicePath, resolveTaskFile, resolveTaskFiles, resolveTasksDir, relSliceFile, relSlicePath, relTaskFile } from "../paths.js";
 import { extractIntroAndRules } from "../knowledge-parser.js";
 import { ensureCodebaseMapFresh, readCodebaseMap } from "../codebase-generator.js";
@@ -446,10 +446,7 @@ export async function buildBeforeAgentStartResult(
 
   const worktreeBlock = buildWorktreeContextBlock(basePath);
 
-  const subagentModelConfig = resolveModelWithFallbacksForUnit("subagent", basePath);
-  const subagentModelBlock = subagentModelConfig
-    ? `\n\n## Subagent Model\n\nWhen spawning subagents via the \`subagent\` tool, always pass \`model: "${subagentModelConfig.primary}"\` in the tool call parameters. Never omit this — always specify it explicitly.`
-    : "";
+  const subagentModelBlock = buildSubagentModelInstruction(basePath);
 
   // memoryBlock is FTS-queried against the user prompt and changes per call.
   // Keeping it out of `fullSystem` preserves provider prompt-cache stability
@@ -470,6 +467,15 @@ export async function buildBeforeAgentStartResult(
     systemPrompt: fullSystem,
     ...(contextMessage ? { message: contextMessage } : {}),
   };
+}
+
+/** Carry configured subagent effort alongside its model in interactive dispatch. */
+export function buildSubagentModelInstruction(basePath: string): string {
+  const model = resolveModelWithFallbacksForUnit("subagent", basePath);
+  if (!model) return "";
+  const thinking = resolveThinkingLevelForUnit("subagent", basePath);
+  const thinkingInstruction = thinking ? ` and \`thinking: "${thinking}"\`` : "";
+  return `\n\n## Subagent Model\n\nWhen spawning subagents via the \`subagent\` tool, always pass \`model: "${model.primary}"\`${thinkingInstruction} in the tool call parameters. Never omit this — always specify it explicitly.`;
 }
 
 /**

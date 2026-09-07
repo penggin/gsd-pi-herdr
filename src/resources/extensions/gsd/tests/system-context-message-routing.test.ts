@@ -3,14 +3,73 @@
 
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 import {
   buildContextMessage,
+  buildSubagentModelInstruction,
   GSD_CONTEXT_MESSAGE_SENTINEL,
   stripVolatileCodebaseMetadata,
 } from "../bootstrap/system-context.ts";
 
 const SENTINEL = `${GSD_CONTEXT_MESSAGE_SENTINEL}\n`;
+
+describe("configured interactive subagent model and thinking", () => {
+  const cases = [
+    {
+      name: "inline Astra medium overrides the older high thinking block",
+      lines: ["models:", "  subagent:", "    model: gsd-fable/gpt-6-astra", "    thinking: medium", "    fallbacks:", "      - gsd-sonnet/gpt-5.6-luna", "thinking:", "  subagent: high"],
+      model: "gsd-fable/gpt-6-astra", thinking: "medium",
+    },
+    {
+      name: "GLM keeps the separately configured max effort",
+      lines: ["models:", "  subagent: gsd-sonnet/zai/glm-5.3-flash", "thinking:", "  subagent: max"],
+      model: "gsd-sonnet/zai/glm-5.3-flash", thinking: "max",
+    },
+    {
+      name: "model-only settings do not invent an effort",
+      lines: ["models:", "  subagent: gsd-sonnet/gpt-5.6-luna"],
+      model: "gsd-sonnet/gpt-5.6-luna", thinking: undefined,
+    },
+    {
+      name: "an explicit off effort is preserved",
+      lines: ["models:", "  subagent:", "    model: custom/model", "    thinking: off"],
+      model: "custom/model", thinking: "off",
+    },
+    {
+      name: "thinking without a model does not add a model instruction",
+      lines: ["thinking:", "  subagent: medium"],
+      model: undefined, thinking: undefined,
+    },
+  ];
+  for (const fixture of cases) {
+    test(fixture.name, () => {
+      const originalHome = process.env.GSD_HOME;
+      const root = mkdtempSync(join(tmpdir(), "gsd-subagent-instruction-"));
+      const project = join(root, "project");
+      mkdirSync(join(project, ".gsd"), { recursive: true });
+      process.env.GSD_HOME = join(root, "home");
+      const preferencesPath = join(project, ".gsd", "PREFERENCES.md");
+      const preferences = ["---", "token_profile: burn-max", ...fixture.lines, "---", ""].join("\n");
+      writeFileSync(preferencesPath, preferences);
+      try {
+        const instruction = buildSubagentModelInstruction(project);
+        if (fixture.model) assert.ok(instruction.includes(`model: "${fixture.model}"`));
+        else assert.equal(instruction, "");
+        if (fixture.thinking) assert.ok(instruction.includes(`thinking: "${fixture.thinking}"`), instruction);
+        else assert.ok(!instruction.includes("thinking:"));
+        assert.ok(!instruction.includes("fallback"), "instructions do not synthesize fallback changes");
+        assert.equal(readFileSync(preferencesPath, "utf-8"), preferences);
+      } finally {
+        if (originalHome === undefined) delete process.env.GSD_HOME;
+        else process.env.GSD_HOME = originalHome;
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+  }
+});
 
 describe("stripVolatileCodebaseMetadata (#847 — KV cache stability)", () => {
   const map = [
