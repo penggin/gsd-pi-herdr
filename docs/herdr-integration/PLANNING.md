@@ -2,7 +2,7 @@
 
 > **Status:** M0–M7 and final downstream-isolation revalidation complete
 > **Last updated:** 2026-09-07
-> **Current milestone:** Approved commit/push and Mac/penglab installation in progress; verified GPT/Astra/efficiency scope preserved
+> **Current milestone:** GPT/Astra/efficiency commits pushed; Mac and penglab installed and verified at code commit 394104b30; existing sessions await safe restart
 > **Canonical rule:** Every Herdr-integration development session starts by reading this file and ends by updating it.
 
 ## 1. Mission
@@ -3946,6 +3946,66 @@ this session does not merge, push, tag, or publish.
 - Exact next task: complete commit/build/package gates, install with rollback
   evidence, verify each available host, push final operational notes and record
   any unresolved remote reachability rather than silently skipping it.
+- Committed the reviewed scope as `58fd08ce5` (GPT/Astra provider, catalog,
+  accounting), `5e5fa5ea0` (explicit Astra route migration and effort propagation),
+  and `394104b30` (cache/workflow/worker efficiency). Pushed explicitly to
+  `origin/feature/gpt-provider-optimizations`; no merge, upstream push, PR or npm
+  publication was performed. These commits retain the earlier Korean workflow
+  changes in their ancestry.
+- Rebuilt core and the stale standalone web host. The existing nonfatal webpack
+  createRequire warning remains. Local supported capability check passed for
+  Herdr 0.8.2/protocol 20/schema 1. `validate-pack` passed isolated local/global
+  installs, internal package links, native subpath, standalone web dependencies,
+  CLI identity, MCP handshake and optional assessment-pack discovery. Explicit
+  postpack restoration confirmed a clean source worktree afterward.
+- Retained artifact:
+  `/Users/penggin/.local/share/gsd-pi-herdr/artifacts/394104b30/penggin-gsd-pi-herdr-1.16.2.tgz`.
+  SHA-256 `3adc81de7582f810173ab30da514be51f1d5384631a0b72706a6ec216f993183`;
+  63,363,595 bytes compressed, 294,201,769 unpacked, 9,610 entries. Embedded
+  provenance is clean release-candidate code commit
+  `394104b3047801cce25a764f96b34fac3be43595`, with the supported capability report.
+  Subsequent documentation-only commits do not change the installed code identity.
+- Mac global installation completed in the existing fnm Node 24.19.0 prefix:
+  `/Users/penggin/.local/share/fnm/node-versions/v24.19.0/installation`.
+  Controlled npm install skipped lifecycle extras, then explicitly repaired
+  workspace links. Full previous package and four config originals are preserved
+  under `.git/deploy-394104b30-kQRLOd/` (package backup `mac-package-before`).
+  All four current configuration files remain byte-identical to their backups.
+  The Darwin arm64 release addon is unchanged and loads successfully: SHA-256
+  `d2e14a7060fff0c02d539a24cc0e4510eabf2d9234e87cb20f52290a55576f53`.
+- The operator restored SSH connectivity after the initial timeout. Verified
+  penglab Linux x86_64/Node 22.19.0, transferred the exact artifact and confirmed
+  its SHA-256. Installed into the new immutable prefix
+  `/srv/penglab/gsd-runs/toolchains/gsd-pi-herdr-1.16.2-394104b30-3adc81de`.
+  No native source changed since the previous installation; copied its verified
+  Linux x64 addon into the candidate. It loads successfully with SHA-256
+  `b1d5b33b59cc1578eed207544a4020699f0c9d123c0247481df1914002b51da7`.
+  Only after candidate checks passed, atomically replaced the shared `gsd` and
+  `gsd-mcp-server` links. The old `5ba1bde2-1fe6dbcd` prefix remains intact.
+  Prior link targets and the artifact/probe scripts are retained in
+  `/srv/penglab/gsd-runs/artifacts/394104b30-3adc81de/`.
+- Installed checks passed on both hosts: exact clean commit, version 1.16.2,
+  native identity-lock/sync exports, Astra Codex metadata, 80% mixed-cache hit
+  calculation, and one batched write for 20 queued diagnostic updates. Isolated
+  resource sync copied current extensions with fingerprint `79f4be99b1d7394b`;
+  MCP stdio handshake advertised 56 tools including gsd_execute. Probes used a
+  temporary GSD home and separate skills directory, not the real user resources.
+  This proves same-version content-fingerprint refresh works; `--version` and
+  `--build-info` themselves intentionally do not refresh managed extensions.
+- Remote model/settings/preferences hashes are unchanged, and both ordinary and
+  login-shell launch paths resolve the new version. No active pane/process was
+  killed or restarted, no project DB/session history was rewritten, and no model
+  inference request was needed for these installation checks.
+- Release revalidation: changed-source suite since `8bbe2f3ba` **397/397**,
+  backend/worker/launch/model-override regression **108/108**, Pi AI **228 passed /
+  4 skipped**, extension typecheck, core/web build and package validation passed.
+  Counts overlap and earlier independent full-suite limitations remain documented.
+- Exact next task: after an active task reaches a safe boundary, exit/restart
+  its owning GSD root to load the new code and refresh managed extensions. New
+  processes already use the installed build; existing processes retain loaded
+  code. Inspect with `gsd --build-info`. Rollback restores the saved Mac package
+  at its original path or repoints the two remote links to the retained prior
+  prefix; do not delete runtime artifacts or reset model policy during rollback.
 
 ## 11. Working-session protocol
 
