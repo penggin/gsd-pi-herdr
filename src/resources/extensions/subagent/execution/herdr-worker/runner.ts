@@ -24,10 +24,12 @@ import {
   writeHerdrWorkerState,
 } from "./artifacts.js";
 import { HerdrWorkerActivityRenderer } from "./activity.js";
+import { HerdrWorkerActivityArtifactBatcher } from "./activity-artifact-batcher.js";
 import { HerdrWorkerReporter } from "./herdr-reporting.js";
 import { JsonlLineFramer } from "./jsonl.js";
 
 const DEFAULT_HEARTBEAT_MS = 5000;
+const DEFAULT_ACTIVITY_ARTIFACT_INTERVAL_MS = 250;
 const DEFAULT_INTERRUPT_GRACE_MS = 5000;
 const DEFAULT_TERMINATE_GRACE_MS = 5000;
 
@@ -96,6 +98,7 @@ export async function runHerdrWorker(
   let childClosed = false;
   let cancellationPromise: Promise<void> | undefined;
   let orphanRequested = false;
+  const heartbeatMs = boundedPositiveMs(options.heartbeatMs, DEFAULT_HEARTBEAT_MS);
 
   const writeRuntimeArtifacts = (status = currentStatus, activity = lastActivity) => {
     currentStatus = status;
@@ -118,13 +121,37 @@ export async function runHerdrWorker(
       ...(childPid ? { childPid } : {}),
     });
   };
+  // Raw JSONL and pane presentation stay immediate. Only the latest diagnostic
+  // activity snapshot may lag by 250ms (or a shorter configured heartbeat).
+  const activityWrites = new HerdrWorkerActivityArtifactBatcher(
+    () => writeRuntimeArtifacts(),
+    Math.min(DEFAULT_ACTIVITY_ARTIFACT_INTERVAL_MS, heartbeatMs),
+  );
+  const persistRuntimeArtifacts = (status = currentStatus, activity = lastActivity) => {
+    activityWrites.cancel();
+    writeRuntimeArtifacts(status, activity);
+  };
 
   const consumeJsonlLine = (line: string) => {
     options.onJsonlLine?.(line);
     const projected = renderer.consumeLine(line);
     if (projected) {
       const nextStatus = projected.status ?? currentStatus;
-      writeRuntimeArtifacts(nextStatus, projected.activity);
+      const activityOnly = projected.status === undefined && (
+        projected.activity.kind === "tool"
+        || (projected.activity.kind === "status" && (
+          projected.activity.label.startsWith("assistant: ")
+          || projected.activity.label.startsWith("thinking: ")
+        ))
+      );
+      if (activityOnly) {
+        lastActivity = projected.activity;
+        activityWrites.schedule();
+      } else {
+        // Lifecycle, blocked/resumed, retry, error, and abort projections remain
+        // durable immediately, including those without a changed status value.
+        persistRuntimeArtifacts(nextStatus, projected.activity);
+      }
       if (projected.status) {
         void safeReporterCall(() => reporter.reportStatus(nextStatus, projected.activity.label));
       }
@@ -133,11 +160,10 @@ export async function runHerdrWorker(
   const framer = new JsonlLineFramer({ onLine: consumeJsonlLine });
 
   updateOwnershipStatus(paths, "running", now);
-  writeRuntimeArtifacts("starting");
+  persistRuntimeArtifacts("starting");
   await safeReporterCall(() => reporter.initialize());
   await safeReporterCall(() => reporter.reportStatus("starting", spec.taskPreview ?? "starting"));
 
-  const heartbeatMs = boundedPositiveMs(options.heartbeatMs, DEFAULT_HEARTBEAT_MS);
   const heartbeatTimer = setInterval(() => {
     try {
       if (!orphanRequested && existsSync(paths.orphanPath)) {
@@ -145,6 +171,7 @@ export async function runHerdrWorker(
         orphanRequested = true;
         requestCancellation("SIGTERM");
       }
+      if (activityWrites.flush()) return;
       const updatedAt = now().toISOString();
       writeHerdrWorkerHeartbeat(paths, {
         schemaVersion: HERDR_WORKER_SCHEMA_VERSION,
@@ -180,7 +207,7 @@ export async function runHerdrWorker(
     if (receivedSignal) return;
     receivedSignal = signal;
     lastActivity = { kind: "status", label: `cancelling after ${signal}` };
-    writeRuntimeArtifacts(currentStatus, lastActivity);
+    persistRuntimeArtifacts(currentStatus, lastActivity);
     beginCancellation();
   };
   const onSigint = () => requestCancellation("SIGINT");
@@ -210,7 +237,7 @@ export async function runHerdrWorker(
 
       child.once("spawn", () => {
         if (!receivedSignal) {
-          writeRuntimeArtifacts("working");
+          persistRuntimeArtifacts("working");
           void safeReporterCall(() => reporter.reportStatus("working", spec.taskPreview ?? "working"));
         }
       });
@@ -233,6 +260,7 @@ export async function runHerdrWorker(
     framer.end();
   } finally {
     clearInterval(heartbeatTimer);
+    activityWrites.cancel();
     process.off("SIGINT", onSigint);
     process.off("SIGTERM", onSigterm);
     syncAndClose(stdoutFd);
@@ -247,7 +275,7 @@ export async function runHerdrWorker(
     : childExitCode === 0
       ? "completed"
       : "failed";
-  writeRuntimeArtifacts(finalStatus, lastActivity);
+  persistRuntimeArtifacts(finalStatus, lastActivity);
   // Exit evidence is the backend's release/reuse boundary. Publish it only
   // after the final Herdr lifecycle/metadata report has settled so a reusable
   // pane cannot start a replacement worker while the previous source is still

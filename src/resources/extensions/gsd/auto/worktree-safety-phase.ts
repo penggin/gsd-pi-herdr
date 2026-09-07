@@ -2,6 +2,8 @@
 // File Purpose: Worktree-safety helpers shared across auto-loop phase modules.
 
 import { classifyProject } from "../detection.js";
+import { lstatSync, realpathSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { resolveEffectiveUnitIsolationMode, getIsolationMode } from "../preferences.js";
 import { createWorktreeSafetyModule, type WorktreeSafetyResult } from "../worktree-safety.js";
 import { resolveWorktreeProjectRoot } from "../worktree-root.js";
@@ -10,6 +12,41 @@ import { debugLog } from "../debug-logger.js";
 import { isSamePathLocal } from "./phase-helpers.js";
 import { hasHeldMilestoneLease, reclaimMissingMilestoneLease } from "./milestone-lease-reclaim.js";
 import type { IterationContext } from "./types.js";
+
+function classificationRootIdentity(root: string): string | null {
+  try {
+    const physicalRoot = realpathSync.native(root);
+    const directory = statSync(physicalRoot);
+    const marker = lstatSync(join(physicalRoot, ".git"));
+    return [
+      resolve(root), physicalRoot,
+      directory.dev, directory.ino, directory.mtimeMs, directory.ctimeMs,
+      marker.dev, marker.ino, marker.size, marker.mtimeMs, marker.ctimeMs,
+    ].join("\0");
+  } catch {
+    // Missing roots/markers are recovery inputs, not reusable classifications.
+    return null;
+  }
+}
+
+/**
+ * One unit's synchronous safety/guidance snapshot, never a cross-unit cache.
+ * The successful safety path does not change source. Callers that mutate source
+ * before reading again must request refresh; changed roots/Git markers invalidate
+ * automatically, including recovery and symlink retargeting.
+ */
+export function createUnitProjectClassifier(
+  classify: typeof classifyProject = classifyProject,
+): (root: string, options?: { refresh?: boolean }) => ReturnType<typeof classifyProject> {
+  let cached: { identity: string; result: ReturnType<typeof classifyProject> } | undefined;
+  return (root, options) => {
+    const identity = classificationRootIdentity(root);
+    if (!options?.refresh && identity !== null && cached?.identity === identity) return cached.result;
+    const result = classify(root);
+    cached = identity === null ? undefined : { identity, result };
+    return result;
+  };
+}
 
 export function shouldDegradeEmptyWorktreeToProjectRoot(
   worktreeClassification: ReturnType<typeof classifyProject>,
@@ -48,11 +85,12 @@ export function formatWorktreeSafetyStopReason(result: Extract<WorktreeSafetyRes
 export function resolveEmptyWorktreeWithProjectContent(
   unitRoot: string,
   projectRoot: string,
+  classify: typeof classifyProject = classifyProject,
 ): boolean {
   if (isSamePathLocal(unitRoot, projectRoot)) return false;
-  const worktreeClassification = classifyProject(unitRoot);
+  const worktreeClassification = classify(unitRoot);
   if (worktreeClassification.kind !== "greenfield") return false;
-  const projectRootClassification = classifyProject(projectRoot);
+  const projectRootClassification = classify(projectRoot);
   return shouldDegradeEmptyWorktreeToProjectRoot(worktreeClassification, projectRootClassification);
 }
 
@@ -62,6 +100,7 @@ export async function validateSourceWriteWorktreeSafety(
   unitId: string,
   milestoneId: string | undefined,
   phase: string,
+  classify: typeof classifyProject = classifyProject,
 ): Promise<{ action: "break"; reason: string } | null> {
   const { ctx, pi, s, deps } = ic;
   if (!s.basePath) return null;
@@ -114,7 +153,7 @@ export async function validateSourceWriteWorktreeSafety(
     isolationMode,
     expectedBranch:
       isolationMode !== "none" && milestoneId ? deps.autoWorktreeBranch(milestoneId) : null,
-    emptyWorktreeWithProjectContent: resolveEmptyWorktreeWithProjectContent(s.basePath, projectRoot),
+    emptyWorktreeWithProjectContent: resolveEmptyWorktreeWithProjectContent(s.basePath, projectRoot, classify),
     // The milestone lease coordinates concurrent workers on an isolated
     // milestone worktree/branch, which is established by enterMilestone in
     // worktree/branch modes. `none` mode has no per-milestone isolation and

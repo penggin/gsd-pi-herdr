@@ -6,6 +6,7 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 
 import type { TaskRow } from "./db-task-slice-rows.js";
 import { extractPlanningPathReference, normalizeFilePath } from "./pre-execution-checks.js";
+import { isGsdContextInjectionText } from "./context-masker.js";
 
 export const WHOLE_FILE_OBSERVATION_MAX_BYTES = 50 * 1024;
 export const WHOLE_FILE_OBSERVATION_MAX_LINES = 2000;
@@ -111,6 +112,8 @@ export class SourceObservationStore {
       "",
       "The files below are protected active-Unit source context. " +
         "Use this block instead of rereading small files just to recover line windows.",
+      "This block contains GSD’s latest available observations for this request, including recorded mutations; " +
+        "it is placed early for cache stability. Later historical tool results may describe an earlier state.",
     ];
 
     const wholeFiles = observations.filter((observation) => observation.status === "whole");
@@ -272,10 +275,9 @@ export function injectSourceContextBlockIntoPayload(
   if (Array.isArray(messages)) {
     return {
       ...payload,
-      messages: [
-        ...withoutExistingSourceContextMessages(messages),
-        { role: "user", content: [{ type: "text", text: block }] },
-      ],
+      messages: insertSourceContext(withoutExistingSourceContextMessages(messages), {
+        role: "user", content: [{ type: "text", text: block }],
+      }),
     };
   }
 
@@ -283,14 +285,57 @@ export function injectSourceContextBlockIntoPayload(
   if (Array.isArray(input)) {
     return {
       ...payload,
-      input: [
-        ...withoutExistingSourceContextItems(input),
-        { role: "user", content: [{ type: "input_text", text: block }] },
-      ],
+      input: insertSourceContext(withoutExistingSourceContextItems(input), {
+        role: "user", content: [{ type: "input_text", text: block }],
+      }),
     };
   }
 
   return payload;
+}
+
+function insertSourceContext(items: unknown[], sourceMessage: unknown): unknown[] {
+  const index = sourceContextInsertionIndex(items);
+  return [...items.slice(0, index), sourceMessage, ...items.slice(index)];
+}
+
+/**
+ * Keep unchanged source bytes at a stable position within the current user
+ * turn, before its assistant/tool pairs. No remembered indices survive a new
+ * user turn, compaction or unit change. Unknown user shapes keep the existing
+ * tail placement rather than guessing which request they belong to.
+ */
+function sourceContextInsertionIndex(items: unknown[]): number {
+  for (let index = items.length - 1; index >= 0; index--) {
+    const item = items[index] as { role?: unknown; content?: unknown } | null;
+    if (!item || item.role !== "user") continue;
+    const text = firstText(item.content);
+    if (isGsdContextInjectionText(text ?? undefined)) continue;
+    if (text?.startsWith("Ran `")) {
+      // Only skip the complete bashExecutionToText serialization. A real user
+      // can start a request with "Ran `tests` locally..."; that is not proof of
+      // a synthetic result, so keep the conservative tail placement instead.
+      const soleText = typeof item.content === "string" || (
+        Array.isArray(item.content) && item.content.length === 1
+        && (item.content[0]?.type === "text" || item.content[0]?.type === "input_text")
+      );
+      if (soleText && /^Ran `[\s\S]*`\n(?:```\n[\s\S]*\n```|\(no output\))(?:\n\n(?:\(command cancelled\)|Command exited with code -?\d+))?(?:\n\n\[Output truncated\. Full output: [^\n]+\])?$/.test(text)) continue;
+      return items.length;
+    }
+
+    if (typeof item.content === "string") return item.content.length > 0 ? index + 1 : items.length;
+    if (!Array.isArray(item.content) || item.content.length === 0) return items.length;
+    // Anthropic tool results are user messages, unlike Responses outputs and
+    // Chat Completions tool messages. Mixed tool-result/user content is ambiguous.
+    if (item.content.every((block) => block?.type === "tool_result")) continue;
+    const userContent = item.content.every((block) => {
+      if (!block || typeof block !== "object") return false;
+      if (block.type === "text" || block.type === "input_text") return typeof block.text === "string";
+      return block.type === "image" || block.type === "input_image" || block.type === "image_url";
+    });
+    return userContent ? index + 1 : items.length;
+  }
+  return items.length;
 }
 
 function unavailable(

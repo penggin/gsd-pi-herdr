@@ -133,6 +133,14 @@ function mockData(overrides: Partial<VisualizerData> = {}): VisualizerData {
 
 // ─── Wave 1: Summary Enhancements ──────────────────────────────────────────
 
+test("cache hit summary counts cache writes as non-hit input", () => {
+  const data = mockData();
+  data.totals!.tokens = mockTokens(0, 50, 12000, 3000);
+  assert.match(generateHtmlReport(data, mockOpts()), /kv-val">80\.0%<\/span><span class="kv-lbl">Cache hit/);
+  data.totals!.tokens = mockTokens(0, 50, 0, 12000);
+  assert.match(generateHtmlReport(data, mockOpts()), /kv-val">0\.0%<\/span><span class="kv-lbl">Cache hit/);
+});
+
 test("Feature 1: executive summary paragraph is rendered", () => {
   const html = generateHtmlReport(mockData(), mockOpts());
   assert.ok(html.includes('class="exec-summary"'), "should contain exec-summary class");
@@ -212,8 +220,8 @@ test("Feature 3: cost efficiency metrics shown in KV grid", () => {
 test("Feature 4: cache hit ratio shown in KV grid", () => {
   const html = generateHtmlReport(mockData(), mockOpts());
   assert.ok(html.includes("Cache hit"), "should contain Cache hit KV");
-  // 3000 / (5000 + 3000) = 37.5%
-  assert.ok(html.includes("37.5%"), "should show correct cache hit percentage");
+  // 3000 / (5000 + 3000 + 500) = 35.3% after rounding.
+  assert.ok(html.includes("35.3%"), "should include cache writes in the full input denominator");
 });
 
 test("Feature 4: cache hit ratio skipped when no input tokens", () => {

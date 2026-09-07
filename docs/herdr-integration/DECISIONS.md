@@ -875,3 +875,51 @@ workspace re-rooting. Compatibility with a host that does not invoke
 current Pi runtime must supply the callback. This changes no GSD workflow
 authority, Herdr terminal authority, Task Attempt semantics, or provider
 selection policy.
+
+## ADR-H043 — Explicit Astra/medium role migration stays below GSD authority
+
+**Status:** Accepted
+**Date:** 2026-09-07
+
+The operator replaced existing Sol/high policy routes with Astra/medium. Preserve
+provider identity and all GLM/Luna execution/fallback assignments. Encode medium
+in phase/named-role settings and scoped machine-local model capabilities; do not
+rewrite historical sessions or force every native Astra request to medium.
+
+The new model uses existing Pi Responses transports and the common subagent
+runner. No Codex App Server delegation, difficulty router, separate executor or
+additional lifecycle authority is introduced. Model and thinking instructions
+travel together so an inherited agent effort cannot silently revive high.
+
+Context limits remain route-specific: the observed Codex/OpenCodex Astra ceiling
+is 872K, so Fable is bounded there; Opus retains 272K. The native API catalog may
+advertise its independently documented 1.05M limit. Native capability/price data
+does not substitute for proxy availability or billing evidence. Operational
+changes use explicit targets, private backups and small real-route smoke tests.
+See `docs/dev/astra-medium-migration-2026-09-07.md` for the migration boundaries.
+
+## ADR-H044 — Batch presentation evidence, not lifecycle authority
+
+**Status:** Accepted
+**Date:** 2026-09-07
+
+Normal worker tool/text activity may update `state.json` and `heartbeat.json`
+through a 250ms coalescing window, bounded further by a shorter heartbeat interval.
+Raw JSONL relay and terminal rendering remain immediate. Lifecycle, blocked,
+resumed, retry/error, cancellation and final updates bypass batching. The latest
+activity must be present in the final durable state before immutable exit evidence
+and pane reuse; pending timers cannot publish after finalization. Secure atomic
+writers, fsync and artifact validation are unchanged. A sudden worker crash can
+lose only the latest bounded presentation snapshot, not already-relayed JSONL or
+an acknowledged lifecycle transition.
+
+Pane reservations coalesce drains that have not started. A drain in flight clears
+its scheduling flag before awaiting reconciliation, allowing releases, cancellation
+and new reservations to request a subsequent serialized pass. This removes
+redundant IPC/recovery scans without weakening capacity, ownership or recovery.
+
+No new persistent cache or policy store is added. Related workflow optimizations
+reuse classification only inside one unit and anchor unchanged synthetic context
+within its user turn. Source/state changes remain visible and GSD remains the sole
+authority over lifecycle, verification and model selection. Evidence and rollback
+scope are in `docs/workflow-improvements/CACHE-WORKFLOW-AUDIT.md`.

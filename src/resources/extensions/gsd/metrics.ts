@@ -26,6 +26,7 @@ import { isUnifiedAuditEnabled } from "./uok/audit-toggle.js";
 import type { MilestoneScope } from "./workspace.js";
 import { logWarning } from "./workflow-logger.js";
 import { atomicWriteSync } from "./atomic-write.js";
+import { computeCacheHitRate } from "./prompt-cache-optimizer.js";
 
 // Re-export from shared — import directly from format-utils to avoid pulling
 // in the full barrel (mod.js → ui.js → @gsd/pi-tui) which breaks when loaded
@@ -64,7 +65,7 @@ export interface UnitMetrics {
   tier?: string;           // complexity tier (light/standard/heavy) if dynamic routing active
   modelDowngraded?: boolean; // true if dynamic routing used a cheaper model
   skills?: string[];       // skill names available/loaded during this unit (#599)
-  cacheHitRate?: number;       // percentage 0-100, computed from cacheRead/(cacheRead+input)
+  cacheHitRate?: number;       // percentage 0-100, cacheRead / full input (including cacheWrite)
   compressionSavings?: number; // percentage 0-100, char savings from prompt compression
 }
 
@@ -235,9 +236,8 @@ export function snapshotUnitMetrics(
   }
 
   // Compute cache hit rate
-  if (tokens.cacheRead > 0 || tokens.input > 0) {
-    const totalInput = tokens.cacheRead + tokens.input;
-    unit.cacheHitRate = totalInput > 0 ? Math.round((tokens.cacheRead / totalInput) * 100) : 0;
+  if (tokens.cacheRead > 0 || tokens.input > 0 || tokens.cacheWrite > 0) {
+    unit.cacheHitRate = Math.round(computeCacheHitRate(tokens));
   }
   if (
     unit.promptCharCount != null &&
@@ -433,9 +433,8 @@ export function snapshotUnitMetricsByScope(
   }
 
   // Compute cache hit rate
-  if (tokens.cacheRead > 0 || tokens.input > 0) {
-    const totalInput = tokens.cacheRead + tokens.input;
-    unit.cacheHitRate = totalInput > 0 ? Math.round((tokens.cacheRead / totalInput) * 100) : 0;
+  if (tokens.cacheRead > 0 || tokens.input > 0 || tokens.cacheWrite > 0) {
+    unit.cacheHitRate = Math.round(computeCacheHitRate(tokens));
   }
   if (
     unit.promptCharCount != null &&

@@ -231,6 +231,13 @@ patterns, wraps every displayed line, and applies a per-message output cap.
 These projections update only presentation/last-activity evidence and never
 change worker lifecycle or parent semantic parsing.
 
+Normal tool/text activity snapshots use a 250ms coalescing timer (or a shorter
+configured heartbeat interval); blocked event loops or filesystem errors can
+delay that diagnostic write. Raw JSONL and terminal rendering are immediate;
+lifecycle, blocked/resumed, retry/error, cancellation and final durable writes
+bypass batching. Final state includes the latest activity before exit publication
+and pane reuse, with no activity timer surviving finalization (ADR-H044).
+
 ## 7. Herdr API split
 
 Herdr v0.8.2 exposes both raw socket APIs and CLI wrappers.

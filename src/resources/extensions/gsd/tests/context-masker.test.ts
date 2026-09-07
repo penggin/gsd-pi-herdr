@@ -371,3 +371,56 @@ test("filterSupersededResponsesContextInjections returns the array unchanged whe
   const result = filterSupersededResponsesContextInjections(items as any);
   assert.equal(result, items);
 });
+
+for (const [format, filter, textType] of [
+  ["messages", filterSupersededContextInjections, "text"],
+  ["Responses", filterSupersededResponsesContextInjections, "input_text"],
+] as const) {
+  const injection = (value: string) => ({
+    role: "user",
+    content: [{ type: textType, text: `${GSD_CONTEXT_MESSAGE_SENTINEL}\n${value}` }],
+  });
+
+  test(`${format} identical context retains its position and the whole prior byte prefix`, () => {
+    const memory = injection("unchanged memory ".repeat(150));
+    const history = [userMsg("turn 1"), memory, assistantMsg("response 1"), userMsg("turn 2")];
+    const original = structuredClone(history);
+    const first = filter(history);
+    const next = filter([...history, structuredClone(memory)]);
+    assert.ok(JSON.stringify(next) === JSON.stringify(first), "identical injection must retain prior bytes and position");
+    assert.equal(next[1], memory);
+    assert.deepEqual(history, original);
+  });
+
+  test(`${format} changes keep latest content, including A to B to A followed by identical A`, () => {
+    const firstA = injection("A");
+    const b = injection("B");
+    const lastA = injection("A");
+    const history = [userMsg("first"), firstA, assistantMsg("r1"), b, assistantMsg("r2"), lastA];
+    assert.deepEqual(filter(history), [history[0], history[2], history[4], lastA]);
+    assert.deepEqual(filter([...history, userMsg("next"), structuredClone(lastA)]), [history[0], history[2], history[4], lastA, userMsg("next")]);
+    assert.deepEqual(filter(history.slice(3)), [history[4], lastA]);
+  });
+
+  test(`${format} identical first text cannot hide changed blocks, images, or item metadata`, () => {
+    const initial = {
+      ...injection("same heading"),
+      name: "memory",
+      metadata: { revision: 1 },
+      content: [
+        ...injection("same heading").content,
+        { type: textType, text: "old detail" },
+        { type: "image", source: { type: "base64", data: "old-image" } },
+      ],
+    };
+    const variants = [
+      { ...initial, name: "updated-memory" },
+      { ...initial, metadata: { revision: 2 } },
+      { ...initial, content: [initial.content[0], { type: textType, text: "new detail" }, initial.content[2]] },
+      { ...initial, content: [initial.content[0], initial.content[1], { type: "image", source: { type: "base64", data: "new-image" } }] },
+    ];
+    for (const latest of variants) {
+      assert.deepEqual(filter([initial, assistantMsg("response"), latest]), [assistantMsg("response"), latest]);
+    }
+  });
+}

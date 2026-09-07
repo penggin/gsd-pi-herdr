@@ -283,8 +283,8 @@ describe("prompt-cache-optimizer: computeCacheHitRate", () => {
       cacheWrite: 200,
       input: 200,
     });
-    // 800 / (800 + 200) * 100 = 80%
-    assert.equal(rate, 80);
+    // Cache writes are new input, not hits: 800 / (800 + 200 + 200).
+    assert.ok(Math.abs(rate - (800 / 1200) * 100) < 1e-10);
   });
 
   it("returns 0 when no cache activity", () => {
@@ -314,13 +314,21 @@ describe("prompt-cache-optimizer: computeCacheHitRate", () => {
     assert.equal(rate, 0);
   });
 
-  it("ignores cacheWrite in hit rate calculation", () => {
+  it("includes cacheWrite in the full input denominator", () => {
     const rate = computeCacheHitRate({
       cacheRead: 500,
       cacheWrite: 9999,
       input: 500,
     });
-    // 500 / (500 + 500) * 100 = 50%
-    assert.equal(rate, 50);
+    assert.equal(rate, (500 / 10999) * 100);
+  });
+
+  it("reports 80 percent for the modern Responses mixed read/write example", () => {
+    assert.equal(computeCacheHitRate({ input: 0, cacheRead: 12000, cacheWrite: 3000 }), 80);
+    assert.equal(computeCacheHitRate({ input: 0, cacheRead: 0, cacheWrite: 12000 }), 0);
+  });
+
+  it("preserves legacy usage without a cache-write counter", () => {
+    assert.equal(computeCacheHitRate({ input: 200, cacheRead: 800 } as any), 80);
   });
 });

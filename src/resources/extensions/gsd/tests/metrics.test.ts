@@ -249,6 +249,7 @@ test("initMetrics creates ledger, snapshotUnitMetrics persists across resets", (
     assert.ok(unit);
     assert.equal(unit!.type, "execute-task");
     assert.equal(unit!.tokens.input, 5000);
+    assert.equal(unit!.cacheHitRate, 35, "cache writes belong in the full input denominator");
 
     // Persist and reload
     resetMetrics();

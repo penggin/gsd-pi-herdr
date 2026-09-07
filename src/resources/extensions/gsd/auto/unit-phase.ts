@@ -44,7 +44,7 @@ import { setCurrentPhase, clearCurrentPhase } from "../../shared/gsd-phase-state
 import { setAutoActiveStatus } from "../auto-dashboard.js";
 import { runUnit } from "./run-unit.js";
 import { verificationRetryKey } from "./verification-retry-policy.js";
-import { validateSourceWriteWorktreeSafety } from "./worktree-safety-phase.js";
+import { createUnitProjectClassifier, validateSourceWriteWorktreeSafety } from "./worktree-safety-phase.js";
 import { isTaskExecutionReadyForHostVerification } from "./task-execution-cutover.js";
 import {
   isIsolatedWorktreeSession,
@@ -186,12 +186,14 @@ export async function runUnitPhase(
     unitId,
   });
 
+  const classifyForUnit = createUnitProjectClassifier();
   const worktreeSafetyBlock = await validateSourceWriteWorktreeSafety(
     ic,
     unitType,
     unitId,
     mid,
     "unit-execution",
+    classifyForUnit,
   );
   if (worktreeSafetyBlock) return worktreeSafetyBlock;
 
@@ -200,7 +202,7 @@ export async function runUnitPhase(
   // shapes user/model guidance for valid roots.
   let projectClassification: ReturnType<typeof classifyProject> | null = null;
   if (s.basePath && unitType === "execute-task") {
-    projectClassification = classifyProject(s.basePath);
+    projectClassification = classifyForUnit(s.basePath);
     if (projectClassification.kind === "invalid-repo") {
       const msg = `Worktree health check failed: ${s.basePath} classified as invalid-repo (${projectClassification.reason}) — refusing to dispatch ${unitType} ${unitId}`;
       debugLog("runUnitPhase", { phase: "worktree-health-invalid-repo", basePath: s.basePath, classification: projectClassification });
@@ -271,7 +273,7 @@ export async function runUnitPhase(
   let finalPrompt = prompt;
 
   if (unitType === "execute-task") {
-    projectClassification ??= classifyProject(s.basePath);
+    projectClassification ??= classifyForUnit(s.basePath);
     if (projectClassification.kind === "untyped-existing") {
       const samples = projectClassification.contentFiles.slice(0, 8).join(", ") || "project files";
       finalPrompt +=

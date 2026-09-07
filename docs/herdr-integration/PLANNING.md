@@ -2,7 +2,7 @@
 
 > **Status:** M0–M7 and final downstream-isolation revalidation complete
 > **Last updated:** 2026-09-07
-> **Current milestone:** Korean-input / monorepo workflow audit fixes complete and verified; original Herdr M0–M7 remain complete
+> **Current milestone:** Approved commit/push and Mac/penglab installation in progress; verified GPT/Astra/efficiency scope preserved
 > **Canonical rule:** Every Herdr-integration development session starts by reading this file and ends by updating it.
 
 ## 1. Mission
@@ -3721,6 +3721,231 @@ this session does not merge, push, tag, or publish.
   finding implementations are complete; exact next action is operator review
   and, only if requested, push/install and adoption of optional Korean/structured
   preferences. Do not re-enable Pengbot's temporary Git override automatically.
+
+### 2026-09-07 — GPT provider optimizations and Astra readiness
+
+- Started at `8bbe2f3ba` on `feature/gpt-provider-optimizations`. The user requested
+  evaluation of Astra for selected roles, native Codex experimental context
+  management, and justified GPT improvements, explicitly without immediately
+  switching role models. Archived App Server delegation remains cancelled.
+- GPT-01: repair request capability handling and reasoning replay; GPT-02: account
+  for cache writes and full-input cost thresholds; GPT-03: assess Astra/native
+  context mode without changing user settings; GPT-04: run focused, role/effort,
+  compaction and backend regression plus build/typecheck gates. No dynamic router,
+  role reassignment, lifecycle/DB change or new external executor is introduced.
+- Official OpenAI documentation and read-only local inspection distinguish native
+  Codex `features.context_management.experimental_mode` from GSD Remote V2.
+  Codex 0.153.4 recognizes an invocation override; OpenCodex 2.42.0 execution and
+  account eligibility remain unverified. Global enablement is deliberately
+  deferred. Misplacing `experimental_mode` in GSD preferences now warns and ignores
+  it, preserving recognized settings. New diagnostic red/green is confirmed and
+  all 137 preference tests pass.
+- Astra planning/review remains a proposed measured pilot, not a performance claim
+  or role change. Contracts, proxy opt-in controls, model-price caveats and canary
+  boundaries are documented in `docs/dev/gpt-provider-optimizations-2026-09-07.md`.
+- GPT-01/GPT-02 implemented and cross-reviewed: explicit null effort mappings
+  stay disabled; default stateless reasoning requests include replay content;
+  endpoint/model-bounded temperature and modern-cache defaults preserve proxy
+  opt-in. Catalog/registry schemas validate new fields and retain provider/model
+  override precedence. Cache writes are disjoint from ordinary input; cost tiers
+  count full input. Exactly six existing native GPT-5.6 cost entries were updated
+  in both catalog snapshots with a generator overlay. No IDs were added/removed,
+  and every non-cost catalog field, role assignment and provider setting remains
+  unchanged. Official pricing dates and proxy/subscription caveats are documented.
+- Characterization evidence: provider tests exposed 18 failures before repairs;
+  usage/threshold tests exposed 11. Final combined Pi AI suite passed **202 tests,
+  4 skipped across 14 files**, including transport/auth/proxy, cache/effort,
+  encrypted reasoning, commentary/final-answer replay and append-stable history,
+  catalog parity and billing. Final integration corrected two service-tier test
+  expectations: a million-token Sol fixture now correctly receives both the
+  long-input and service-tier multipliers.
+- Final GSD compiled regression passed **308/308**, covering role/model/effort
+  selection and overrides, preferences, Remote V2, snapshot compaction, launch,
+  Local/Cmux/Herdr backend/pool/resolver. `pnpm run test:changed:src` passed
+  **137/137** actual tests. These totals overlap. Extension typecheck, Pi AI
+  standalone typecheck, `pnpm run build:core` and `git diff --check` passed.
+- Registry regression must run with its package-local Vitest configuration:
+  `pnpm exec vitest run test/model-registry.test.ts` from
+  `packages/pi-coding-agent`. Focused GPT/baseUrl/custom/modelOverrides checks pass
+  **72 tests (33 excluded)**. Full current file is **94 passed / 11 failed**;
+  unchanged HEAD source/test copies against the same dependencies reproduce the
+  identical **11 failures (60 passed)**. They concern old authMode fixtures,
+  provider-inheritance expectations and credential shell commands rejected by
+  the existing allowlist. No credential protections were weakened. Root-level
+  Vitest additionally produces two module-resolution-sensitive lifecycle failures
+  which pass under package-local configuration; do not present that invocation
+  as the canonical package gate. Temporary baseline files were removed.
+- Known independent check limitation: standalone coding-agent `tsc --noEmit`
+  reports three source/dist private-class identity conflicts in unchanged
+  `package-commands.ts`; the supported clean/bootstrap core build passes. The
+  compiled regression also emits the existing optional native-addon fallback
+  warning while passing. No live Herdr/model request, native rebuild, package
+  validation, installation or push is claimed for this provider-only change.
+- GPT-03 assessment is complete: leave Astra role selection and native Codex
+  experimental mode untouched. GPT-04 scoped verification is complete with the
+  above pre-existing full-suite limitations. Exact next task is maintainer review
+  of this branch and, if separately approved, a disposable proxy-capability canary
+  followed by the documented planner/reviewer A/B pilot. Review the old registry
+  fixture/module-resolution issues separately; do not restore App Server
+  delegation or enable difficulty routing. No user installation, remote process,
+  project state or credential was changed.
+
+### 2026-09-07 — Operator-approved Sol/high → Astra/medium migration
+
+- The user explicitly superseded the earlier readiness-only Astra decision:
+  migrate all existing Sol/high GSD policy routes to `gpt-6-astra` / `medium`
+  (`midium` interpreted as medium). Existing uncommitted GPT optimizations were
+  preserved on `feature/gpt-provider-optimizations`; no reset/merge/push occurred.
+  ADR-H043 and `docs/dev/astra-medium-migration-2026-09-07.md` record the boundary.
+- AM-01 complete: active routes were in machine/project preferences and named
+  role mappings, not a Sol-pinned repository default. Mac targets changed:
+  `~/.gsd/agent/models.json`, `~/.gsd/PREFERENCES.md`, `~/.gsd/defaults.json`,
+  Pengbot `.gsd/PREFERENCES.md` and `.planning/config.json`. Fable planning/discuss,
+  named planner and Opus UI/Heavy mappings now select Astra/medium. Three scoped
+  model entries (`opencodex`, `gsd-fable`, `gsd-opus`) advertise medium only so
+  inherited high/max is clamped. Mac GLM/max session defaults and every GLM/Luna
+  execution/fallback route remain unchanged.
+- AM-02 complete: added native API and Codex Astra catalog entries without
+  removing Sol or changing other IDs. Official API metadata supports 1.05M;
+  observed Codex 0.153.4/OpenCodex metadata supports 872K. Fable and the generic
+  OpenCodex policy entry are capped to 872K, Opus remains 272K, output budgets
+  remain unchanged in machine-local routes. Native pricing/effort metadata and
+  deterministic generator overlays have focused tests. Canonical ChatGPT Astra
+  requests now suppress inherited temperature; proxy settings explicitly opt out.
+- AM-03 complete: interactive subagent instructions include configured thinking
+  alongside model. Regression covers Astra/medium planning/discuss, subsequent
+  GLM/max execution, Luna/max fallback, empty-registry resume and repeat selection
+  without model mutation or effort leakage. No backend, dynamic router, DB schema,
+  task lifecycle, App Server, authority or native-Codex experimental flag changed.
+- AM-04 complete: on-demand migration helper previews explicit files, keeps
+  unrelated values/formatting, rejects collisions/wrong effort/ambiguous YAML and
+  symlinks, saves private backups and detects intervening writes before atomic
+  replacement. Review found and fixed block-scalar/Markdown mutation, wrong-effort
+  role conversion, non-Opus profile gaps, and decorated scalar ambiguity. All 16
+  operator-helper tests pass. No startup migration or recursive traversal exists;
+  non-cooperating writers must still be paused (portable Node lacks kernel CAS).
+- AM-05 complete: applied the same configuration to `ssh penglab`:
+  `/home/penglab/.gsd/agent/models.json`, global `PREFERENCES.md`, agent
+  `settings.json` (old new-session Sol/high → Opus Astra/medium), and project
+  `/srv/penglab/gsd-runs/projects/pengbot_monorepo/757a5a1c2c35/.planning/config.json`.
+  That remote checkout has no project `PREFERENCES.md`, so its existing global
+  inheritance remains. Root guides and the two model/workflow policy docs were
+  aligned on both machines; unrelated active Pengbot edits were preserved.
+- Backups: Mac originals are under repository-private
+  `.git/astra-medium-config-FSjiCz/`. Remote persistent copies are under
+  `/srv/penglab/gsd-runs/private/astra-medium-migration.vPbhI2/` (`*.before.*`,
+  `doc-*.before`); helper temporary originals also remain in their reported private
+  `/tmp/gsd-astra-backup-*` directories. Credentials were not printed or rewritten.
+  A proposed remote documentation patch failed preflight and was not applied;
+  it was removed and replaced by bounded policy-text edits with separate backups.
+- Actual evidence: before route changes, Mac and penglab Astra/medium proxy
+  canaries each returned exact `hi` with terminal stop, 21 input / 5 output tokens.
+  After migration all three scoped providers on both hosts were probed offline
+  with requested max and emitted medium. A real installed penglab Opus route
+  requested max and emitted Astra/medium, again returning exact `hi` (21/5 tokens).
+  No claim of latency/quality savings or subscription cost measurement is made.
+- Final gates: Pi AI **214 passed / 4 skipped across 15 files**; compiled GSD
+  role/effort/compaction/Local-Cmux-Herdr regression **325/325**; changed-source
+  **160/160**; focused registry **72 passed / 33 excluded**; migration utility
+  **16/16**. Totals overlap. Core build, extension typecheck, script syntax and
+  diff whitespace checks pass. Both Pengbot documentation checks pass (28 active
+  docs, 16 workspaces). Previous independent full-registry failures and standalone
+  coding-agent source/dist typecheck caveats remain as recorded above.
+- Exact next operational step: start/reload GSD at a safe task boundary to load
+  updated configuration; old manual sessions may still carry their saved Sol
+  model and need explicit Astra/medium selection. Running panes/processes were
+  not killed or restarted. Source improvements are built in this checkout but
+  global/remote binaries were not reinstalled in this turn; binary deployment,
+  commits/push and a representative planning quality/cost evaluation are separate
+  follow-ups. Native Codex experimental context management remains unenabled.
+
+### 2026-09-07 — Cache and workflow efficiency audit
+
+- User requested cache, efficiency and overall workflow optimization. Continued
+  the current dirty feature worktree without reverting prior GPT/Astra work or
+  changing active model policies. Findings CE-01–CE-06 and measurement limits are
+  in `docs/workflow-improvements/CACHE-WORKFLOW-AUDIT.md`.
+- The inspected audit-fix skill cannot consume this fork (no phase/UAT directory),
+  so current-code reproductions provide evidence. No UAT records, project DB,
+  provider settings or user installations are modified by this source audit.
+- CE-01 implemented: all cache hit displays count writes as non-hit input;
+  overflow detection likewise counts all input buckets. Related metric/report
+  tests pass 110/110, overflow/accounting tests 33/33, extension typecheck passes.
+  Explicit red cases reproduced both overreported hit rate and missed overflow.
+- Parallel bounded work: CE-02/03 preserve stable synthetic context positions;
+  CE-04 avoids duplicate classification within one worktree dispatch; CE-05/06
+  coalesce redundant pane drains and intermediate durable activity writes.
+  Installed Herdr remains v0.8.2; no API schema or runtime authority is changed.
+- Exact next task: finish and independently review each change, compare the same
+  offline counters before/after, run combined cache/workflow/backend security and
+  role/compaction regression plus build gates, and record the durability bound.
+- CE-02/03 complete: identical full context items retain their earlier position
+  in the final equal-injection run; changed context/A→B→A remains latest-wins.
+  Source blocks anchor within the latest recognized user turn without splitting
+  tool pairs; unknown shapes and ambiguous shell-like prose use the prior tail
+  fallback. Cross-review caught and fixed real user `Ran` prose and mixed-block
+  ambiguity. Snapshot wording distinguishes latest available recorded observations
+  from fresh filesystem reads and later historical tool results. Final focused
+  context/payload tests pass 60/60. Same-fixture matching prefixes increase from
+  86 to 2,965 bytes (hidden context) and 160 to 26,455 bytes (source), with unchanged
+  request sizes. These are byte comparisons, not measured provider cache hits.
+- CE-04 complete: a per-unit lazy classifier shares the safety/guidance result,
+  guarded by root/physical path/Git-marker identity, with explicit refresh and no
+  caching of missing roots/markers. Recovery/failed safety still breaks normally.
+  Same 1,401-file/40-app fixture, 30 alternating samples: directory reads/Git calls
+  halve (5,040/120 → 2,520/60), median 88.34 → 43.27ms, p95 109.46 → 54.28ms.
+  No cross-unit cache, global TTL or state-reconciliation skip was introduced.
+- CE-05/06 complete: 100 simultaneous reservations behind four leased panes now
+  share one tab/pane/recovery/cleanup pass rather than 100 each. Releases and new
+  reservations during awaited work still schedule a serialized follow-up, and
+  recovery polling remains active. Normal activity snapshots use a non-debounced
+  250ms timer (or shorter heartbeat), while lifecycle/retry/error/blocked/abort and
+  terminal writes bypass it. Secure writers and fsync remain mandatory; final
+  state includes the latest activity before reporter settlement/exit/reuse and no
+  timer survives finalization. ADR-H044 records the nominal presentation delay.
+- Worker before/after fixture: 200 text lines retain exact raw/display output;
+  fsyncs 411 → 11, time inside fsync 1,807.8 → 40.0ms, total 2,302.8 → 76.2ms.
+  These are isolated local samples, not production throughput or model-latency
+  estimates. Batcher fake-clock and real-process tests cover bounded scheduling,
+  immediate blocked/resumed/error, orphan cancellation and final evidence order.
+  Independent code reviews found no remaining actionable issue after fixes.
+- Final regression exposed two legacy auto-model-selection tests that read the
+  operator's real global preferences. The prior Astra/medium migration made their
+  implicit high expectation fail. Only test setup was changed: each test now uses
+  a temporary empty canonical GSD home and restores environment/cache afterward.
+  Production model precedence and actual user preferences remain unchanged.
+- Final gates: changed-source compiled suite **387/387**; combined role/effort,
+  worktree safety, metrics, compaction and complete Local/Cmux/Herdr worker/backend
+  regression **244/244**; Pi AI **228 passed / 4 skipped across 16 files**;
+  Herdr integration/plugin/capability/downstream-isolation suite **30/30**;
+  focused registry **72 passed / 33 excluded**; migration utility **16/16**.
+  Counts overlap. Core build, extension typecheck and final diff check pass.
+  Previously recorded independent full-registry/standalone package-check issues
+  were not silently fixed or presented as green.
+- Exact next task: review the combined uncommitted GPT/Astra/efficiency branch,
+  then explicitly package/install the verified build and measure representative
+  real cache usage and phase latency. This turn did not deploy, push, restart live
+  panes, change user/remote configs, run a paid model benchmark or validate a new
+  published package. Preserve old manual session history and the current model
+  policy; do not infer permission to enable Codex experimental mode or relax gates.
+
+### 2026-09-07 — Approved commit, push and dual-host installation
+
+- Operator explicitly requested committing/pushing the accumulated GPT/Astra/CE
+  work and installing locally and on penglab. Preflight reviewed all 63 changed
+  text files: no unrelated temporary artifacts or credential-pattern hits; diff
+  check passed. Push target is explicitly downstream `origin`, never `upstream`.
+- Deployment gates: commit coherent source batches, rebuild core and standalone
+  web, validate the installable package, stamp the clean source commit, preserve
+  platform-native addons and prior installations, then verify installed build
+  identity and unchanged Astra/medium/GLM/Luna configuration. Do not kill or
+  restart live root/worker processes. Installation does not rewrite their loaded
+  code or old manual session history.
+- First penglab SSH probe timed out. Continue local gates and retry safe network
+  diagnostics; do not claim remote deployment before connection/install evidence.
+- Exact next task: complete commit/build/package gates, install with rollback
+  evidence, verify each available host, push final operational notes and record
+  any unresolved remote reachability rather than silently skipping it.
 
 ## 11. Working-session protocol
 

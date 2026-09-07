@@ -20,6 +20,7 @@ import type {
   SessionMessageEntry,
 } from "@gsd/pi-coding-agent";
 import { bindAutoReplacementSession } from "./auto/replacement-session.js";
+import { computeCacheHitRate } from "./prompt-cache-optimizer.js";
 
 import { deriveState, invalidateStateCache } from "./state.js";
 import {
@@ -2025,6 +2026,7 @@ export async function stopAuto(
       const totals = units.length > 0 ? getProjectTotals(units) : null;
       let totalInput = 0;
       let totalCacheRead = 0;
+      let totalCacheWrite = 0;
       try {
         for (const entry of s.cmdCtx?.sessionManager?.getEntries?.() ?? []) {
           if (entry.type === "message") {
@@ -2034,6 +2036,7 @@ export async function stopAuto(
               if (usage) {
                 totalInput += usage.input || 0;
                 totalCacheRead += usage.cacheRead || 0;
+                totalCacheWrite += usage.cacheWrite || 0;
               }
             }
           }
@@ -2071,8 +2074,8 @@ export async function stopAuto(
         totalCost: totals?.cost ?? 0,
         totalTokens: totals?.tokens.total ?? 0,
         unitCount: units.length,
-        cacheHitRate: totalCacheRead + totalInput > 0
-          ? (totalCacheRead / (totalCacheRead + totalInput)) * 100
+        cacheHitRate: totalCacheRead + totalInput + totalCacheWrite > 0
+          ? computeCacheHitRate({ input: totalInput, cacheRead: totalCacheRead, cacheWrite: totalCacheWrite })
           : null,
         contextPercent: contextUsage?.percent ?? null,
         contextWindow: contextUsage?.contextWindow ?? s.cmdCtx?.model?.contextWindow ?? null,

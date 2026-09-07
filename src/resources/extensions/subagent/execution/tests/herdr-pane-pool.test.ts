@@ -146,6 +146,62 @@ describe("Herdr worker pane pool", () => {
 		assert.equal(fifth.paneId, firstFour[2].paneId);
 	});
 
+	it("coalesces a same-turn reservation burst while capacity is fully leased", async () => {
+		const client = new FakeHerdrPoolClient();
+		let recoveryScans = 0;
+		let cleanupScans = 0;
+		const workers = pool(client, "burst-root", () => { cleanupScans++; return []; }, () => { recoveryScans++; return new Map(); });
+		const active = await Promise.all(Array.from({ length: 4 }, () => workers.reserve()));
+		await new Promise((resolve) => setImmediate(resolve));
+		client.requests.length = 0;
+		recoveryScans = cleanupScans = 0;
+		const pending = Array.from({ length: 100 }, () => workers.reserve());
+		await new Promise((resolve) => setImmediate(resolve));
+		try {
+			assert.equal(workers.getSnapshot().waiting, 100);
+			assert.equal(client.requests.filter((request) => request.method === "tab.list").length, 1);
+			assert.equal(client.requests.filter((request) => request.method === "pane.list").length, 1);
+			assert.equal(recoveryScans, 1);
+			assert.equal(cleanupScans, 1);
+		} finally {
+			const drained = pending.map((reservation) => reservation.then((value) => value.release("completed")));
+			for (const reservation of active) reservation.release("completed");
+			await Promise.all(drained);
+		}
+	});
+
+	it("keeps release and reservation wakeups arriving while reconciliation is awaited", async () => {
+		const client = new FakeHerdrPoolClient();
+		const workers = pool(client);
+		const active = await Promise.all(Array.from({ length: 4 }, () => workers.reserve()));
+		await new Promise((resolve) => setImmediate(resolve));
+		const originalRequest = client.request.bind(client);
+		let releaseProbe!: () => void;
+		let enteredProbe!: () => void;
+		const probeStarted = new Promise<void>((resolve) => { enteredProbe = resolve; });
+		const probeGate = new Promise<void>((resolve) => { releaseProbe = resolve; });
+		let gated = false;
+		client.request = async (method, params) => {
+			if (method === "tab.list" && !gated) {
+				gated = true;
+				enteredProbe();
+				await probeGate;
+			}
+			return originalRequest(method, params);
+		};
+		const fifth = workers.reserve({ affinityKey: "fifth" });
+		await probeStarted;
+		active[0].release("completed");
+		const sixth = workers.reserve({ affinityKey: "sixth" });
+		active[1].release("aborted");
+		releaseProbe();
+		const [first, second] = await Promise.all([fifth, sixth]);
+		assert.notEqual(first.paneId, second.paneId);
+		assert.equal(workers.getSnapshot().waiting, 0);
+		assert.equal(workers.getSnapshot().slots.length, 4);
+		for (const reservation of [...active.slice(2), first, second]) reservation.release("completed");
+	});
+
 	it("retains failed panes and fails visibly instead of waiting forever when every slot needs review", async () => {
 		const client = new FakeHerdrPoolClient();
 		const workers = pool(client);
@@ -260,6 +316,24 @@ describe("Herdr worker pane pool", () => {
 		recovered = "retained-success";
 		workers.clearRetained();
 		assert.equal((await pending).paneId, "w1:p9");
+	});
+
+	it("wakes a coalesced reservation from the recovery timer without an explicit release", async (t) => {
+		t.mock.timers.enable({ apis: ["setTimeout"] });
+		const client = new FakeHerdrPoolClient();
+		const label = new HerdrWorkerPanePool(client, { rootSessionId: "timer-root", cwd: "/repo" }).getSnapshot().tabLabel;
+		client.seedTab(label, ["w1:p9"], "working");
+		let recovered: "busy" | "retained-success" = "busy";
+		const workers = pool(client, "timer-root", undefined, () => new Map([["w1:p9", { state: recovered, affinityKey: "same-dispatch" }]]));
+		const pending = workers.reserve({ affinityKey: "same-dispatch" });
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(workers.getSnapshot().waiting, 1);
+		recovered = "retained-success";
+		t.mock.timers.tick(500);
+		const reservation = await pending;
+		assert.equal(reservation.paneId, "w1:p9");
+		assert.equal(workers.getSnapshot().waiting, 0);
+		reservation.release("completed");
 	});
 
 	it("fails visibly without managed workspace identity", async () => {

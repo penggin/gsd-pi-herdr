@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { spawn } from "node:child_process";
 import {
   existsSync,
@@ -138,6 +140,111 @@ describe("internal Herdr worker runner", () => {
     ]);
     const state = JSON.parse(readFileSync(paths.statePath, "utf8"));
     assert.deepEqual(state.lastActivity, { kind: "status", label: "assistant: Dispatch fixed" });
+  });
+
+  it("batches activity-only fsyncs while preserving every raw/displayed line and the final settling boundary", async (t) => {
+    const events = Array.from({ length: 200 }, (_, index) => ({
+      type: "message_update", assistantMessageEvent: { type: "text_delta", delta: `line ${index}\n` },
+    }));
+    const { paths, spec } = fixture(`for (const event of ${JSON.stringify(events)}) console.log(JSON.stringify(event));`);
+    const realFsync = fs.fsyncSync;
+    let syncs = 0;
+    const syncMock = t.mock.method(fs, "fsyncSync", (fd: number) => { syncs++; return realFsync(fd); });
+    syncBuiltinESMExports();
+    t.after(() => { syncMock.mock.restore(); syncBuiltinESMExports(); });
+    let releaseFinal!: () => void;
+    const finalGate = new Promise<void>((resolve) => { releaseFinal = resolve; });
+    let finalStarted = false;
+    const lines: string[] = [];
+    const displayed: string[] = [];
+    const run = runHerdrWorker(spec, paths, {
+      heartbeatMs: 60_000,
+      onJsonlLine: (line) => lines.push(line),
+      activityWrite: (text) => displayed.push(text),
+      reporter: { ...noOpReporter(), reportFinal: async () => { finalStarted = true; await finalGate; } },
+    });
+    await waitFor(() => finalStarted, 10_000);
+    try {
+      assert.deepEqual(lines.map((line) => JSON.parse(line)), events);
+      assert.equal(readFileSync(paths.stdoutPath, "utf8"), events.map((event) => JSON.stringify(event)).join("\n") + "\n");
+      assert.equal(displayed.length, 200);
+      assert.equal(existsSync(paths.exitPath), false);
+      const finalState = JSON.parse(readFileSync(paths.statePath, "utf8"));
+      assert.equal(finalState.status, "completed");
+      assert.equal(finalState.lastActivity.label, "assistant: line 199");
+      assert.ok(syncs <= 11, `Expected bounded startup/final writes, observed ${syncs} fsyncs`);
+      const beforeWait = syncs;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      assert.equal(syncs, beforeWait, "no pending activity timer may rewrite final state while reporting settles");
+      assert.deepEqual(JSON.parse(readFileSync(paths.statePath, "utf8")), finalState);
+    } finally {
+      releaseFinal();
+      assert.equal(await run, 0);
+    }
+    assert.equal(existsSync(paths.exitPath), true);
+  });
+
+  it("publishes blocked, resumed, and error evidence immediately across pending activity updates", async () => {
+    const events = [
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "before question\n" } },
+      { type: "tool_execution_start", toolName: "ask_user_questions", toolCallId: "question-1", args: { questions: [] } },
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "while blocked\n" } },
+      { type: "tool_execution_end", toolName: "ask_user_questions", toolCallId: "question-1" },
+      { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "after question\n" } },
+      { type: "message_end", message: { role: "assistant", stopReason: "error", errorMessage: "assistant: explicit failure" } },
+      { type: "sentinel" },
+    ];
+    const { paths, spec } = fixture(`for (const event of ${JSON.stringify(events)}) console.log(JSON.stringify(event));`);
+    const states: string[] = [];
+    let errorObserved = false;
+    await runHerdrWorker(spec, paths, {
+      activityWrite: () => {},
+      onJsonlLine: (line) => {
+        if (JSON.parse(line).type !== "sentinel") return;
+        const state = JSON.parse(readFileSync(paths.statePath, "utf8"));
+        assert.deepEqual(state.lastActivity, { kind: "error", label: "assistant: explicit failure" });
+        errorObserved = true;
+      },
+      reporter: {
+        ...noOpReporter(),
+        reportStatus: async (status) => {
+          const state = JSON.parse(readFileSync(paths.statePath, "utf8"));
+          assert.equal(state.status, status);
+          states.push(status);
+        },
+      },
+    });
+    assert.equal(errorObserved, true);
+    assert.deepEqual(states, ["starting", "working", "blocked", "working"]);
+  });
+
+  it("cancels pending activity before publishing durable abort evidence", async () => {
+    const event = { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "pending activity\n" } };
+    const { paths, spec } = fixture(`console.log(${JSON.stringify(JSON.stringify(event))}); setInterval(() => {}, 1000);`);
+    let orphanRequested = false;
+    const run = runHerdrWorker(spec, paths, {
+      heartbeatMs: 100,
+      interruptGraceMs: 20,
+      terminateGraceMs: 20,
+      activityWrite: () => {},
+      onJsonlLine: () => {
+        if (orphanRequested) return;
+        orphanRequested = true;
+        writeFileSync(paths.orphanPath, JSON.stringify({
+          schemaVersion: 1, action: "orphan", rootSessionId: spec.rootSessionId,
+          dispatchId: spec.dispatchId, childId: spec.childId, paneId: "w1:p4",
+          requestedAt: new Date().toISOString(), reason: "test cancellation",
+        }), { mode: 0o600 });
+      },
+      reporter: noOpReporter(),
+    });
+    assert.equal(await run, 143);
+    const finalState = readFileSync(paths.statePath, "utf8");
+    assert.equal(JSON.parse(finalState).status, "orphaned");
+    assert.match(JSON.parse(finalState).lastActivity.label, /cancelling after SIGTERM/);
+    assert.equal(JSON.parse(readFileSync(paths.exitPath, "utf8")).aborted, true);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.equal(readFileSync(paths.statePath, "utf8"), finalState);
   });
 
   it("replaces copied root Herdr identity with the worker pane identity and forces child authority mode", () => {

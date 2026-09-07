@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { GSD_CONTEXT_MESSAGE_SENTINEL } from "./constants.js";
 
 /**
@@ -272,7 +273,7 @@ const LEGACY_GSD_CONTEXT_INJECTION_PREFIXES = [
   "[GSD Guided Execute Context]",
 ] as const;
 
-function isGsdContextInjectionText(text: string | undefined): boolean {
+export function isGsdContextInjectionText(text: string | undefined): boolean {
   if (typeof text !== "string") return false;
   if (text.startsWith(GSD_CONTEXT_MESSAGE_SENTINEL)) return true;
   return LEGACY_GSD_CONTEXT_INJECTION_PREFIXES.some((prefix) => text.startsWith(prefix));
@@ -284,20 +285,25 @@ function isGsdContextInjectionMessage(m: MaskableMessage): boolean {
 }
 
 /**
- * Removes every GSD context-injection user message except the latest one.
- * Each turn re-injects a near-identical memory/guided/forensics block; left
- * in place they duplicate verbatim across an N-turn session. Removal (not
- * masking) — an empty placeholder still costs tokens and shifts message
- * positions, breaking cache byte-stability. Pure function: stored history is
- * never mutated, only the outgoing payload array.
+ * Keep the latest context, reusing the earliest item in its consecutive run
+ * of identical injections. Repeated unchanged context then keeps its original
+ * prefix position, while changed context (including A -> B -> A) still wins.
+ * Compare the entire item so extra blocks, images and metadata are not lost.
+ * Stored history is never mutated, only the outgoing payload array.
  */
 export function filterSupersededContextInjections(messages: MaskableMessage[]): MaskableMessage[] {
-  let lastIndex = -1;
-  for (let i = 0; i < messages.length; i++) {
-    if (isGsdContextInjectionMessage(messages[i])) lastIndex = i;
+  return filterSupersededInjections(messages, isGsdContextInjectionMessage);
+}
+
+function filterSupersededInjections<T>(items: T[], isInjection: (item: T) => boolean): T[] {
+  let retainedIndex = -1;
+  for (let index = items.length - 1; index >= 0; index--) {
+    if (!isInjection(items[index])) continue;
+    if (retainedIndex !== -1 && !isDeepStrictEqual(items[index], items[retainedIndex])) break;
+    retainedIndex = index;
   }
-  if (lastIndex === -1) return messages;
-  return messages.filter((m, i) => i === lastIndex || !isGsdContextInjectionMessage(m));
+  if (retainedIndex === -1) return items;
+  return items.filter((item, index) => index === retainedIndex || !isInjection(item));
 }
 
 function isResponsesGsdContextInjectionItem(item: ResponsesInputItem): boolean {
@@ -308,10 +314,5 @@ function isResponsesGsdContextInjectionItem(item: ResponsesInputItem): boolean {
 export function filterSupersededResponsesContextInjections(
   items: ResponsesInputItem[],
 ): ResponsesInputItem[] {
-  let lastIndex = -1;
-  for (let i = 0; i < items.length; i++) {
-    if (isResponsesGsdContextInjectionItem(items[i])) lastIndex = i;
-  }
-  if (lastIndex === -1) return items;
-  return items.filter((item, i) => i === lastIndex || !isResponsesGsdContextInjectionItem(item));
+  return filterSupersededInjections(items, isResponsesGsdContextInjectionItem);
 }

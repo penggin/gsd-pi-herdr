@@ -1,4 +1,4 @@
-import test from "node:test";
+import test, { beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -9,6 +9,26 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 import { ModelPolicyDispatchBlockedError, resolvePreferredModelConfig, resolveModelId, selectAndApplyModel, floorThinkingLevelForUnit } from "../auto-model-selection.js";
 import { blockModelUntil, clearTemporaryModelBlocksForTest } from "../blocked-models.ts";
+import { clearGSDPreferencesCache } from "../preferences.ts";
+
+let originalTestGsdHome: string | undefined;
+let isolatedTestGsdHome: string;
+
+beforeEach(() => {
+  originalTestGsdHome = process.env.GSD_HOME;
+  isolatedTestGsdHome = mkdtempSync(join(tmpdir(), "gsd-model-selection-home-"));
+  // An explicit empty object also prevents legacy global preference fallbacks.
+  writeFileSync(join(isolatedTestGsdHome, "PREFERENCES.md"), "---\n{}\n---\n");
+  process.env.GSD_HOME = isolatedTestGsdHome;
+  clearGSDPreferencesCache();
+});
+
+afterEach(() => {
+  if (originalTestGsdHome === undefined) delete process.env.GSD_HOME;
+  else process.env.GSD_HOME = originalTestGsdHome;
+  clearGSDPreferencesCache();
+  rmSync(isolatedTestGsdHome, { recursive: true, force: true });
+});
 
 function makeTempDir(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix));

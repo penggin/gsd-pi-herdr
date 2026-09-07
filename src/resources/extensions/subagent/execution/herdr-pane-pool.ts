@@ -86,6 +86,7 @@ export class HerdrWorkerPanePool {
 	private slots: MutableSlot[] = [];
 	private waiters: Waiter[] = [];
 	private mutationQueue: Promise<void> = Promise.resolve();
+	private drainScheduled = false;
 	private recoveryPollTimer: ReturnType<typeof setTimeout> | undefined;
 
 	constructor(client: HerdrPanePoolClient, options: HerdrWorkerPanePoolOptions) {
@@ -140,8 +141,15 @@ export class HerdrWorkerPanePool {
 	}
 
 	private scheduleDrain(): void {
+		if (this.drainScheduled) return;
+		this.drainScheduled = true;
 		this.mutationQueue = this.mutationQueue
-			.then(() => this.drain())
+			.then(() => {
+				// Coalesce work that has not started, but allow releases/reservations
+				// during awaited reconciliation to schedule the next serialized pass.
+				this.drainScheduled = false;
+				return this.drain();
+			})
 			.catch((error) => this.failAllWaiters(error));
 	}
 

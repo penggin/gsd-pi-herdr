@@ -60,7 +60,7 @@ test("provider payload policy truncates tool results outside auto-mode without m
   assert.doesNotMatch(truncatedResponsesOutput, /result masked/);
 });
 
-test("provider payload policy appends source context after masking and truncation", () => {
+test("provider payload policy anchors source context after masking and truncation", () => {
   const sourceContextBlock = "## Source Context Block\n\n" + "full source text ".repeat(20);
   const payload = {
     messages: [
@@ -82,13 +82,13 @@ test("provider payload policy appends source context after masking and truncatio
   });
 
   const oldResult = textFromMessage(payload.messages[1]);
-  const newResult = textFromMessage(payload.messages[4]);
-  const appendedContext = textFromMessage(payload.messages[payload.messages.length - 1]);
+  const newResult = textFromMessage(payload.messages[5]);
+  const anchoredContext = textFromMessage(payload.messages[4]);
 
   assert.match(oldResult, /result masked/);
   assert.match(newResult, /\[truncated\]/);
-  assert.equal(appendedContext, sourceContextBlock);
-  assert.doesNotMatch(appendedContext, /\[truncated\]/);
+  assert.equal(anchoredContext, sourceContextBlock);
+  assert.doesNotMatch(anchoredContext, /\[truncated\]/);
 });
 
 test("provider payload policy applies ordering to Responses input payloads", () => {
@@ -113,8 +113,8 @@ test("provider payload policy applies ordering to Responses input payloads", () 
   });
 
   assert.match(String(payload.input[1]?.output ?? ""), /result masked/);
-  assert.match(String(payload.input[4]?.output ?? ""), /\[truncated\]/);
-  assert.equal(textFromMessage(payload.input[payload.input.length - 1]), sourceContextBlock);
+  assert.match(String(payload.input[5]?.output ?? ""), /\[truncated\]/);
+  assert.equal(textFromMessage(payload.input[4]), sourceContextBlock);
 });
 
 test("provider payload policy replaces existing source context blocks", () => {
@@ -138,6 +138,34 @@ test("provider payload policy replaces existing source context blocks", () => {
   });
   assert.equal(sourceMessages.length, 1);
   assert.equal(textFromMessage(sourceMessages[0]), "## Source Context Block\n\nfresh");
+});
+
+test("provider policy preserves source-prefix bytes across tool iterations and expires with its source store", () => {
+  const sourceContextBlock = "## Source Context Block\n\n" + "protected source ".repeat(100);
+  const history = [
+    { role: "user", content: [{ type: "input_text", text: "verify" }] },
+    { role: "user", content: [{ type: "input_text", text: "[GSD Context Injection]\ncontext" }] },
+    { type: "function_call", call_id: "call1", name: "read", arguments: "{}" },
+    { type: "function_call_output", call_id: "call1", output: "old result ".repeat(50) },
+  ];
+  const extraItems = [
+    { type: "function_call", call_id: "call2", name: "test", arguments: "{}" },
+    { type: "function_call_output", call_id: "call2", output: "new result ".repeat(50) },
+  ];
+  const deps = createDeps({ autoActive: true, context: { tool_result_max_chars: 20 }, sourceContextBlock });
+  const first = applyProviderPayloadPolicy({ payload: { input: history }, deps }).input as typeof history;
+  const next = applyProviderPayloadPolicy({ payload: { input: [...history, ...extraItems] }, deps }).input as typeof history;
+  assert.ok(JSON.stringify(next.slice(0, first.length)) === JSON.stringify(first), "protected source and truncated tool results must retain prefix bytes");
+  assert.equal(textFromMessage(first[1]), sourceContextBlock);
+  assert.match(first.at(-1)?.output ?? "", /truncated/);
+  assert.doesNotMatch(history.at(-1)?.output ?? "", /truncated/);
+
+  const expired = applyProviderPayloadPolicy({
+    payload: { input: [...history, ...extraItems] },
+    deps: createDeps({ autoActive: true, context: { tool_result_max_chars: 20 } }),
+  }).input as typeof history;
+  assert.equal(expired.length, history.length + extraItems.length);
+  assert.equal(expired.some((item) => textFromMessage(item).startsWith("## Source Context Block")), false);
 });
 
 test("provider payload policy sets service tier only for supported models", () => {

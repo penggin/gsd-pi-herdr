@@ -101,6 +101,27 @@ describe("ByScope variant writes to the same path as legacy variant", () => {
     resetMetricsByScope(scope);
   });
 
+  for (const mode of ["legacy", "scoped"] as const) {
+    test(`${mode} snapshot reports cache writes as non-hit input`, () => {
+      const scope = scopeMilestone(createWorkspace(projectDir), "M001");
+      try {
+        initMetrics(projectDir);
+        for (const [index, cacheRead, cacheWrite, expected] of [[1, 12000, 3000, 80], [2, 0, 12000, 0]]) {
+          const msg = assistantMsg(0, 5);
+          Object.assign(msg.usage, { cacheRead, cacheWrite, totalTokens: cacheRead + cacheWrite + 5 });
+          const ctx = mockCtx([msg]);
+          const unit = mode === "legacy"
+            ? snapshotUnitMetrics(ctx, "execute-task", `M001/S01/T0${index}`, index, "fixture")
+            : snapshotUnitMetricsByScope(scope, ctx, "execute-task", `M001/S01/T0${index}`, index, "fixture");
+          assert.equal(unit?.cacheHitRate, expected);
+          assert.equal(unit?.tokens.cacheWrite, cacheWrite);
+        }
+      } finally {
+        resetMetricsByScope(scope);
+      }
+    });
+  }
+
   test("snapshotUnitMetricsByScope writes to the same metrics.json as the legacy path", () => {
     const ws = createWorkspace(projectDir);
     const scope = scopeMilestone(ws, "M001");

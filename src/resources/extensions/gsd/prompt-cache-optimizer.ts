@@ -208,10 +208,12 @@ export function estimateCacheSavings(
  */
 export function computeCacheHitRate(usage: {
   cacheRead: number;
-  cacheWrite: number;
+  cacheWrite?: number;
   input: number;
 }): number {
-  const denominator = usage.cacheRead + usage.input;
+  // All adapters expose disjoint ordinary-input, cache-read and cache-write
+  // buckets. Writes are new input, not cache hits; old records may omit them.
+  const denominator = usage.cacheRead + usage.input + (usage.cacheWrite ?? 0);
   if (denominator === 0) return 0;
   return (usage.cacheRead / denominator) * 100;
 }

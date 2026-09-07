@@ -29,6 +29,7 @@ import { formatDateShort, formatDuration } from '../shared/format-utils.js';
 import { esc, renderHtmlShell } from '../shared/html-shell.js';
 import { formatCost, formatTokenCount } from './metrics.js';
 import type { UnitMetrics } from './metrics.js';
+import { computeCacheHitRate } from './prompt-cache-optimizer.js';
 
 // ─── Public API ────────────────────────────────────────────────────────────────
 
@@ -122,8 +123,8 @@ function buildSummarySection(
     act ? kvi('Rate', `${act.completionRate.toFixed(1)}/hr`) : '',
     t && doneSlices > 0 ? kvi('Cost/slice', formatCost(t.cost / doneSlices)) : '',
     t && t.toolCalls > 0 ? kvi('Tokens/tool', formatTokenCount(t.tokens.total / t.toolCalls)) : '',
-    t && (t.tokens.input + t.tokens.cacheRead) > 0
-      ? kvi('Cache hit', ((t.tokens.cacheRead / (t.tokens.input + t.tokens.cacheRead)) * 100).toFixed(1) + '%')
+    t && (t.tokens.input + t.tokens.cacheRead + (t.tokens.cacheWrite ?? 0)) > 0
+      ? kvi('Cache hit', computeCacheHitRate(t.tokens).toFixed(1) + '%')
       : '',
     opts.milestoneId ? kvi('Scope', opts.milestoneId) : '',
   ].filter(Boolean).join('');
