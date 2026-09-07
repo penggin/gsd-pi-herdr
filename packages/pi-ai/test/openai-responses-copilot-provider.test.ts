@@ -62,6 +62,65 @@ describe("openai-responses provider defaults", () => {
 		vi.restoreAllMocks();
 	});
 
+	async function captureParameters(
+		model: Model<"openai-responses">,
+		options: Parameters<typeof streamOpenAIResponses>[2] = {},
+	): Promise<Record<string, unknown>> {
+		let payload: Record<string, unknown> | undefined;
+		await streamOpenAIResponses(model, { messages: [{ role: "user", content: "hi", timestamp: 1 }] }, {
+			apiKey: "test-key",
+			...options,
+			onPayload: (value) => {
+				payload = value as Record<string, unknown>;
+				throw new Error("stop before network request");
+			},
+		}).result();
+		expect(payload).toBeDefined();
+		return payload!;
+	}
+
+	it("requests encrypted reasoning when the model reasons by default without an off level", async () => {
+		const payload = await captureParameters({
+			...getModel("openai", "gpt-5.6-sol"),
+			thinkingLevelMap: { off: null },
+		});
+		expect(payload.store).toBe(false);
+		expect(payload.reasoning).toBeUndefined();
+		expect(payload.include).toEqual(["reasoning.encrypted_content"]);
+	});
+
+	it.each(["minimal", "high", "max"] as const)("honors an explicitly disabled %s effort", async (reasoningEffort) => {
+		const payload = await captureParameters({
+			...getModel("openai", "gpt-5.6-sol"),
+			thinkingLevelMap: { [reasoningEffort]: null },
+		}, { reasoningEffort });
+		expect(payload.reasoning).toBeUndefined();
+		expect(payload.include).toEqual(["reasoning.encrypted_content"]);
+	});
+
+	it.each(["high", "max"] as const)("preserves supported %s effort", async (reasoningEffort) => {
+		const payload = await captureParameters(getModel("openai", "gpt-5.6-sol"), { reasoningEffort });
+		expect(payload.reasoning).toMatchObject({ effort: reasoningEffort });
+	});
+
+	it.each([
+		["direct Astra", "gpt-6-astra", "https://api.openai.com/v1", undefined, undefined],
+		["direct GPT 5.6", "gpt-5.6-sol", "https://api.openai.com/v1", undefined, 0.2],
+		["proxy defaults", "gpt-6-astra", "https://proxy.example/v1", undefined, 0.2],
+		["explicit proxy opt-out", "custom-astra", "https://proxy.example/v1", false, undefined],
+		["explicit direct override", "gpt-6-astra", "https://api.openai.com/v1", true, 0.2],
+		["unrecognized model", "gpt-6-astra-custom", "https://api.openai.com/v1", undefined, 0.2],
+		["lookalike host", "gpt-6-astra", "https://api.openai.com.example/v1", undefined, 0.2],
+	] as const)("applies temperature capability for %s", async (_label, id, baseUrl, supportsTemperature, expected) => {
+		const payload = await captureParameters({
+			...getModel("openai", "gpt-5.6-sol"),
+			id,
+			baseUrl,
+			compat: { supportsTemperature },
+		}, { temperature: 0.2 });
+		expect(payload.temperature).toBe(expected);
+	});
+
 	it("returns an error when the SSE body closes without a terminal response event", async () => {
 		vi.spyOn(globalThis, "fetch").mockResolvedValue(
 			new Response("data: [DONE]\n\n", {
@@ -515,8 +574,13 @@ describe("openai-responses provider defaults", () => {
 
 		const result = await stream.result();
 
-		expect(result.usage.cost.input).toBe(model.cost.input * multiplier);
-		expect(result.usage.cost.output).toBe(model.cost.output * multiplier);
-		expect(result.usage.cost.total).toBe((model.cost.input + model.cost.output) * multiplier);
+		// The million-token fixture exceeds Sol's 272K full-prompt threshold.
+		// Service-tier pricing must compose with, not replace, long-context rates.
+		const inputPrice = model.cost.input * (modelId === "gpt-5.6-sol" ? 2 : 1);
+		const outputPrice = model.cost.output * (modelId === "gpt-5.6-sol" ? 1.5 : 1);
+		expect(result.stopReason).toBe("stop");
+		expect(result.usage.cost.input).toBe(inputPrice * multiplier);
+		expect(result.usage.cost.output).toBe(outputPrice * multiplier);
+		expect(result.usage.cost.total).toBe((inputPrice + outputPrice) * multiplier);
 	});
 });

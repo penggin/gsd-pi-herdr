@@ -11,6 +11,8 @@ import {
 } from "../src/providers/cloudflare.ts";
 import type { AnthropicMessagesCompat, Api, KnownProvider, Model, OpenAICompletionsCompat } from "../src/types.ts";
 import { formatCost, roundCost } from "./lib/model-cost.ts";
+import { createNativeAstraModels } from "./lib/openai-astra-models.ts";
+import { applyOpenAIGptPricing } from "./lib/openai-gpt-pricing.ts";
 import { getEffortThinkingLevelMap, type ModelsDevReasoningOption } from "./models-dev-reasoning-options.ts";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -2436,11 +2438,19 @@ async function generateModels() {
 		}
 	}
 
+	// Keep native Astra API and Codex metadata authoritative across feed refreshes.
+	for (const model of createNativeAstraModels()) {
+		providers[model.provider] ??= {};
+		providers[model.provider][model.id] = model;
+	}
+
 	// Round costs in place so the JSON snapshot mirrors the TypeScript catalog
 	// exactly; raw floats carry binary noise that formatCost only strips from
 	// the .ts output.
 	for (const models of Object.values(providers)) {
 		for (const model of Object.values(models)) {
+			// Apply official native prices after feed deduplication, before serialization.
+			applyOpenAIGptPricing(model);
 			model.cost.input = roundCost(model.cost.input);
 			model.cost.output = roundCost(model.cost.output);
 			model.cost.cacheRead = roundCost(model.cost.cacheRead);

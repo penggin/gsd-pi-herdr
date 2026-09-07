@@ -503,12 +503,16 @@ export interface OpenAICompletionsCompat {
 
 /** Compatibility settings for OpenAI Responses APIs. */
 export interface OpenAIResponsesCompat {
+	/** Whether to send temperature. Default: false for gpt-6-astra on https://api.openai.com; true otherwise, including ChatGPT and proxies. */
+	supportsTemperature?: boolean;
 	/** @deprecated Use `sessionAffinityFormat: "openai-nosession"` to omit `session_id`. */
 	sendSessionIdHeader?: boolean;
 	/** Session-affinity header convention. Default: OpenRouter endpoints use `openrouter`; all others use `openai`. */
 	sessionAffinityFormat?: SessionAffinityFormat;
 	/** Whether the provider supports `prompt_cache_retention: "24h"`. Default: true. */
 	supportsLongCacheRetention?: boolean;
+	/** Prompt cache TTL wire format. `options` sends `prompt_cache_options.ttl: "30m"` for short and long retention. Default: options for known GPT-5.6+/Astra models on api.openai.com, legacy otherwise. */
+	promptCacheRetentionFormat?: "legacy" | "options";
 	/** Whether the model supports message-anchored `additional_tools` input items. Default: false. */
 	supportsAdditionalTools?: boolean;
 	/** Whether the model supports client-executed tool search for deferred tools. Default: false. */
@@ -519,6 +523,8 @@ export interface OpenAIResponsesCompat {
 
 /** Compatibility settings for Codex Responses transports. */
 export interface OpenAICodexResponsesCompat {
+	/** Whether to send temperature. Default: false for gpt-6-astra on api.openai.com or the canonical HTTPS ChatGPT Codex endpoint; true for other models and proxies. */
+	supportsTemperature?: boolean;
 	/**
 	 * Authentication contract used by the endpoint. ChatGPT OAuth access tokens
 	 * carry a chatgpt_account_id claim; bearer proxies accept an opaque token.

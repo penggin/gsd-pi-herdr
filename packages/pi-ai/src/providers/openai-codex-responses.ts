@@ -46,6 +46,7 @@ import { applyProviderHeaders, headersToRecord } from "../utils/headers.js";
 import { resolveHttpProxyUrlForTarget } from "../utils/node-http-proxy.js";
 import { splitDeferredTools } from "../utils/deferred-tools.js";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.js";
+import { resolveOpenAIReasoningEffort, supportsOpenAIResponsesTemperature } from "./openai-responses-parameters.js";
 import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.js";
 import { buildBaseOptions } from "./simple-options.js";
 
@@ -452,7 +453,7 @@ function buildRequestBody(
 		parallel_tool_calls: true,
 	};
 
-	if (options?.temperature !== undefined) {
+	if (options?.temperature !== undefined && supportsOpenAIResponsesTemperature(model, model.compat?.supportsTemperature)) {
 		body.temperature = options.temperature;
 	}
 
@@ -465,11 +466,8 @@ function buildRequestBody(
 	}
 
 	if (options?.reasoningEffort !== undefined) {
-		const effort =
-			options.reasoningEffort === "none"
-				? (model.thinkingLevelMap?.off ?? "none")
-				: (model.thinkingLevelMap?.[options.reasoningEffort] ?? options.reasoningEffort);
-		if (effort !== null) {
+		const effort = resolveOpenAIReasoningEffort(model, options.reasoningEffort);
+		if (effort !== undefined) {
 			body.reasoning = {
 				effort,
 				summary: options.reasoningSummary ?? "auto",

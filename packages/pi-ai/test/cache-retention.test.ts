@@ -40,6 +40,74 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 		messages: [{ role: "user", content: "Hello", timestamp: Date.now() }],
 	};
 
+	describe("Responses prompt cache wire formats", () => {
+		async function captureCachePayload(
+			model: Model<"openai-responses">,
+			cacheRetention: "none" | "short" | "long",
+			sessionId?: string,
+		): Promise<Record<string, unknown>> {
+			let payload: Record<string, unknown> | undefined;
+			await streamOpenAIResponses(model, context, {
+				apiKey: "fake-key", cacheRetention, sessionId,
+				onPayload: stopAfterPayload<Record<string, unknown>>((value) => { payload = value; }),
+			}).result();
+			expect(payload).toBeDefined();
+			return payload!;
+		}
+
+		it.each(["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra"])(
+			"uses the documented options TTL for direct %s",
+			async (id) => {
+				for (const retention of ["short", "long"] as const) {
+					const payload = await captureCachePayload({ ...getModel("openai", "gpt-5.6-sol"), id }, retention, "stable-session");
+					expect(payload.prompt_cache_options).toEqual({ ttl: "30m" });
+					expect(payload.prompt_cache_retention).toBeUndefined();
+					expect(payload.prompt_cache_key).toBe("stable-session");
+				}
+			},
+		);
+
+		it.each([
+			["proxy", "gpt-5.6-sol", "https://proxy.example/v1"],
+			["older model", "gpt-5.5", "https://api.openai.com/v1"],
+			["unknown alias", "gpt-5.6-sol-custom", "https://api.openai.com/v1"],
+			["lookalike host", "gpt-5.6-sol", "https://api.openai.com.example/v1"],
+		] as const)("keeps legacy defaults for %s", async (_label, id, baseUrl) => {
+			const payload = await captureCachePayload({ ...getModel("openai", "gpt-5.6-sol"), id, baseUrl }, "long");
+			expect(payload.prompt_cache_options).toBeUndefined();
+			expect(payload.prompt_cache_retention).toBe("24h");
+		});
+
+		it.each([
+			["https://proxy.example/v1", "options", undefined, { ttl: "30m" }],
+			["https://api.openai.com/v1", "legacy", "24h", undefined],
+		] as const)("honors %s format override %s", async (baseUrl, promptCacheRetentionFormat, legacy, options) => {
+			const payload = await captureCachePayload({
+				...getModel("openai", "gpt-5.6-sol"), baseUrl, compat: { promptCacheRetentionFormat },
+			}, "long");
+			expect(payload.prompt_cache_options).toEqual(options);
+			expect(payload.prompt_cache_retention).toBe(legacy);
+		});
+
+		it.each(["legacy", "options"] as const)("omits both TTL formats and key with cacheRetention none (%s)", async (promptCacheRetentionFormat) => {
+			const payload = await captureCachePayload({
+				...getModel("openai", "gpt-5.6-sol"), compat: { promptCacheRetentionFormat },
+			}, "none", "session-disabled");
+			expect(payload.prompt_cache_key).toBeUndefined();
+			expect(payload.prompt_cache_options).toBeUndefined();
+			expect(payload.prompt_cache_retention).toBeUndefined();
+		});
+
+		it("does not require a session key or extended retention support for the modern 30-minute TTL", async () => {
+			const payload = await captureCachePayload({
+				...getModel("openai", "gpt-5.6-sol"), compat: { supportsLongCacheRetention: false },
+			}, "short");
+			expect(payload.prompt_cache_options).toEqual({ ttl: "30m" });
+			expect(payload.prompt_cache_key).toBeUndefined();
+			expect(payload.prompt_cache_retention).toBeUndefined();
+		});
+	});
+
 	describe("Anthropic Provider", () => {
 		it.skipIf(!process.env.ANTHROPIC_API_KEY)(
 			"should use default cache TTL (no ttl field) when PI_CACHE_RETENTION is not set",

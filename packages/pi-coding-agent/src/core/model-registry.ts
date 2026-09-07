@@ -169,7 +169,13 @@ const OpenAICompletionsCompatSchema = Type.Object({
 	),
 });
 
+const GptRequestCompatProperties = {
+	supportsTemperature: Type.Optional(Type.Boolean()),
+	promptCacheRetentionFormat: Type.Optional(Type.Union([Type.Literal("legacy"), Type.Literal("options")])),
+};
+
 const OpenAIResponsesCompatSchema = Type.Object({
+	...GptRequestCompatProperties,
 	sendSessionIdHeader: Type.Optional(Type.Boolean()),
 	sessionAffinityFormat: Type.Optional(
 		Type.Union([Type.Literal("openai"), Type.Literal("openai-nosession"), Type.Literal("openrouter")]),
@@ -181,6 +187,7 @@ const OpenAIResponsesCompatSchema = Type.Object({
 });
 
 const OpenAICodexResponsesCompatSchema = Type.Object({
+	supportsTemperature: GptRequestCompatProperties.supportsTemperature,
 	codexAuth: Type.Optional(Type.Union([Type.Literal("chatgpt-oauth"), Type.Literal("bearer")])),
 	codexEndpoint: Type.Optional(Type.Union([Type.Literal("chatgpt"), Type.Literal("responses")])),
 	nativeWebSearch: Type.Optional(Type.Boolean()),
@@ -198,11 +205,16 @@ const AnthropicMessagesCompatSchema = Type.Object({
 	supportsToolReferences: Type.Optional(Type.Boolean()),
 });
 
-const ProviderCompatSchema = Type.Union([
-	OpenAICompletionsCompatSchema,
-	OpenAIResponsesCompatSchema,
-	OpenAICodexResponsesCompatSchema,
-	AnthropicMessagesCompatSchema,
+const ProviderCompatSchema = Type.Intersect([
+	Type.Union([
+		OpenAICompletionsCompatSchema,
+		OpenAIResponsesCompatSchema,
+		OpenAICodexResponsesCompatSchema,
+		AnthropicMessagesCompatSchema,
+	]),
+	// Each legacy union branch allows unknown keys. Validate the newly supported
+	// fields across branches so invalid values cannot pass as another API's extras.
+	Type.Object(GptRequestCompatProperties),
 ]);
 
 // Schema for custom model definition

@@ -23,11 +23,17 @@ import { splitDeferredTools } from "../utils/deferred-tools.js";
 import { isCloudflareProvider, resolveCloudflareBaseUrl } from "./cloudflare.js";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.js";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.js";
+import {
+	isDirectOpenAIBaseUrl,
+	resolveOpenAIReasoningEffort,
+	supportsOpenAIResponsesTemperature,
+} from "./openai-responses-parameters.js";
 import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.js";
 import { buildBaseOptions } from "./simple-options.js";
 
 const OPENAI_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode"]);
 const OPENAI_RESPONSES_MIN_OUTPUT_TOKENS = 16;
+const OPENAI_PROMPT_CACHE_OPTIONS_MODELS = new Set(["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra"]);
 
 /**
  * Resolve cache retention preference.
@@ -50,21 +56,31 @@ function detectSessionAffinityFormat(model: Pick<Model<"openai-responses">, "pro
 function getCompat(model: Model<"openai-responses">): Required<OpenAIResponsesCompat> {
 	const legacySessionAffinityFormat = model.compat?.sendSessionIdHeader === false ? "openai-nosession" : undefined;
 	return {
+		supportsTemperature: supportsOpenAIResponsesTemperature(model, model.compat?.supportsTemperature),
 		sendSessionIdHeader: model.compat?.sendSessionIdHeader ?? true,
 		sessionAffinityFormat:
 			model.compat?.sessionAffinityFormat ?? legacySessionAffinityFormat ?? detectSessionAffinityFormat(model),
 		supportsLongCacheRetention: model.compat?.supportsLongCacheRetention ?? true,
+		promptCacheRetentionFormat: model.compat?.promptCacheRetentionFormat ?? (
+			isDirectOpenAIBaseUrl(model.baseUrl) && OPENAI_PROMPT_CACHE_OPTIONS_MODELS.has(model.id) ? "options" : "legacy"
+		),
 		supportsAdditionalTools: model.compat?.supportsAdditionalTools ?? false,
 		supportsToolSearch: model.compat?.supportsToolSearch ?? false,
 		supportsMaxOutputTokens: model.compat?.supportsMaxOutputTokens ?? true,
 	};
 }
 
-function getPromptCacheRetention(
+function getPromptCacheParams(
 	compat: Required<OpenAIResponsesCompat>,
 	cacheRetention: CacheRetention,
-): "24h" | undefined {
-	return cacheRetention === "long" && compat.supportsLongCacheRetention ? "24h" : undefined;
+): { prompt_cache_retention?: "24h"; prompt_cache_options?: { ttl: "30m" } } {
+	if (cacheRetention === "none") return {};
+	if (compat.promptCacheRetentionFormat === "options") {
+		// The modern API currently supports only 30m, including for long retention.
+		// https://developers.openai.com/api/docs/guides/prompt-caching
+		return { prompt_cache_options: { ttl: "30m" } };
+	}
+	return cacheRetention === "long" && compat.supportsLongCacheRetention ? { prompt_cache_retention: "24h" } : {};
 }
 
 function formatOpenAIResponsesError(error: unknown): string {
@@ -272,7 +288,7 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 		input: messages,
 		stream: true,
 		prompt_cache_key: cacheRetention === "none" ? undefined : clampOpenAIPromptCacheKey(options?.sessionId),
-		prompt_cache_retention: getPromptCacheRetention(compat, cacheRetention),
+		...getPromptCacheParams(compat, cacheRetention),
 		store: false,
 	};
 
@@ -280,7 +296,7 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 		params.max_output_tokens = Math.max(options.maxTokens, OPENAI_RESPONSES_MIN_OUTPUT_TOKENS);
 	}
 
-	if (options?.temperature !== undefined) {
+	if (options?.temperature !== undefined && compat.supportsTemperature) {
 		params.temperature = options?.temperature;
 	}
 
@@ -297,18 +313,20 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 	}
 
 	if (model.reasoning) {
+		// Stateless replay needs encrypted reasoning even when the server chooses
+		// the effort (for example, models that do not support turning reasoning off).
+		params.include = ["reasoning.encrypted_content"];
 		if (options?.reasoningEffort || options?.reasoningSummary) {
-			const effort = options?.reasoningEffort
-				? (model.thinkingLevelMap?.[options.reasoningEffort] ?? options.reasoningEffort)
-				: "medium";
-			params.reasoning = {
-				effort: effort as NonNullable<typeof params.reasoning>["effort"],
-				summary: options?.reasoningSummary || "auto",
-			};
-			params.include = ["reasoning.encrypted_content"];
+			const effort = resolveOpenAIReasoningEffort(model, options?.reasoningEffort ?? "medium");
+			if (effort !== undefined) {
+				params.reasoning = {
+					effort: effort as NonNullable<typeof params.reasoning>["effort"],
+					summary: options?.reasoningSummary || "auto",
+				};
+			}
 		} else if (model.provider !== "github-copilot" && model.thinkingLevelMap?.off !== null) {
 			params.reasoning = {
-				effort: (model.thinkingLevelMap?.off ?? "none") as NonNullable<typeof params.reasoning>["effort"],
+				effort: resolveOpenAIReasoningEffort(model, "none") as NonNullable<typeof params.reasoning>["effort"],
 			};
 		}
 	}

@@ -167,9 +167,9 @@ describe("models.generated.ts", () => {
 		expect("gpt-5.6" in MODELS["openai-codex"]).toBe(false);
 
 		const variants = [
-			["gpt-5.6-sol", "GPT-5.6 Sol", 5, 30],
-			["gpt-5.6-terra", "GPT-5.6 Terra", 2.5, 15],
-			["gpt-5.6-luna", "GPT-5.6 Luna", 1, 6],
+			["gpt-5.6-sol", "GPT-5.6 Sol", 4, 20],
+			["gpt-5.6-terra", "GPT-5.6 Terra", 2, 12],
+			["gpt-5.6-luna", "GPT-5.6 Luna", 0.2, 1.2],
 		] as const;
 
 		for (const [id, name, input, output] of variants) {
@@ -196,7 +196,7 @@ describe("models.generated.ts", () => {
 		}
 
 		const sol = MODELS["openai-codex"]["gpt-5.6-sol"];
-		expect(sol.cost.tiers?.[0]).toMatchObject({ inputTokensAbove: 272_000, input: 10, output: 45 });
+		expect(sol.cost.tiers?.[0]).toMatchObject({ inputTokensAbove: 272_000, input: 8, output: 30 });
 		const usage = {
 			input: 272_001,
 			output: 1_000,
@@ -205,7 +205,7 @@ describe("models.generated.ts", () => {
 			totalTokens: 273_001,
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 		};
-		expect(calculateCost(sol, usage).input).toBeCloseTo((10 / 1_000_000) * 272_001);
+		expect(calculateCost(sol, usage).input).toBeCloseTo((8 / 1_000_000) * 272_001);
 	});
 
 	test("includes Anthropic Vertex models from the generated catalog", () => {

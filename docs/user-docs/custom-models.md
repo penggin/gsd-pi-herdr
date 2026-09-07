@@ -14,6 +14,10 @@ Add custom providers and models (Ollama, vLLM, LM Studio, proxies) via `~/.gsd/a
 - [Updating the Model Catalog](#updating-the-model-catalog)
 - [OpenAI Compatibility](#openai-compatibility)
 
+For current GPT Responses compatibility controls, Astra pilot guidance, and the
+distinction between GSD Remote V2 and native Codex experimental context management,
+see [GPT provider optimization notes](../dev/gpt-provider-optimizations-2026-09-07.md).
+
 ## Minimal Example
 
 For local models (Ollama, LM Studio, vLLM), only `id` is required per model:

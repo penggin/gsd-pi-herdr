@@ -48,7 +48,8 @@ export function getModels<TProvider extends GeneratedProvider>(
 }
 
 export function calculateCost<TApi extends Api>(model: Model<TApi>, usage: Usage): Usage["cost"] {
-	const cost = getCostRates(model.cost, usage.input);
+	// Input tiers apply to the full prompt, including its cached portions.
+	const cost = getCostRates(model.cost, usage.input + usage.cacheRead + usage.cacheWrite);
 	usage.cost.input = (cost.input / 1000000) * usage.input;
 	usage.cost.output = (cost.output / 1000000) * usage.output;
 	usage.cost.cacheRead = (cost.cacheRead / 1000000) * usage.cacheRead;

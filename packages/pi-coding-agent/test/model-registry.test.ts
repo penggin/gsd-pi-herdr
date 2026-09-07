@@ -104,6 +104,97 @@ describe("ModelRegistry", () => {
 		messages: [],
 	};
 
+	describe("GPT compatibility settings", () => {
+		for (const api of ["openai-responses", "openai-codex-responses"]) {
+			test(`${api} provider settings reach models and model settings take precedence`, () => {
+				const providerCompat = {
+					supportsTemperature: false,
+					...(api === "openai-responses"
+						? { promptCacheRetentionFormat: "options", supportsLongCacheRetention: true }
+						: { codexAuth: "bearer", codexEndpoint: "responses" }),
+				};
+				const modelCompat = {
+					supportsTemperature: true,
+					...(api === "openai-responses" ? { promptCacheRetentionFormat: "legacy" } : {}),
+				};
+				writeRawModelsJson({
+					proxy: {
+						baseUrl: "https://example.com/v1",
+						apiKey: "TEST_KEY",
+						api,
+						compat: providerCompat,
+						models: [{ id: "inherited" }, { id: "overridden", compat: modelCompat }],
+					},
+				});
+				const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+				expect(registry.getError()).toBeUndefined();
+				expect(registry.find("proxy", "inherited")?.compat).toEqual(providerCompat);
+				expect(registry.find("proxy", "overridden")?.compat).toEqual({ ...providerCompat, ...modelCompat });
+			});
+
+			for (const location of ["provider", "model", "modelOverride"]) {
+				test.each([
+					{ supportsTemperature: "false" },
+					{ supportsTemperature: 0 },
+					{ supportsTemperature: null },
+					{ promptCacheRetentionFormat: "unsupported" },
+					{ promptCacheRetentionFormat: false },
+				])(`${api} rejects invalid ${location} GPT compat %j`, (compat) => {
+					writeRawModelsJson({
+						openai: {
+							api,
+							...(location === "provider" ? { compat } : {}),
+							models: [{ id: "invalid-compat", ...(location === "model" ? { compat } : {}) }],
+							...(location === "modelOverride" ? { modelOverrides: { "gpt-4o": { compat } } } : {}),
+						},
+					});
+					const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+					expect(registry.getError()).toContain("Invalid models.json schema");
+					expect(registry.find("openai", "invalid-compat")).toBeUndefined();
+					expect(registry.find("openai", "gpt-4o")).toBeDefined();
+				});
+			}
+		}
+
+		test("built-in overrides survive refresh without changing models or reasoning defaults", () => {
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			const baseline = registry.getAll().map((model) => ({ ...model, compat: undefined }));
+			const providerCompat = { supportsTemperature: false, promptCacheRetentionFormat: "options" };
+			const modelCompat = { supportsTemperature: true, promptCacheRetentionFormat: "legacy" };
+			writeRawModelsJson({
+				openai: {
+					compat: providerCompat,
+					modelOverrides: { "gpt-4o": { compat: modelCompat } },
+				},
+			});
+			registry.refresh();
+			expect(registry.getError()).toBeUndefined();
+			expect(registry.find("openai", "gpt-4o")?.compat).toMatchObject(modelCompat);
+			for (const model of getModelsForProvider(registry, "openai").filter((model) => model.id !== "gpt-4o")) {
+				expect(model.compat).toMatchObject(providerCompat);
+			}
+			expect(registry.getAll().map((model) => ({ ...model, compat: undefined }))).toEqual(baseline);
+			registry.refresh();
+			expect(registry.find("openai", "gpt-4o")?.compat).toMatchObject(modelCompat);
+			expect(registry.getAll().map((model) => ({ ...model, compat: undefined }))).toEqual(baseline);
+		});
+
+		test("omitted settings and unrelated legacy extension keys retain existing behavior", () => {
+			writeRawModelsJson({
+				proxy: {
+					baseUrl: "https://example.com/v1",
+					apiKey: "TEST_KEY",
+					api: "openai-responses",
+					models: [{ id: "default" }, { id: "extension", compat: { vendorExtension: "kept" } }],
+				},
+			});
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			expect(registry.getError()).toBeUndefined();
+			expect(registry.find("proxy", "default")?.compat).toBeUndefined();
+			expect(registry.find("proxy", "extension")?.compat).toEqual({ vendorExtension: "kept" });
+		});
+	});
+
 	describe("baseUrl override (no custom models)", () => {
 		test("overriding baseUrl keeps all built-in models", () => {
 			writeRawModelsJson({

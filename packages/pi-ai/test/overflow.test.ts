@@ -30,6 +30,29 @@ function createErrorMessage(errorMessage: string): AssistantMessage {
 }
 
 describe("isContextOverflow", () => {
+	it.each(["stop", "length"] as const)("includes cache writes when detecting %s overflow", (stopReason) => {
+		const message = createErrorMessage("");
+		message.stopReason = stopReason;
+		message.usage.input = 1;
+		message.usage.cacheRead = 60_000;
+		message.usage.cacheWrite = 40_000;
+		message.usage.totalTokens = 100_001;
+		expect(isContextOverflow(message, 100_000)).toBe(true);
+		expect(isContextOverflow(message, 200_000)).toBe(false);
+	});
+
+	it("cache-write accounting does not turn normal output or legacy usage into overflow", () => {
+		const message = createErrorMessage("");
+		message.stopReason = "length";
+		message.usage.output = 1;
+		message.usage.cacheWrite = 100_000;
+		expect(isContextOverflow(message, 100_000)).toBe(false);
+		message.stopReason = "stop";
+		message.usage.input = 101;
+		delete (message.usage as Partial<typeof message.usage>).cacheWrite;
+		expect(isContextOverflow(message, 100)).toBe(true);
+	});
+
 	it("detects explicit Ollama prompt-too-long errors", () => {
 		const message = createErrorMessage("400 `prompt too long; exceeded max context length by 100918 tokens`");
 		expect(isContextOverflow(message, 32768)).toBe(true);

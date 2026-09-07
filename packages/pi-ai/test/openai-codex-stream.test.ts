@@ -81,6 +81,96 @@ function buildSSEPayload({
 }
 
 describe("openai-codex streaming", () => {
+	it.each([
+		["none", { off: null }, undefined],
+		["minimal", { minimal: null }, undefined],
+		["high", { high: null }, undefined],
+		["max", { max: null }, undefined],
+		["minimal", { minimal: "low" }, "low"],
+		["high", { high: "high" }, "high"],
+		["max", { max: "max" }, "max"],
+	] as const)("honors effort mapping for %s with %j", async (reasoningEffort, thinkingLevelMap, expected) => {
+		let payload: Record<string, unknown> | undefined;
+		const model: Model<"openai-codex-responses"> = {
+			id: "custom-gpt", name: "Custom GPT", api: "openai-codex-responses", provider: "codex-proxy",
+			baseUrl: "https://proxy.example/v1", reasoning: true, thinkingLevelMap, input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100000, maxTokens: 1000,
+		};
+		await streamOpenAICodexResponses(model, { messages: [] }, {
+			apiKey: "opaque-test-token", transport: "sse", reasoningEffort,
+			onPayload: (value) => {
+				payload = value as Record<string, unknown>;
+				throw new Error("stop before network request");
+			},
+		}).result();
+		expect(payload).toBeDefined();
+		expect(payload!.reasoning).toEqual(expected === undefined ? undefined : { effort: expected, summary: "auto" });
+		expect(payload!.include).toEqual(["reasoning.encrypted_content"]);
+	});
+
+	it.each([
+		["direct Astra", "gpt-6-astra", "https://api.openai.com/v1", undefined, undefined],
+		["native Codex Astra", "gpt-6-astra", "https://chatgpt.com/backend-api", undefined, undefined],
+		["native Codex override", "gpt-6-astra", "https://chatgpt.com/backend-api", true, 0.2],
+		["native Codex Sol", "gpt-5.6-sol", "https://chatgpt.com/backend-api", undefined, 0.2],
+		["ChatGPT lookalike", "gpt-6-astra", "https://chatgpt.com.example/backend-api", undefined, 0.2],
+		["proxy defaults", "gpt-6-astra", "https://proxy.example/v1", undefined, 0.2],
+		["explicit proxy opt-out", "custom-astra", "https://proxy.example/v1", false, undefined],
+		["explicit direct override", "gpt-6-astra", "https://api.openai.com/v1", true, 0.2],
+	] as const)("applies temperature capability for %s", async (_label, id, baseUrl, supportsTemperature, expected) => {
+		let payload: Record<string, unknown> | undefined;
+		const model: Model<"openai-codex-responses"> = {
+			id, name: id, api: "openai-codex-responses", provider: "codex-proxy", baseUrl,
+			reasoning: true, input: ["text"], compat: { supportsTemperature },
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100000, maxTokens: 1000,
+		};
+		await streamOpenAICodexResponses(model, { messages: [] }, {
+			apiKey: mockToken(), transport: "sse", temperature: 0.2,
+			onPayload: (value) => {
+				payload = value as Record<string, unknown>;
+				throw new Error("stop before network request");
+			},
+		}).result();
+		expect(payload).toBeDefined();
+		expect(payload!.temperature).toBe(expected);
+	});
+
+	it.each([
+		["native Codex", "https://chatgpt.com/backend-api", undefined],
+		["configured bearer proxy", "https://proxy.example/v1", false],
+	] as const)("sends an Astra medium tool request with compatible parameters through %s", async (_label, baseUrl, supportsTemperature) => {
+		let body: Record<string, unknown> | undefined;
+		vi.spyOn(globalThis, "fetch").mockImplementation(async (_input, init) => {
+			body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+			return new Response(buildSSEPayload({ status: "completed" }), {
+				status: 200, headers: { "content-type": "text/event-stream" },
+			});
+		});
+		const model: Model<"openai-codex-responses"> = {
+			id: "gpt-6-astra", name: "GPT-6 Astra", api: "openai-codex-responses", provider: "openai-codex", baseUrl,
+			reasoning: true, input: ["text"], compat: { supportsTemperature },
+			thinkingLevelMap: { off: null, minimal: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" },
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100000, maxTokens: 1000,
+		};
+		const result = await streamSimpleOpenAICodexResponses(model, {
+			systemPrompt: "Complete the task.",
+			messages: [{ role: "user", content: "Use the tool if needed.", timestamp: 1 }],
+			tools: [{ name: "ping", description: "A fixture tool", parameters: Type.Object({}) }],
+		}, {
+			apiKey: baseUrl === "https://chatgpt.com/backend-api" ? mockToken() : "opaque-test-token",
+			transport: "sse", reasoning: "medium", temperature: 0.2, sessionId: "astra-stable-session",
+		}).result();
+		expect(result.stopReason).toBe("stop");
+		expect(body).toMatchObject({
+			model: "gpt-6-astra", reasoning: { effort: "medium", summary: "auto" }, store: false,
+			include: ["reasoning.encrypted_content"], prompt_cache_key: "astra-stable-session",
+			tools: [expect.objectContaining({ type: "function", name: "ping" })],
+		});
+		for (const parameter of ["temperature", "top_p", "top_logprobs", "logprobs"]) {
+			expect(body).not.toHaveProperty(parameter);
+		}
+	});
+
 	it("supports Codex-compatible proxies with opaque bearer credentials", async () => {
 		const model: Model<"openai-codex-responses"> = {
 			id: "routed/model",
