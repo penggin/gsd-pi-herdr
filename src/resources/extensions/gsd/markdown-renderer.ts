@@ -234,7 +234,9 @@ function renderGateFindings(gate: GateRow): string {
 
 function pushIndented(lines: string[], value: string, indent = "  "): void {
   for (const line of value.split("\n")) {
-    lines.push(`${indent}${line}`);
+    // Keep blank and whitespace-only lines (including CRLF separators) empty
+    // so paragraph breaks do not introduce trailing whitespace into PLAN.md.
+    lines.push(line.trim() ? `${indent}${line}` : "");
   }
 }
 

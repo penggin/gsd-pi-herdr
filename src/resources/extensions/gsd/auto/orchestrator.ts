@@ -66,6 +66,7 @@ import { normalizeRealPath } from "../paths.js";
 import { preserveProjectionChanges } from "../projection-worker.js";
 import { throwIfTransientProjectionLockError } from "../projection-root-errors.js";
 import { buildDispatchKey } from "./dispatch-key.js";
+import { stableClaimSignature } from "./lease-conflict-notice.js";
 import {
   COMPLETED_NO_ADVANCE_GUARD_ID,
   formatWedgeRefusalNotice,
@@ -1545,8 +1546,30 @@ export class AutoOrchestrator implements AutoOrchestrationModule {
         : this.openUnitRun(decision.unitType, decision.unitId, reconciliation.stateSnapshot);
       if (typeof dispatchId !== "number") {
         this.clearPendingDispatch();
+        // Rejected claims are semantic blocks and need an identity in the
+        // liveness ledger, just like the other non-advancing guards above.
+        if (dispatchId.kind === "blocked") {
+          this.journalTransition({
+            name: "advance-blocked",
+            reason: dispatchId.reason,
+            unitType: decision.unitType,
+            unitId: decision.unitId,
+          });
+        }
         this.postAdvanceRecord(dispatchId);
-        return dispatchId;
+        const claimInputPayload = dispatchId.kind === "blocked"
+          ? stableClaimSignature(dispatchId.reason)
+          : buildDispatchKey(decision.unitType, decision.unitId);
+        return this.withLivenessInput(dispatchId, {
+          guardId: "unit-run-claim",
+          inputPayload: claimInputPayload,
+          sanctionedExit:
+            `Auto-mode could not claim a unit-run for ${decision.unitType} ${decision.unitId} ` +
+            `(${claimInputPayload}). Another live worker may hold the milestone lease, or the ` +
+            `owning worker is shutting down mid-retry. Inspect \`/gsd status\` for the active ` +
+            `UnitRun and lease holder, then re-run once the lease is released (or run ` +
+            `\`/gsd doctor\` if no worker is live).`,
+        });
       }
 
       this.status.phase = "running";

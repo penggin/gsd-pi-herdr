@@ -7,6 +7,7 @@
 import { createHash } from "node:crypto";
 
 import { getDbOrNull, readTransaction } from "./engine.js";
+import type { DbAdapter } from "../db-adapter.js";
 import { isClosedStatus } from "../status-guards.js";
 import { getGateIdsForTurn, type OwnerTurn } from "../gate-registry.js";
 import type { Decision, Requirement, GateRow, GateScope } from "../types.js";
@@ -96,8 +97,8 @@ function numberColumn(row: Record<string, unknown> | undefined, column: string):
   return 0;
 }
 
-function getCompletionCount(table: "milestones" | "slices" | "tasks"): { completed: number; total: number } {
-  const row = getDbOrNull()!.prepare(
+function getCompletionCount(table: "milestones" | "slices" | "tasks", adapter?: DbAdapter): { completed: number; total: number } {
+  const row = (adapter ?? getDbOrNull())!.prepare(
     `SELECT
        COUNT(*) AS total,
        COALESCE(SUM(CASE WHEN status IN (${TERMINAL_STATUS_SQL}) THEN 1 ELSE 0 END), 0) AS completed
@@ -110,8 +111,8 @@ function getCompletionCount(table: "milestones" | "slices" | "tasks"): { complet
   };
 }
 
-export function getProjectAuthorityVersion(): ProjectAuthorityVersion {
-  const db = getDbOrNull();
+export function getProjectAuthorityVersion(adapter?: DbAdapter): ProjectAuthorityVersion {
+  const db = (adapter ?? getDbOrNull());
   if (!db) throw new Error("GSD database is not available");
 
   const row = db.prepare(
@@ -125,14 +126,14 @@ export function getProjectAuthorityVersion(): ProjectAuthorityVersion {
   };
 }
 
-export function getHierarchyCompletionCounts(): HierarchyCompletionCounts {
-  if (!getDbOrNull()!) {
+export function getHierarchyCompletionCounts(adapter?: DbAdapter): HierarchyCompletionCounts {
+  if (!(adapter ?? getDbOrNull())!) {
     return { milestones: 0, milestonesTotal: 0, slices: 0, slicesTotal: 0, tasks: 0, tasksTotal: 0 };
   }
 
-  const milestones = getCompletionCount("milestones");
-  const slices = getCompletionCount("slices");
-  const tasks = getCompletionCount("tasks");
+  const milestones = getCompletionCount("milestones", adapter);
+  const slices = getCompletionCount("slices", adapter);
+  const tasks = getCompletionCount("tasks", adapter);
 
   return {
     milestones: milestones.completed,
@@ -144,8 +145,8 @@ export function getHierarchyCompletionCounts(): HierarchyCompletionCounts {
   };
 }
 
-export function getMilestoneStatusCounts(): MilestoneStatusCounts {
-  const db = getDbOrNull();
+export function getMilestoneStatusCounts(adapter?: DbAdapter): MilestoneStatusCounts {
+  const db = (adapter ?? getDbOrNull());
   if (!db) {
     return { total: 0, done: 0, active: 0, pending: 0, parked: 0 };
   }
@@ -180,9 +181,9 @@ export function getMilestoneStatusCounts(): MilestoneStatusCounts {
  * land in the caller's "pending" bucket, matching the projection reader's
  * buckets, which have no deferred field.
  */
-export function getInFlightSliceCount(): number {
-  if (!getDbOrNull()!) return 0;
-  const row = getDbOrNull()!
+export function getInFlightSliceCount(adapter?: DbAdapter): number {
+  if (!(adapter ?? getDbOrNull())!) return 0;
+  const row = (adapter ?? getDbOrNull())!
     .prepare(
       "SELECT COUNT(*) AS n FROM slices WHERE status IN ('in_progress', 'in-progress', 'active')",
     )
@@ -210,13 +211,13 @@ export function getRequirementById(id: string): Requirement | null {
   return rowToRequirement(row);
 }
 
-export function getActiveRequirements(): Requirement[] {
-  if (!getDbOrNull()!) return [];
-  const rows = getDbOrNull()!.prepare("SELECT * FROM active_requirements").all();
+export function getActiveRequirements(adapter?: DbAdapter): Requirement[] {
+  if (!(adapter ?? getDbOrNull())!) return [];
+  const rows = (adapter ?? getDbOrNull())!.prepare("SELECT * FROM active_requirements").all();
   return rows.map(rowToActiveRequirement);
 }
 
-export function getRequirementCounts(): {
+export function getRequirementCounts(adapter?: DbAdapter): {
   active: number;
   validated: number;
   deferred: number;
@@ -224,10 +225,10 @@ export function getRequirementCounts(): {
   blocked: number;
   total: number;
 } {
-  if (!getDbOrNull()!) {
+  if (!(adapter ?? getDbOrNull())!) {
     return { active: 0, validated: 0, deferred: 0, outOfScope: 0, blocked: 0, total: 0 };
   }
-  const rows = getDbOrNull()!
+  const rows = (adapter ?? getDbOrNull())!
     .prepare("SELECT lower(status) as status, COUNT(*) as count FROM requirements GROUP BY lower(status)")
     .all();
   return rowsToRequirementCounts(rows);
@@ -247,9 +248,9 @@ export function getSketchedSliceIds(milestoneId: string): string[] {
   return rows.map((r) => r.id);
 }
 
-export function getSlice(milestoneId: string, sliceId: string): SliceRow | null {
-  if (!getDbOrNull()!) return null;
-  const row = getDbOrNull()!.prepare("SELECT * FROM slices WHERE milestone_id = :mid AND id = :sid").get({ ":mid": milestoneId, ":sid": sliceId });
+export function getSlice(milestoneId: string, sliceId: string, adapter?: DbAdapter): SliceRow | null {
+  if (!(adapter ?? getDbOrNull())!) return null;
+  const row = (adapter ?? getDbOrNull())!.prepare("SELECT * FROM slices WHERE milestone_id = :mid AND id = :sid").get({ ":mid": milestoneId, ":sid": sliceId });
   if (!row) return null;
   return rowToSlice(row);
 }
@@ -624,9 +625,9 @@ export function getMilestoneLifecycleShadowSnapshot(
   }
 }
 
-export function getSliceTasks(milestoneId: string, sliceId: string): TaskRow[] {
-  if (!getDbOrNull()!) return [];
-  const rows = getDbOrNull()!.prepare(
+export function getSliceTasks(milestoneId: string, sliceId: string, adapter?: DbAdapter): TaskRow[] {
+  if (!(adapter ?? getDbOrNull())!) return [];
+  const rows = (adapter ?? getDbOrNull())!.prepare(
     "SELECT * FROM tasks WHERE milestone_id = :mid AND slice_id = :sid ORDER BY sequence, id",
   ).all({ ":mid": milestoneId, ":sid": sliceId });
   return rows.map(rowToTask);
@@ -711,11 +712,12 @@ export function getVerificationEvidence(milestoneId: string, sliceId: string, ta
   return rows as unknown as VerificationEvidenceRow[];
 }
 
-export function getAllMilestones(): MilestoneRow[] {
-  if (!getDbOrNull()!) return [];
-  const rows = getDbOrNull()!.prepare(
-    "SELECT * FROM milestones ORDER BY CASE WHEN sequence > 0 THEN 0 ELSE 1 END, sequence, id",
-  ).all();
+export function getAllMilestones(adapter?: DbAdapter, limit?: number): MilestoneRow[] {
+  if (!(adapter ?? getDbOrNull())!) return [];
+  if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 1)) throw new Error("milestone read limit must be a positive integer");
+  const rows = (adapter ?? getDbOrNull())!.prepare(
+    "SELECT * FROM milestones ORDER BY CASE WHEN sequence > 0 THEN 0 ELSE 1 END, sequence, id LIMIT :limit",
+  ).all({ ":limit": limit ?? -1 });
   return rows.map(rowToMilestone);
 }
 
@@ -731,8 +733,8 @@ export interface PlanMilestoneRecoveryBlock {
 }
 
 /** Latest unresolved fail-closed recovery gate for a milestone with no executable plan. */
-export function getPlanMilestoneRecoveryBlock(milestoneId: string): PlanMilestoneRecoveryBlock | null {
-  const db = getDbOrNull();
+export function getPlanMilestoneRecoveryBlock(milestoneId: string, adapter?: DbAdapter): PlanMilestoneRecoveryBlock | null {
+  const db = (adapter ?? getDbOrNull());
   if (!db) return null;
   const row = db.prepare(`
     SELECT outcome, rationale, findings
@@ -861,8 +863,8 @@ export function getParallelMonitorRecentCompletions(
  * Load slices for many milestones in a single query. Returns a Map keyed by
  * milestone_id, preserving `ORDER BY sequence, id` within each bucket.
  */
-export function getSlicesByMilestoneIds(milestoneIds: readonly string[]): Map<string, SliceRow[]> {
-  const db = getDbOrNull();
+export function getSlicesByMilestoneIds(milestoneIds: readonly string[], adapter?: DbAdapter): Map<string, SliceRow[]> {
+  const db = (adapter ?? getDbOrNull());
   if (!db || milestoneIds.length === 0) return new Map();
   const idList = [...milestoneIds];
   const placeholders = idList.map((_, i) => `:mid${i}`).join(",");
@@ -962,17 +964,17 @@ export function getClosedSliceIds(milestoneId: string): string[] {
     .map((s) => s.id);
 }
 
-export function getArtifact(path: string): ArtifactRow | null {
-  if (!getDbOrNull()!) return null;
-  const row = getDbOrNull()!.prepare("SELECT * FROM artifacts WHERE path = :path").get({ ":path": path });
+export function getArtifact(path: string, adapter?: DbAdapter): ArtifactRow | null {
+  if (!(adapter ?? getDbOrNull())!) return null;
+  const row = (adapter ?? getDbOrNull())!.prepare("SELECT * FROM artifacts WHERE path = :path").get({ ":path": path });
   if (!row) return null;
   return rowToArtifact(row);
 }
 
 /** Milestone-level artifacts (CONTEXT, RESEARCH, VALIDATION, etc.) from the artifacts table. */
-export function getMilestoneScopedArtifacts(milestoneId: string): ArtifactRow[] {
-  if (!getDbOrNull()!) return [];
-  const rows = getDbOrNull()!.prepare(
+export function getMilestoneScopedArtifacts(milestoneId: string, adapter?: DbAdapter): ArtifactRow[] {
+  if (!(adapter ?? getDbOrNull())!) return [];
+  const rows = (adapter ?? getDbOrNull())!.prepare(
     "SELECT * FROM artifacts WHERE milestone_id = :mid AND slice_id IS NULL AND task_id IS NULL ORDER BY path",
   ).all({ ":mid": milestoneId });
   return rows.map(rowToArtifact);
@@ -1037,14 +1039,14 @@ export function getDependentSlices(milestoneId: string, sliceId: string): string
   return rowsToStringColumn(rows, "slice_id");
 }
 
-export function getReplanHistory(milestoneId: string, sliceId?: string): Array<Record<string, unknown>> {
-  if (!getDbOrNull()!) return [];
+export function getReplanHistory(milestoneId: string, sliceId?: string, adapter?: DbAdapter): Array<Record<string, unknown>> {
+  if (!(adapter ?? getDbOrNull())!) return [];
   if (sliceId) {
-    return getDbOrNull()!.prepare(
+    return (adapter ?? getDbOrNull())!.prepare(
       `SELECT * FROM replan_history WHERE milestone_id = :mid AND slice_id = :sid ORDER BY created_at DESC`,
     ).all({ ":mid": milestoneId, ":sid": sliceId });
   }
-  return getDbOrNull()!.prepare(
+  return (adapter ?? getDbOrNull())!.prepare(
     `SELECT * FROM replan_history WHERE milestone_id = :mid ORDER BY created_at DESC`,
   ).all({ ":mid": milestoneId });
 }
@@ -1120,9 +1122,10 @@ export function getSliceRunUatAssessment(
 export function getLatestAssessmentByScope(
   milestoneId: string,
   scope: string,
+  adapter?: DbAdapter,
 ): Record<string, unknown> | null {
-  if (!getDbOrNull()!) return null;
-  const row = getDbOrNull()!.prepare(
+  if (!(adapter ?? getDbOrNull())!) return null;
+  const row = (adapter ?? getDbOrNull())!.prepare(
     `SELECT * FROM assessments
       WHERE milestone_id = :mid AND scope = :scope
       ORDER BY created_at DESC
@@ -1173,8 +1176,9 @@ export function getPendingGatesForTurn(
   sliceId: string,
   turn: OwnerTurn,
   taskId?: string,
+  adapter?: DbAdapter,
 ): GateRow[] {
-  if (!getDbOrNull()!) return [];
+  if (!(adapter ?? getDbOrNull())!) return [];
   const ids = getGateIdsForTurn(turn);
   if (ids.size === 0) return [];
   const idList = [...ids];
@@ -1195,7 +1199,7 @@ export function getPendingGatesForTurn(
     sql += ` AND task_id = :tid`;
     params[":tid"] = taskId;
   }
-  return getDbOrNull()!.prepare(sql).all(params).map(rowToGate);
+  return (adapter ?? getDbOrNull())!.prepare(sql).all(params).map(rowToGate);
 }
 
 /**
@@ -1206,8 +1210,9 @@ export function getPendingGateCountForTurn(
   milestoneId: string,
   sliceId: string,
   turn: OwnerTurn,
+  adapter?: DbAdapter,
 ): number {
-  return getPendingGatesForTurn(milestoneId, sliceId, turn).length;
+  return getPendingGatesForTurn(milestoneId, sliceId, turn, undefined, adapter).length;
 }
 
 export function getMilestoneCommitAttributionShas(milestoneId: string): string[] {

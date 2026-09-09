@@ -25,7 +25,45 @@ export function resolveThresholdContextTokens(assistantMessage: AssistantMessage
 }
 
 export class AgentSessionCompactionModule {
+	private overflowFailureMessage: AssistantMessage | undefined;
 	constructor(readonly host: AgentSessionHost) {}
+
+	private removeOverflowFailureTail(): void {
+		const failed = this.overflowFailureMessage;
+		const messages = this.host.agent.state.messages;
+		const last = messages.at(-1);
+		if (!failed || last?.role !== "assistant"
+			|| last.timestamp !== failed.timestamp || last.stopReason !== failed.stopReason
+			|| last.api !== failed.api || last.provider !== failed.provider || last.model !== failed.model
+			|| last.errorMessage !== failed.errorMessage
+			|| last.content.some((part) => part.type === "toolCall")) return;
+
+		let removeCount = 1;
+		const previous = messages.at(-2);
+		if (failed.errorMessage?.startsWith("[length-halt] [context_length_exceeded]")
+			&& previous?.role === "assistant" && previous.stopReason === "length"
+			&& previous.api === failed.api && previous.provider === failed.provider && previous.model === failed.model
+			&& previous.timestamp <= failed.timestamp
+			&& !previous.content.some((part) => part.type === "toolCall")
+			&& (isContextOverflow(previous, this.host.model?.contextWindow ?? 0)
+				|| isContextOverflow({ ...previous, stopReason: "error" }, this.host.model?.contextWindow ?? 0))) {
+			removeCount = 2;
+		}
+		this.host.agent.state.messages = messages.slice(0, -removeCount);
+	}
+
+	private prepareOverflowContinuation(): void {
+		this.removeOverflowFailureTail();
+		// Agent.continue() requires queued input when retained history ends in an
+		// assistant. Preserve that history and bridge only this approved retry.
+		if (this.host.agent.state.messages.at(-1)?.role === "assistant" && !this.host.agent.hasQueuedMessages()) {
+			this.host.agent.followUp({
+				role: "user",
+				content: [{ type: "text", text: "Continue the current request after context compaction. Preserve completed work and do not repeat completed tool actions." }],
+				timestamp: Date.now(),
+			});
+		}
+	}
 
 	private async emitSessionCompactFailed(event: Omit<SessionCompactFailedEvent, "type">): Promise<void> {
 		if (this.host._extensionRunner.hasHandlers("session_compact_failed")) {
@@ -211,6 +249,12 @@ export class AgentSessionCompactionModule {
 		// shouldn't trigger compaction for the new model.
 		const sameModel =
 			this.host.model && assistantMessage.provider === this.host.model.provider && assistantMessage.model === this.host.model.id;
+		// A length halt is terminal even when retained usage exceeds the threshold.
+		// Only the loop's explicitly classified overflow can compact and retry.
+		if (assistantMessage.errorMessage?.startsWith("[length-halt]")
+			&& (!sameModel || !assistantMessage.errorMessage.startsWith("[length-halt] [context_length_exceeded]"))) {
+			return false;
+		}
 
 		// Skip compaction checks if this assistant message is older than the latest
 		// compaction boundary. This prevents a stale pre-compaction usage/error
@@ -246,12 +290,10 @@ export class AgentSessionCompactionModule {
 			}
 
 			this.host._overflowRecoveryAttempted = true;
-			// Remove the error message from agent state (it IS saved to session for history,
-			// but we don't want it in context for the retry)
-			const messages = this.host.agent.state.messages;
-			if (messages.length > 0 && messages[messages.length - 1].role === "assistant") {
-				this.host.agent.state.messages = messages.slice(0, -1);
-			}
+			this.overflowFailureMessage = assistantMessage;
+			// Session history remains immutable; trim only this failed response from
+			// the transient request context before and after rebuilding compaction.
+			this.removeOverflowFailureTail();
 			return await this.runAutoCompaction("overflow", true);
 		}
 
@@ -462,11 +504,7 @@ export class AgentSessionCompactionModule {
 			this.host.emit({ type: "compaction_end", reason, result, aborted: false, willRetry });
 
 			if (willRetry) {
-				const messages = this.host.agent.state.messages;
-				const lastMsg = messages[messages.length - 1];
-				if (lastMsg?.role === "assistant" && (lastMsg as AssistantMessage).stopReason === "error") {
-					this.host.agent.state.messages = messages.slice(0, -1);
-				}
+				this.prepareOverflowContinuation();
 				return true;
 			}
 

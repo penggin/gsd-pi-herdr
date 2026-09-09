@@ -11,8 +11,21 @@ const BROWSER_TOOL_SIGNAL = `browser_(?:${
   BROWSER_EVIDENCE_SIGNAL_TOOL_NAMES.map((name) => name.slice("browser_".length)).join("|")
 })`;
 
+// Keep bare snapshots as browser signals unless bounded, same-clause context
+// identifies database/backup work (#2081). Explicit browser snapshot subjects
+// still count beside database wording, such as a DOM snapshot of a database UI.
+// A database page snapshot is a storage operation, not an explicit page signal.
+const DB_SNAPSHOT_TERMS = String.raw`(?:databases?|db|backups?|export)`;
+const DB_SNAPSHOT_VERB = String.raw`(?:create|restore|export|purge|import|prune|verify)`;
+const BROWSER_SNAPSHOT_SUBJECT = String.raw`(?:browser|dom|ui|accessibility|visual|viewport|(?:rendered|web)\s+page)`;
+
 export const BROWSER_REQUIREMENT_RE = new RegExp(
-  String.raw`\b(?:file://|localhost|playwright|chrome|screenshot|snapshot|${BROWSER_TOOL_SIGNAL})\b|\b(?:open|launch|navigate|load|visit|serve|start)\b.{0,80}\b(?:browser|page|localhost|file://)\b|\bbrowser\s+(?:check|session|test|uat|tool|automation|interaction|flow)\b`,
+  String.raw`\b(?:file://|localhost|playwright|chrome|screenshot|${BROWSER_TOOL_SIGNAL})\b` +
+    String.raw`|\b(?:${BROWSER_SNAPSHOT_SUBJECT}|(?<!\b(?:databases?|db|backups?)\s{1,60})page)\s+snapshot\b` +
+    String.raw`|\bsnapshot\s+(?:(?:of|the|a)\s+){0,2}${BROWSER_SNAPSHOT_SUBJECT}\b` +
+    String.raw`|(?<!\b${DB_SNAPSHOT_TERMS}\b[^.;:!?]{0,60})\bsnapshot\b(?!\s+${DB_SNAPSHOT_VERB}\b)(?![^.;:!?]{0,60}\b${DB_SNAPSHOT_TERMS}\b)` +
+    String.raw`|\bin\s+(?:the\s+)?browser\b` +
+    String.raw`|\b(?:open|launch|navigate|load|visit|serve|start)\b.{0,80}\b(?:browser|page|localhost|file://)\b|\bbrowser\s+(?:check|session|test|uat|tool|automation|interaction|flow)\b`,
   "i",
 );
 export const NO_BROWSER_EVIDENCE_RE = /\b(?:no|without|not|wasn'?t|isn'?t)\s+(?:automated\s+)?(?:live\s+)?browser(?:\s+(?:session|test|uat))?|\bno\s+automated\s+browser\b|\bnot\s+conducted\b/i;
@@ -41,9 +54,25 @@ export function compactTextParts(parts: Array<string | string[] | null | undefin
 export function hasBrowserRequiredText(text: string): boolean {
   let inNonRequirementSection = false;
   let nonRequirementDepth = 0;
+  // Join soft-wrapped requirement lines so both database exclusions and browser
+  // subjects survive wrapping. Blank lines, list items, table rows, and headings
+  // are boundaries; their unrelated context must not suppress a snapshot.
+  const requirementLines: string[] = [];
+  const hasBufferedRequirement = (): boolean => {
+    const paragraph = requirementLines.join(" ");
+    requirementLines.length = 0;
+    // Apply the existing exclusion gates after joining wrapped disclaimers.
+    // Split only at punctuation followed by whitespace, preserving file:// and
+    // localhost:port while allowing a required sentence after a disclaimer.
+    return paragraph.split(/(?<=[.;:!?])\s+/).some((clause) =>
+      !NON_REQUIREMENT_BROWSER_LINE_RE.test(clause) &&
+      !NEGATED_BROWSER_CLAUSE_RE.test(clause) &&
+      BROWSER_REQUIREMENT_RE.test(clause));
+  };
   for (const line of text.split(/\r?\n/)) {
     const headingMatch = line.match(/^(#{1,6})\s+(.+?)\s*$/);
     if (headingMatch) {
+      if (hasBufferedRequirement()) return true;
       const depth = headingMatch[1]!.length;
       const title = headingMatch[2] ?? "";
       // Only update section context when at the same or higher level than the
@@ -58,14 +87,13 @@ export function hasBrowserRequiredText(text: string): boolean {
       if (!inNonRequirementSection && BROWSER_REQUIREMENT_RE.test(title)) return true;
       continue;
     }
-    if (
-      inNonRequirementSection ||
-      NON_REQUIREMENT_BROWSER_LINE_RE.test(line) ||
-      NEGATED_BROWSER_CLAUSE_RE.test(line)
-    ) continue;
-    if (BROWSER_REQUIREMENT_RE.test(line)) return true;
+    if (inNonRequirementSection) continue;
+    if (!line.trim() || /^\s*(?:(?:[-*+]|\d+[.)])\s|\|)/.test(line)) {
+      if (hasBufferedRequirement()) return true;
+    }
+    if (line.trim()) requirementLines.push(line.trim());
   }
-  return false;
+  return hasBufferedRequirement();
 }
 
 export function hasBrowserEvidenceText(text: string): boolean {

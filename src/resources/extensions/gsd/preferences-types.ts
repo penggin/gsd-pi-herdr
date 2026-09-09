@@ -26,7 +26,7 @@ export interface ContextManagementConfig {
   observation_masking?: boolean;          // default: true
   observation_mask_turns?: number;        // default: 8, range: 1-50
   compaction_threshold_percent?: number;  // default: 0.60, range: 0.5-0.95
-  tool_result_max_chars?: number;         // default: 800, range: 200-10000
+  tool_result_max_chars?: number;         // explicit ceiling: 200-10000; omitted: generic 800, bounded native exec/query 2000/4000
   codex_remote_compaction?: CodexRemoteCompactionConfig;
 }
 
@@ -86,7 +86,7 @@ export interface ContextModeConfig {
   exec_timeout_ms?: number;
   /** Cap on persisted stdout bytes per invocation. Default: 1_048_576 (1 MiB). Range: 4_096–16_777_216. */
   exec_stdout_cap_bytes?: number;
-  /** Number of trailing stdout characters returned in the digest. Default: 300. Range: 0–4_000. */
+  /** Selected redacted stdout/stderr evidence character budget (not whole result). Default: 300. Range: 0–4_000. Zero omits excerpts. */
   exec_digest_chars?: number;
   /** Environment variables forwarded to sandboxed processes (case-sensitive names). PATH and HOME are always forwarded. */
   exec_env_allowlist?: string[];

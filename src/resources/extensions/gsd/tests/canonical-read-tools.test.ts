@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync, readFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
 
@@ -17,7 +17,9 @@ import {
   getDb,
   openDatabase,
 } from "../mcp-bridge.ts";
-import { insertRequirement, getDbPath } from "../gsd-db.ts";
+import { insertRequirement, insertMilestone, insertSlice, insertTask, getDbPath } from "../gsd-db.ts";
+import { recordSchemaVersion } from "../db-schema-metadata.ts";
+import { SCHEMA_VERSION } from "../db/engine.ts";
 import { resolveProjectRootDbPath } from "../db-workspace.ts";
 import { invalidateAllCaches } from "../cache.ts";
 
@@ -110,6 +112,186 @@ function seedRequirement(id: string, description: string): void {
     superseded_by: null,
   });
 }
+
+test("canonical snapshot tools reject a missing DB without creating it", async (t) => {
+  const base = makeProjectBase("gsd-snapshot-missing");
+  t.after(() => cleanup([base]));
+  const native = nativeTool(makeNativeTools(), "gsd_project_snapshot");
+  const mcp = mcpTool(makeMcpTools(), "gsd_project_snapshot");
+  for (const result of [
+    await native.execute("snapshot", {}, undefined, undefined, { cwd: base }),
+    await mcp.handler({ projectDir: base }),
+  ]) {
+    assert.equal(result.isError, true);
+    assert.equal(readError(result), "db_unavailable");
+    assert.equal(existsSync(join(base, ".gsd", "gsd.db")), false);
+  }
+});
+
+function seedSnapshotProject(base: string, title: string): void {
+  openDatabase(resolveProjectRootDbPath(base));
+  insertMilestone({ id: "M001", title, status: "active" });
+  insertSlice({ id: "S01", milestoneId: "M001", title: "Slice from DB", status: "active", sequence: 1 });
+  insertTask({ id: "T01", sliceId: "S01", milestoneId: "M001", title: "Task from DB", status: "pending", sequence: 1 });
+}
+
+async function snapshotToolResults(base: string) {
+  return [
+    await nativeTool(makeNativeTools(), "gsd_project_snapshot").execute("snapshot", {}, undefined, undefined, { cwd: base }),
+    await mcpTool(makeMcpTools(), "gsd_project_snapshot").handler({ projectDir: base }),
+  ];
+}
+
+function snapshotDetails(result: Record<string, unknown>): Record<string, any> {
+  return (result.structuredContent ?? result.details) as Record<string, any>;
+}
+
+function snapshotPayload(result: Record<string, unknown>): Record<string, any> {
+  return JSON.parse((result.content as Array<{ text: string }>)[0].text);
+}
+
+test("canonical snapshot native and MCP parity preserves another project's held adapter and queue bytes", async (t) => {
+  const baseA = makeProjectBase("gsd-snapshot-a");
+  const baseB = makeProjectBase("gsd-snapshot-b");
+  t.after(() => cleanup([baseA, baseB]));
+  seedSnapshotProject(baseB, "B from DB");
+  insertMilestone({ id: "M002", title: "Second", status: "pending" });
+  const queuePath = join(baseB, ".gsd", "QUEUE-ORDER.json");
+  const queueBytes = '{"order":["M002","M001"]}\n';
+  writeFileSync(queuePath, queueBytes);
+  writeFileSync(join(baseB, ".gsd", "STATE.md"), "# Stale projection\n**Phase:** complete\n");
+  seedSnapshotProject(baseA, "A from DB");
+  const adapter = getDb();
+  const heldStatement = adapter.prepare("SELECT title FROM milestones WHERE id = 'M001'");
+  const globalPath = getDbPath();
+  const results = await snapshotToolResults(baseB);
+  const snapshots = results.map((result) => {
+    assert.equal(result.isError, undefined);
+    const details = snapshotDetails(result);
+    const snapshot = snapshotPayload(result);
+    assert.equal(details.error, undefined);
+    assert.equal(details.operation, "read_project_snapshot");
+    assert.equal(details.revision, snapshot.authority.revision);
+    assert.equal(details.snapshot, undefined, "full snapshot must not be duplicated in transport metadata");
+    assert.deepEqual(details.truncation, snapshot.truncation);
+    assert.deepEqual(details.consistency, snapshot.consistency);
+    assert.equal(snapshot.progress.milestones.total, 2);
+    assert.equal(snapshot.progress.tasks.total, 1);
+    assert.equal(snapshot.milestones.items[0].title, "B from DB");
+    return { ...snapshot, capturedAt: "ignored" };
+  });
+  assert.deepEqual(snapshots[0], snapshots[1]);
+  assert.equal(getDb(), adapter);
+  assert.equal(getDbPath(), globalPath);
+  assert.equal(heldStatement.get()?.title, "A from DB");
+  assert.equal(readFileSync(queuePath, "utf8"), queueBytes);
+});
+
+test("canonical snapshot tool resolves worktree context and explicit native project override", async (t) => {
+  const base = makeProjectBase("gsd-snapshot-worktree");
+  const unrelated = makeProjectBase("gsd-snapshot-context");
+  t.after(() => cleanup([base, unrelated]));
+  seedSnapshotProject(base, "Canonical root");
+  const worktree = join(base, ".gsd-worktrees", "M001");
+  mkdirSync(join(worktree, ".gsd"), { recursive: true });
+  for (const result of await snapshotToolResults(worktree)) {
+    assert.equal(snapshotPayload(result).milestones.items[0].title, "Canonical root");
+  }
+  const overridden = await nativeTool(makeNativeTools(), "gsd_project_snapshot").execute(
+    "snapshot", { projectDir: base }, undefined, undefined, { cwd: unrelated });
+  assert.equal(snapshotPayload(overridden).milestones.items[0].title, "Canonical root");
+  const relativeOverride = await nativeTool(makeNativeTools(), "gsd_project_snapshot").execute(
+    "snapshot", { projectDir: relative(unrelated, base) }, undefined, undefined, { cwd: unrelated });
+  assert.equal(relativeOverride.isError, undefined, "relative project paths resolve from the native session directory");
+  assert.equal(snapshotPayload(relativeOverride).milestones.items[0].title, "Canonical root");
+  assert.equal(existsSync(join(worktree, ".gsd", "gsd.db")), false);
+  assert.equal(existsSync(join(unrelated, ".gsd", "gsd.db")), false);
+});
+
+for (const fault of ["missing-authority", "newer-schema", "corrupt-query"] as const) {
+  test(`canonical snapshot native and MCP return typed ${fault} errors`, async (t) => {
+    const base = makeProjectBase(`gsd-snapshot-${fault}`);
+    t.after(() => cleanup([base]));
+    seedSnapshotProject(base, "Fault fixture");
+    if (fault === "missing-authority") getDb().prepare("DELETE FROM project_authority").run();
+    if (fault === "newer-schema") recordSchemaVersion(getDb(), SCHEMA_VERSION + 1);
+    if (fault === "corrupt-query") getDb().prepare("DROP TABLE workflow_blockers").run();
+    const expectedError = fault === "newer-schema" ? "schema_too_new" : "db_unavailable";
+    for (const result of await snapshotToolResults(base)) {
+      assert.equal(result.isError, true);
+      assert.equal(readError(result), expectedError);
+      assert.equal(snapshotDetails(result).snapshot, undefined);
+      assert.equal(typeof snapshotDetails(result).message, "string");
+      assert.ok(!String(snapshotDetails(result).message).includes("\n    at "), "error must not include a raw stack");
+    }
+  });
+}
+
+test("canonical snapshot transports bound the complete escaped UTF-8 result without duplicating the snapshot", async (t) => {
+  const base = makeProjectBase("gsd-snapshot-wire-budget");
+  t.after(() => cleanup([base]));
+  seedSnapshotProject(base, '큰 제목🙂"\\'.repeat(1500));
+  for (let index = 2; index <= 65; index++) {
+    insertMilestone({ id: `M${String(index).padStart(3, "0")}`, title: '큰 제목🙂"\\'.repeat(1500), status: "pending" });
+  }
+  for (const result of await snapshotToolResults(base)) {
+    assert.equal(result.isError, undefined);
+    const snapshot = snapshotPayload(result);
+    assert.equal(snapshot.progress.milestones.total, 65);
+    assert.equal(snapshot.milestones.truncated, true);
+    assert.equal(snapshot.truncation.text, true);
+    assert.equal(snapshotDetails(result).snapshot, undefined);
+    // A JSON string in tool content may double escaped bytes. The complete
+    // wire envelope stays below 540 KiB (2 × 256 KiB plus metadata headroom).
+    assert.ok(Buffer.byteLength(JSON.stringify(result), "utf8") < 540 * 1024);
+    assert.ok(Buffer.byteLength(JSON.stringify(snapshot, null, 2), "utf8") <= 256 * 1024);
+  }
+});
+
+test("canonical snapshot tools fail explicitly when an essential identifier exceeds the byte budget", async (t) => {
+  const base = makeProjectBase("gsd-snapshot-oversize-id");
+  t.after(() => cleanup([base]));
+  openDatabase(join(base, ".gsd", "gsd.db"));
+  insertMilestone({ id: `M${"x".repeat(262_144)}`, title: "Oversized identifier", status: "active" });
+  for (const result of await snapshotToolResults(base)) {
+    assert.equal(result.isError, true);
+    assert.equal(readError(result), "snapshot_too_large");
+    assert.equal(snapshotDetails(result).snapshot, undefined);
+    assert.ok(Buffer.byteLength(JSON.stringify(result), "utf8") < 4096);
+  }
+});
+
+test("canonical snapshot interfaces isolate cross-project scope and retain same-project alias scope", async (t) => {
+  const baseA = makeProjectBase("gsd-snapshot-scope-a");
+  const baseB = makeProjectBase("gsd-snapshot-scope-b");
+  const previousCwd = process.cwd();
+  const previousLock = process.env.GSD_MILESTONE_LOCK;
+  t.after(() => {
+    process.chdir(previousCwd);
+    if (previousLock === undefined) delete process.env.GSD_MILESTONE_LOCK;
+    else process.env.GSD_MILESTONE_LOCK = previousLock;
+    cleanup([baseA, baseB]);
+  });
+  for (const base of [baseA, baseB]) {
+    seedSnapshotProject(base, "Default focus");
+    insertMilestone({ id: "M002", title: "Locked focus", status: "active" });
+  }
+  const aliasA = join(baseA, "alias");
+  symlinkSync(baseA, aliasA, "dir");
+  process.chdir(baseA);
+  process.env.GSD_MILESTONE_LOCK = "M002";
+  const native = nativeTool(makeNativeTools(), "gsd_project_snapshot");
+  const mcp = mcpTool(makeMcpTools(), "gsd_project_snapshot");
+  for (const [target, expected] of [[baseB, "M001"], [aliasA, "M002"]]) {
+    for (const result of [
+      await native.execute("snapshot", { projectDir: target }, undefined, undefined, { cwd: baseA }),
+      await mcp.handler({ projectDir: target }),
+    ]) {
+      assert.equal(result.isError, undefined);
+      assert.equal(snapshotPayload(result).current.activeMilestone.id, expected);
+    }
+  }
+});
 
 test("canonical read tools: missing DB returns db_unavailable and does not create gsd.db", async () => {
   const base = makeProjectBase("gsd-canonical-missing-db");

@@ -1,7 +1,7 @@
 import type { DefaultResourceLoader as DefaultResourceLoaderType } from '@gsd/pi-coding-agent'
 import { createHash } from 'node:crypto'
 import { homedir } from 'node:os'
-import { chmodSync, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, readdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, readdirSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -27,14 +27,16 @@ function loadPiCodingAgentModule(): Promise<PiCodingAgentModule> {
 // dist/resources/ is populated by the build step (`npm run copy-resources`) and
 // reflects the built state, not the currently checked-out branch.
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const resourcesDir = resolveBundledResourcesDirFromPackageRoot(packageRoot)
-const bundledExtensionsDir = join(resourcesDir, 'extensions')
+let resourcesDir = resolveBundledResourcesDirFromPackageRoot(packageRoot)
+let bundledExtensionsDir = join(resourcesDir, 'extensions')
 const resourceVersionManifestName = 'managed-resources.json'
 const resourceFingerprintFileName = '.managed-resources-content-hash'
 const gsdBrowserSkillName = 'gsd-browser'
 const requireFromResourceLoader = createRequire(import.meta.url)
 const gsdBrowserSkillReferenceDirs = ['docs', 'scripts', 'gsd-browser-skill']
 let gsdBrowserPackageSkillPathForTests: string | null | undefined
+let resourcePackageRootForTests: string | undefined
+let afterResourceSyncForTests: (() => void) | undefined
 
 interface ManagedResourceManifest {
   gsdVersion: string
@@ -94,7 +96,7 @@ function getBundledPackageName(): string {
   }
 }
 
-function writeManagedResourceManifest(agentDir: string): void {
+function writeManagedResourceManifest(agentDir: string, contentHash: string): void {
   // Record root-level files and subdirectory extension names currently in the
   // bundled extensions source so that future upgrades can detect and prune any
   // that get removed or moved.
@@ -125,7 +127,7 @@ function writeManagedResourceManifest(agentDir: string): void {
     gsdVersion: getBundledGsdVersion(),
     packageName: getBundledPackageName(),
     syncedAt: Date.now(),
-    contentHash: getCurrentResourceFingerprint(),
+    contentHash,
     installedExtensionRootFiles,
     installedExtensionDirs,
   }
@@ -166,9 +168,10 @@ function readManagedResourceManifest(agentDir: string): ManagedResourceManifest 
  * triggers a full resync in `initResources`. The old path+size approach
  * silently cached stale prompts across upgrades.
  *
- * Cost is ~1-2ms for a typical resources tree (~100 small .md files) —
- * still negligible at startup. Files are streamed via `readFileSync` but
- * bundled prompts are tiny so this is fine.
+ * This reads every bundled file: the complete tree contains roughly 1,500
+ * files / 14 MB, so startup cost is tens to hundreds of milliseconds depending
+ * on filesystem caches. Immutable release installs use the shipped fingerprint
+ * instead; auto mode selects this live check for development bundles.
  *
  * Exported for unit tests and for callers that want to check a different
  * directory (e.g. pre-install verification).
@@ -180,16 +183,45 @@ export function computeResourceFingerprint(rootDir: string = resourcesDir): stri
   return createHash('sha256').update(entries.join('\n')).digest('hex').slice(0, 16)
 }
 
-function getCurrentResourceFingerprint(): string {
-  try {
-    const precomputed = readFileSync(join(resourcesDir, resourceFingerprintFileName), 'utf-8').trim()
-    if (/^[a-f0-9]{16}$/i.test(precomputed)) {
-      return precomputed
-    }
-  } catch {
-    // Source-tree and partial-build workflows may not have a precomputed hash.
+export type ResourceFingerprintMode = 'auto' | 'live' | 'bundled'
+
+/** Select from this package's identity, never from an ancestor project's .git. */
+export function resolveResourceFingerprintMode(
+  ownPackageRoot: string,
+  bundleDir: string,
+  configuredMode: string | undefined = process.env.GSD_RESOURCE_FINGERPRINT_MODE,
+): Exclude<ResourceFingerprintMode, 'auto'> {
+  const mode = configuredMode?.trim().toLowerCase() || 'auto'
+  if (mode === 'live' || mode === 'bundled') return mode
+  if (mode !== 'auto') {
+    throw new Error('GSD_RESOURCE_FINGERPRINT_MODE must be auto, live, or bundled')
   }
-  return computeResourceFingerprint()
+  const canonical = (path: string): string => {
+    try { return realpathSync(path) } catch { return resolve(path) }
+  }
+  const ownRoot = canonical(ownPackageRoot)
+  try {
+    const git = lstatSync(join(ownRoot, '.git'))
+    if (git.isDirectory() || git.isFile()) return 'live'
+  } catch { /* Installed packages normally have no own .git entry. */ }
+  return canonical(bundleDir) === canonical(join(ownRoot, 'src', 'resources')) ? 'live' : 'bundled'
+}
+
+export function getCurrentResourceFingerprint(
+  rootDir: string = resourcesDir,
+  mode: Exclude<ResourceFingerprintMode, 'auto'> = resolveResourceFingerprintMode(resourcePackageRootForTests ?? packageRoot, rootDir),
+): string {
+  if (mode === 'bundled') {
+    try {
+      const precomputed = readFileSync(join(rootDir, resourceFingerprintFileName), 'utf-8').trim()
+      if (/^[a-f0-9]{16}$/i.test(precomputed)) {
+        return precomputed
+      }
+    } catch {
+      // Source-tree and partial-build workflows may not have a precomputed hash.
+    }
+  }
+  return computeResourceFingerprint(rootDir)
 }
 
 function resolveGsdBrowserPackageSkillPath(): string | null {
@@ -205,6 +237,17 @@ function resolveGsdBrowserPackageSkillPath(): string | null {
 
 export function setGsdBrowserPackageSkillPathForTests(skillPath: string | null | undefined): void {
   gsdBrowserPackageSkillPathForTests = skillPath
+}
+
+/** Isolate resource-sync fixtures without changing installed or repository resources. */
+export function setBundledResourcesDirForTests(dir: string | null | undefined, ownPackageRoot?: string): void {
+  resourcesDir = dir ?? resolveBundledResourcesDirFromPackageRoot(packageRoot)
+  bundledExtensionsDir = join(resourcesDir, 'extensions')
+  resourcePackageRootForTests = dir ? ownPackageRoot : undefined
+}
+
+export function setAfterResourceSyncForTests(callback: (() => void) | undefined): void {
+  afterResourceSyncForTests = callback
 }
 
 export function collectGsdBrowserPackageSkillReferences(content: string): string[] {
@@ -316,7 +359,9 @@ function collectFileEntries(dir: string, root: string, out: string[]): void {
     if (entry.isDirectory()) {
       collectFileEntries(fullPath, root, out)
     } else {
-      const rel = relative(root, fullPath)
+      // Keep live fingerprints identical to copy-resources/watch-resources
+      // output on Windows as well as POSIX.
+      const rel = relative(root, fullPath).replaceAll('\\', '/')
       // Hash the file contents — see function doc for #4787 rationale.
       let contentHash: string
       try {
@@ -706,14 +751,17 @@ function pruneRemovedBundledExtensions(
  * - GSD-WORKFLOW.md → ~/.gsd/agent/GSD-WORKFLOW.md (fallback for env var miss)
  *
  * Skips the full copy when the managed-resources.json version and content
- * fingerprint match the current install, avoiding ~128ms of synchronous cpSync
- * on steady-state startup.
+ * fingerprint match the current install, avoiding the full synchronous copy
+ * on steady-state startup. Pruning and missing-file checks still run.
  * After `npm update -g @penggin/gsd-pi-herdr`, versions will differ and the copy
  * runs once to land the new resources.
  *
  * Inspectable: `ls ~/.gsd/agent/extensions/`
  */
 export function initResources(agentDir: string, skillsDir: string = join(agentDir, 'skills')): void {
+  // Resolve invalid configuration before any managed-resource mutation.
+  const fingerprintMode = resolveResourceFingerprintMode(resourcePackageRootForTests ?? packageRoot, resourcesDir)
+  const currentHash = getCurrentResourceFingerprint(resourcesDir, fingerprintMode)
   mkdirSync(agentDir, { recursive: true })
 
   const currentVersion = getBundledGsdVersion()
@@ -742,10 +790,10 @@ export function initResources(agentDir: string, skillsDir: string = join(agentDi
 
   // Skip the full copy when both version AND content fingerprint match.
   // Version-only checks miss same-version content changes (npm link dev workflow,
-  // hotfixes within a release). The content hash catches those at ~1ms cost.
+  // hotfixes within a release). Development uses a live content hash; immutable
+  // installed releases retain their precomputed fingerprint fast path.
   if (manifest && isCurrentPackageManifest(manifest) && manifest.gsdVersion === currentVersion) {
     // Version matches — check content fingerprint for same-version staleness.
-    const currentHash = getCurrentResourceFingerprint()
     if (manifest.contentHash && manifest.contentHash === currentHash
       && !hasMissingBundledResourceFiles(extensionsDir, bundledExtensionsDir)) {
       return
@@ -771,7 +819,11 @@ export function initResources(agentDir: string, skillsDir: string = join(agentDi
   // overwrite them (covers extensions, agents, and skills in one walk).
   makeTreeWritable(agentDir)
 
-  writeManagedResourceManifest(agentDir)
+  afterResourceSyncForTests?.()
+  // Stamp the exact pre-copy fingerprint. A bundle that advances during copy
+  // is detected on the next live-mode launch. An edit that then reverts (ABA)
+  // can still escape detection: this convenience sync is not a snapshot copy.
+  writeManagedResourceManifest(agentDir, currentHash)
   ensureRegistryEntries(join(agentDir, 'extensions'))
 }
 

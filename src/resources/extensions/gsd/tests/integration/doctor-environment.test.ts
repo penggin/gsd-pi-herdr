@@ -1,5 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 /**
  * doctor-environment.test.ts — Tests for environment health checks (#1221).
  *
@@ -36,6 +37,24 @@ function createProjectDir(files: Record<string, string> = {}): string {
   }
   return dir;
 }
+
+test('env: a local bare origin with HEAD is reachable and a missing origin still warns', (t) => {
+  const base = mkdtempSync(join(tmpdir(), "gsd-doctor-remote-"));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const project = join(base, "project");
+  const origin = join(base, "origin.git");
+  mkdirSync(project);
+  const git = (...args: string[]) => execFileSync("git", ["-c", "core.hooksPath=", ...args], { cwd: project, stdio: "pipe" });
+  git("init", "-b", "main");
+  git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "initial");
+  git("clone", "--bare", project, origin);
+  git("remote", "add", "origin", origin);
+  const healthy = runFullEnvironmentChecks(project).find((result) => result.name === "git_remote");
+  assert.equal(healthy?.status, "ok", "a healthy symbolic HEAD must not be filtered out");
+  git("remote", "set-url", "origin", join(base, "missing.git"));
+  const unreachable = runFullEnvironmentChecks(project).find((result) => result.name === "git_remote");
+  assert.equal(unreachable?.status, "warning");
+});
 
 describe('doctor-environment', async () => {
   const cleanups: string[] = [];

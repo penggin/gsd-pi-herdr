@@ -56,6 +56,7 @@ import {
 } from "../legacy-import-preview.ts";
 import { finalizeLegacyImportInterpretation } from "../legacy-import-preview-interpretation.ts";
 import { _getAdapter, closeDatabase, openDatabase } from "../gsd-db.ts";
+import { loadLegacyImportCorpusCase } from "./helpers/legacy-import-corpus.ts";
 import {
   assertStableClassificationHashes,
   classificationBase,
@@ -328,7 +329,7 @@ describe("legacy preview identity", () => {
       ...input.base,
       database_schema_version: 44 as typeof LEGACY_IMPORT_BASE_DATABASE_SCHEMA_VERSION,
     };
-    assert.throws(() => sealLegacyImportPreview(input), /database schema 48/);
+    assert.throws(() => sealLegacyImportPreview(input), new RegExp(`database schema ${LEGACY_IMPORT_BASE_DATABASE_SCHEMA_VERSION}`));
   });
 
   test("legacy preview identity rejects import kinds the application receipt cannot store", () => {
@@ -893,7 +894,9 @@ function actionMatrixBaseSnapshot(): LegacyImportBaseSnapshot {
   try {
     database.exec("PRAGMA query_only=ON");
     const schema = database.prepare("SELECT max(version) AS version FROM schema_version").get();
-    assert.equal(schema?.version, LEGACY_IMPORT_BASE_DATABASE_SCHEMA_VERSION);
+    // This immutable corpus database is v48, even when the current Preview
+    // schema advances. Its retained oracle owns that historical version.
+    assert.equal(schema?.version, loadLegacyImportCorpusCase(LEGACY_CORPUS_ROOT, "action-matrix").oracle.base_database_schema_version);
     const rawAuthority = database.prepare(`
       SELECT singleton, project_id, project_root_realpath, revision, authority_epoch,
              created_at, updated_at
@@ -924,6 +927,8 @@ function actionMatrixBaseSnapshot(): LegacyImportBaseSnapshot {
     });
     return {
       snapshot_schema_version: 1,
+      // Project only the retained decision rows into the current classifier
+      // input contract; this does not migrate or relabel the source database.
       database_schema_version: LEGACY_IMPORT_BASE_DATABASE_SCHEMA_VERSION,
       authority,
       rows,
@@ -950,7 +955,7 @@ function composeLegacyInterpretations(
 }
 
 describe("legacy preview task classification", () => {
-  test("legacy preview action matrix classification against a captured current fixture", (t) => {
+  test("legacy preview action matrix classification against a retained v48 fixture", (t) => {
     const capture = captureLegacyCorpusPaths(
       t,
       "action-matrix",

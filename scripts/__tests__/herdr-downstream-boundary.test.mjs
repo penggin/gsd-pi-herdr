@@ -105,6 +105,13 @@ const forbiddenTargets = [
   "upstream/main",
 ];
 
+// Operator-requested source review is allowed; runtime/CI/install paths remain
+// downstream-only. These files are an inert record and a manual ls-remote tool.
+const readOnlyUpstreamReviewFiles = new Set([
+  "scripts/audit-gsd-upstream.mjs",
+  "scripts/gsd-upstream.json",
+]);
+
 function collectOperationalFiles(relativeDirectory) {
   const files = [];
   const visit = (relativePath) => {
@@ -147,6 +154,7 @@ test("executable source and automation contain no uncommented original-project t
       const trimmed = line.trimStart();
       if (/^(?:\/\/|\/\*|\*|#)/.test(trimmed)) continue;
       for (const forbidden of forbiddenTargets) {
+        if (readOnlyUpstreamReviewFiles.has(relativePath) && forbidden === "https://github.com/open-gsd/gsd-pi") continue;
         assert.equal(
           line.includes(forbidden),
           false,
@@ -154,6 +162,17 @@ test("executable source and automation contain no uncommented original-project t
         );
       }
     }
+  }
+});
+
+test("manual GSD source review is bounded and cannot mutate or replace upstream code", () => {
+  const source = readFileSync(join(root, "scripts/audit-gsd-upstream.mjs"), "utf8");
+  assert.match(source, /execFileSync\('git', \['ls-remote', '--heads', '--tags', repository\]/);
+  assert.match(source, /timeout: 30000/);
+  assert.doesNotMatch(source, /\b(?:writeFileSync|writeFile|appendFile|spawn|execSync)\b/);
+  assert.doesNotMatch(source, /['"](?:fetch|push|merge|checkout|clone|cherry-pick|reset)['"]/);
+  for (const relativePath of [...workflowFiles, "src/cli.ts", "src/loader.ts", "scripts/install.js"]) {
+    assert.doesNotMatch(readFileSync(join(root, relativePath), "utf8"), /audit-gsd-upstream|audit:gsd-upstream/);
   }
 });
 

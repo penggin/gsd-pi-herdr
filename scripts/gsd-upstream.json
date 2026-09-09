@@ -1,0 +1,41 @@
+{
+  "repository": "https://github.com/open-gsd/gsd-pi.git",
+  "forkBase": {
+    "version": "1.16.2",
+    "commit": "4b26a642c0121ae6161abbb6f2dc6937c78874dd"
+  },
+  "upstreamAudit": {
+    "reviewedStableRef": "v1.18.0",
+    "reviewedStableCommit": "0a735e2293c53366d50e2937d560a84a8be9de57",
+    "reviewedMainRef": "refs/heads/main",
+    "reviewedMainCommit": "68acbe7863f79fb4256574c7a3aa65b2e8bec9ac",
+    "reviewedMainPackageVersion": "1.18.0",
+    "reviewedAt": "2026-09-07",
+    "reviewDepth": "69-commit inventory since fork base; selective behavioral review, not a full merge",
+    "auditDocument": "docs/dev/gsd-upstream.md"
+  },
+  "selectedBackports": [
+    { "commit": "fc0ce0661fb906ade43842473326ed74bfd5b021", "scope": "refuse missing no-create database opens" },
+    { "commit": "60826e39356e2087802fa7d03ce041b68a403b69", "scope": "pause on an explicit blocker at verification" },
+    { "commit": "09f1333909aacccef0c5400804da186bc076feeb", "scope": "stop repeated failed retry-bound dispatch" },
+    { "commit": "9212937f34abde2bf74554b11a449ca8fecd1c43", "scope": "preserve resolved tool error flags" },
+    { "commit": "dcdf4fc9170305023e890df4c4c380feddbf8c33", "scope": "avoid UAT schema retry poisoning, with narrower abort cleanup" },
+    { "commit": "2330218f321657e55986beafdc367b27c71211de", "scope": "stream render starvation plus actual UI validation: transactional thinking/live-tool replay and tall-card status footer, preserving TUI history policy" },
+    { "commit": "00c730727d67b786ca6281f0c441a451269b90b6", "scope": "browser daemon inherited-pipe timeout, with bounded descriptor reads" },
+    { "commit": "acc9f9ecb78eea0e281900a898da9e05ced87733", "scope": "probe Git remote HEAD without heads-only filtering" },
+    { "commit": "e2448afef1ec7a185639326b004379f6f34e9e46", "scope": "R1: preserve schema-rejected completion cause and pause" },
+    { "commit": "0e165af3fe4b074350567a290e9fc7b2503fddb7", "scope": "R1: route execute-task deferred commit retries through verification-retry" },
+    { "commit": "f8ac9530755d8d6fd5b2b8772c36fe76eaa71364", "scope": "R1: stable liveness identity and sanctioned exit for rejected unit claims" },
+    { "commit": "277bb6b38de14de1574604160006663a62432529", "scope": "R2: distinguish DB snapshots from browser evidence, with explicit subjects and wrapped-clause guards" },
+    { "commit": "dad224c8a84a48c18de9d27582d0b67411604180", "scope": "R2: preserve empty PLAN separator lines without trailing whitespace" },
+    { "commit": "5cb9410a9cff5141ed82e42034e5025e741da341", "scope": "R3: approved remediation resume and bounded captured-successor refresh, with real process-contention proof" },
+    { "commit": "13cd6a00d044d705baa87b7921f12078e075292e", "scope": "R3: current task artifact names and evidence-derived parents only; unrelated Copilot/gitignore changes excluded" },
+    { "commit": "e34e7d7d0ef27a0381d7f16619fee5a4e4a78171", "scope": "R3: preserve non-task legacy summaries" },
+    { "commit": "87c424246c8b3c8a7f4037569cb82d8ae0f9f46a", "scope": "R3: reject contradictory summary identities, extended to explicit task-heading mismatch" },
+    { "commit": "1af48f0d15a89155f343ab0679fe41b4e4e58ddf", "scope": "R4: complete canonical project snapshot through native, MCP and CLI with bounded output" },
+    { "commit": "f0c4ac52535b8ae9ea9855a2772ef43838d68bac", "scope": "R4: no read-side migrations, queue or notification writes; isolated transactional projection replaces mixed-retry fallback" },
+    { "commit": "59d5a3588127fb9c7c8c6b2384de7975ecfe1111", "scope": "R4: canonical project/handle/scope isolation without replacing global adapters" },
+    { "commit": "5fbf5dca90642249b4b409b101b3f152798f2958", "scope": "R5: bounded output continuation and explicit halt, preserving next-request preparation, history, usage and one-overflow recovery" },
+    { "commit": "a05a682f585fdd3de7d44097ca27032afa2c5a5e", "scope": "R6 resource: live mutable-bundle drift with explicit dev/release selection and pre-copy fingerprint stamping" }
+  ]
+}

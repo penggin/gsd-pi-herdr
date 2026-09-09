@@ -61,6 +61,12 @@ changing the shared link. Only after the candidate passes should the stable
 path and must close listeners and remove their exact temporary files before the
 remote shell exits; never clean an ambiguous GSD worker as if it were a probe.
 
+The current Penglab installation/configuration replica is recorded in
+[`PENGLAB-DEPLOYMENT-20260908.md`](PENGLAB-DEPLOYMENT-20260908.md), including exact
+artifact identities, private rollback locations, preserved live sessions and the
+remaining browser/AppArmor prerequisite. Do not mistake a successful model
+connectivity check for a verified browser sandbox or a restarted GSD session.
+
 ## Herdr capability preflight
 
 The automated preflight validates:

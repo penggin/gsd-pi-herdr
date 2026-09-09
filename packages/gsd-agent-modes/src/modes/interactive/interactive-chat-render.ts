@@ -22,6 +22,8 @@ import { asServerToolUse, asWebSearchResult, isToolContentBlock } from "./gsd-co
 import { buildAssistantReplaySegments } from "./interactive-notify-render.js";
 import { MAX_CHAT_COMPONENTS } from "./interactive-mode-class-constants.js";
 import type { InteractiveModeDelegateHost } from "./interactive-mode-delegate-host.js";
+import { createStreamingRenderState } from "./streaming-render-state.js";
+import { rebuildSegmentsOnMessageEnd, runSegmentWalker } from "./controllers/chat-segment-walker.js";
 
 	/** Extract text content from a user message */
 export function getUserMessageText(host: InteractiveModeDelegateHost, message: Message): string {
@@ -193,10 +195,28 @@ export function trimChatHistory(host: InteractiveModeDelegateHost): void {
 	 */
 export function renderSessionContext(host: InteractiveModeDelegateHost, 
 		sessionContext: SessionContext,
-		options: { updateFooter?: boolean; populateHistory?: boolean } = {},
+		options: {
+			updateFooter?: boolean;
+			populateHistory?: boolean;
+			liveTools?: ReadonlyMap<string, ToolExecutionComponent>;
+			onToolCreated?: (component: ToolExecutionComponent) => void;
+		} = {},
 	): void {
 		host.pendingTools.clear();
 		const timestampFormat = host.settingsManager.getTimestampFormat();
+		const lastToolCall = new Map<string, unknown>();
+		if (options.liveTools?.size) {
+			for (const message of sessionContext.messages) {
+				if (message.role !== "assistant") continue;
+				for (const content of message.content) {
+					if (content.type === "toolCall") lastToolCall.set(content.id, content);
+					else {
+						const serverTool = asServerToolUse(content);
+						if (serverTool) lastToolCall.set(serverTool.id, content);
+					}
+				}
+			}
+		}
 
 		if (options.updateFooter) {
 			host.footer.invalidate();
@@ -233,15 +253,22 @@ export function renderSessionContext(host: InteractiveModeDelegateHost,
 
 					const content = message.content[segment.contentIndex];
 					if (content.type === "toolCall") {
-						const component = new ToolExecutionComponent(
+						const candidate = options.liveTools?.get(content.id);
+						const liveComponent = lastToolCall.get(content.id) === content && candidate?.matchesInvocation(content.name, content.arguments) ? candidate : undefined;
+						const component = liveComponent ?? new ToolExecutionComponent(
 							content.name,
 							content.arguments,
 							{ showImages: host.settingsManager.getShowImages() },
 							host.getRegisteredToolDefinition(content.name),
 							host.ui,
 						);
-						component.setExpanded(host.toolOutputExpanded);
 						host.chatContainer.addChild(component);
+						if (!liveComponent) options.onToolCreated?.(component);
+						if (liveComponent) {
+							host.pendingTools.set(content.id, component);
+							continue;
+						}
+						component.setExpanded(host.toolOutputExpanded);
 
 						// On an aborted/errored turn, only the tool calls that never
 						// produced a result should render as interrupted. A tool that
@@ -277,15 +304,22 @@ export function renderSessionContext(host: InteractiveModeDelegateHost,
 						const serverTool = asServerToolUse(content);
 						if (serverTool) {
 						// Server-side tool (e.g., native web search)
-						const component = new ToolExecutionComponent(
+						const candidate = options.liveTools?.get(serverTool.id);
+						const liveComponent = lastToolCall.get(serverTool.id) === content && candidate?.matchesInvocation(serverTool.name, serverTool.input ?? {}) ? candidate : undefined;
+						const component = liveComponent ?? new ToolExecutionComponent(
 							serverTool.name,
 							serverTool.input ?? {},
 							{ showImages: host.settingsManager.getShowImages() },
 							undefined,
 							host.ui,
 						);
-						component.setExpanded(host.toolOutputExpanded);
 						host.chatContainer.addChild(component);
+						if (!liveComponent) options.onToolCreated?.(component);
+						if (liveComponent) {
+							host.pendingTools.set(serverTool.id, component);
+							continue;
+						}
+						component.setExpanded(host.toolOutputExpanded);
 						// Find matching webSearchResult in host message's content
 						const resultBlock = message.content
 							.map(asWebSearchResult)
@@ -313,7 +347,7 @@ export function renderSessionContext(host: InteractiveModeDelegateHost,
 			} else if (message.role === "toolResult") {
 				// Match tool results to pending tool components
 				const component = host.pendingTools.get(message.toolCallId);
-				if (component) {
+				if (component && options.liveTools?.get(message.toolCallId) !== component) {
 					component.updateResult(message);
 					host.pendingTools.delete(message.toolCallId);
 				}
@@ -326,10 +360,11 @@ export function renderSessionContext(host: InteractiveModeDelegateHost,
 		// Any pendingTools entries left over after replay are historical tool
 		// calls whose results were squashed out of session context (commonly by
 		// compaction). Mark them finished so the frame stops showing "Running".
-		for (const component of host.pendingTools.values()) {
+		for (const [id, component] of host.pendingTools.entries()) {
+			if (options.liveTools?.get(id) === component) continue;
 			component.markHistoricalNoResult();
+			host.pendingTools.delete(id);
 		}
-		host.pendingTools.clear();
 		trimChatHistory(host);
 		reconcileChatTurnConnections(host.chatContainer.children);
 		host.ui.requestRender();
@@ -370,6 +405,108 @@ export function rebuildChatFromMessages(host: InteractiveModeDelegateHost): void
 		// populatePinnedFromMessages() remains in renderInitialMessages()
 		// for the session-resume case at startup.
 	}
+
+/** Rebuild visibility without exposing a cleared frame or replacing live tool state. */
+export function rebuildChatWithThinkingVisibility(host: InteractiveModeDelegateHost, hideThinkingBlock: boolean): void {
+	const previousSetting = host.settingsManager.getHideThinkingBlock?.() ?? host.hideThinkingBlock;
+	const oldChildren = host.chatContainer.children.slice();
+	const liveTools = new Map<string, ToolExecutionComponent>(host.pendingTools ?? []);
+	const oldStream = host.streamingRenderState;
+	const preserveLive = !!host.streamingMessage || liveTools.size > 0;
+	const retained = new Set<any>([
+		...liveTools.values(),
+		...(oldStream?.renderedSegments ?? []).map((segment: any) => segment.component),
+		...(oldStream?.orphanedSegments ?? []).map((segment: any) => segment.component),
+		host.streamingComponent,
+	]);
+	const orphanClones = new Map<any, AssistantMessageComponent>();
+	for (const segment of oldStream?.orphanedSegments ?? []) {
+		if (segment.kind === "text-run") orphanClones.set(segment.component, segment.component.cloneWithThinkingVisibility(hideThinkingBlock));
+	}
+	const stagedValues = {
+		chatContainer: new Container(),
+		pinnedMessageContainer: new Container(),
+		pendingTools: new Map<string, ToolExecutionComponent>(),
+		hideThinkingBlock,
+		streamingComponent: host.streamingComponent,
+		streamingRenderState: oldStream ? Object.assign(createStreamingRenderState(), oldStream, {
+			renderedSegments: oldStream.renderedSegments.map((segment: any) => ({ ...segment })),
+			orphanedSegments: oldStream.orphanedSegments.map((segment: any) => ({ ...segment, component: orphanClones.get(segment.component) ?? segment.component })),
+			_desiredSegmentsCache: undefined,
+		}) : undefined,
+	};
+	// The real mode exposes streaming state through a getter-only property.
+	// Own descriptors shadow it without invoking inherited mode setters.
+	const staged = Object.create(host, Object.fromEntries(Object.entries(stagedValues).map(([key, value]) => [key, {
+		value, writable: true, configurable: true, enumerable: true,
+	}])));
+	const createdTools = new Set<ToolExecutionComponent>();
+	const onToolCreated = (component: ToolExecutionComponent): void => { createdTools.add(component); };
+	const disposeNewTools = (): void => {
+		for (const component of new Set<any>([...createdTools, ...staged.chatContainer.children, ...staged.pendingTools.values()])) {
+			if (component instanceof ToolExecutionComponent && !retained.has(component)) component.dispose();
+		}
+	};
+	let persistAttempted = false;
+	try {
+		const context = host.sessionManager.buildSessionContext();
+		const replayTools = new Map(liveTools);
+		// A partial assistant is not persisted yet. Its reused IDs must not
+		// replace older completed invocations in historical replay.
+		for (const content of host.streamingMessage?.content ?? []) {
+			if (content.type === "toolCall") replayTools.delete(content.id);
+			else {
+				const serverTool = asServerToolUse(content);
+				if (serverTool) replayTools.delete(serverTool.id);
+			}
+		}
+		renderSessionContext(staged, context, { liveTools: replayTools, onToolCreated });
+		if (preserveLive) {
+			staged.pinnedMessageContainer.children = host.pinnedMessageContainer.children.slice();
+			for (const component of oldChildren) {
+				const visibleComponent = orphanClones.get(component) ?? component;
+				if (retained.has(component) && !staged.chatContainer.children.includes(visibleComponent)) staged.chatContainer.addChild(visibleComponent);
+			}
+			for (const [id, component] of liveTools) staged.pendingTools.set(id, component);
+			if (host.streamingMessage && staged.streamingRenderState) {
+				const timestampFormat = host.settingsManager.getTimestampFormat();
+				if (staged.streamingRenderState.renderedSegments.length > 0) {
+					rebuildSegmentsOnMessageEnd(staged, staged.streamingRenderState, timestampFormat, { onToolCreated });
+				} else {
+					runSegmentWalker(staged, staged.streamingRenderState, timestampFormat);
+				}
+			} else if (host.streamingComponent && host.streamingMessage) {
+				staged.chatContainer.removeChild(host.streamingComponent);
+				staged.streamingComponent = new AssistantMessageComponent(host.streamingMessage, hideThinkingBlock, host.getMarkdownThemeWithSettings(), host.settingsManager.getTimestampFormat());
+				staged.chatContainer.addChild(staged.streamingComponent);
+			}
+		}
+		// Persist only after all fallible replay/component work has succeeded.
+		persistAttempted = true;
+		host.settingsManager.setHideThinkingBlock(hideThinkingBlock);
+	} catch (error) {
+		if (persistAttempted) {
+			try { host.settingsManager.setHideThinkingBlock(previousSetting); } catch { /* Preserve the original failure. */ }
+		}
+		disposeNewTools();
+		throw error;
+	}
+	host.hideThinkingBlock = hideThinkingBlock;
+	host.chatContainer.children = staged.chatContainer.children;
+	host.pinnedMessageContainer.children = staged.pinnedMessageContainer.children;
+	host.pendingTools.clear();
+	for (const [id, component] of staged.pendingTools) host.pendingTools.set(id, component);
+	if (oldStream) Object.assign(oldStream, staged.streamingRenderState);
+	host.streamingComponent = staged.streamingComponent;
+	const mounted = new Set<any>([...host.chatContainer.children, ...host.pendingTools.values()]);
+	for (const component of createdTools) {
+		if (!mounted.has(component)) component.dispose();
+	}
+	for (const component of oldChildren) {
+		if (component instanceof ToolExecutionComponent && !mounted.has(component)) component.dispose();
+	}
+	host.ui.requestRender();
+}
 
 	/**
 	 * After rebuilding chat from messages, pin the last assistant text above the

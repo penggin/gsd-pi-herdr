@@ -124,7 +124,7 @@ function executionInvocation(key: string) {
   };
 }
 
-function seedTaskRecoveryAbort(base: string): { attemptId: string; recoveryActionId: string } {
+function seedTaskRecoveryAction(base: string, action: "abort" | "remediate"): { attemptId: string; recoveryActionId: string } {
   seedMilestoneAndSlice(base);
   const attemptId = claimCanonicalTaskAuthority(base);
   const settled = settleTaskAttempt({
@@ -140,12 +140,12 @@ function seedTaskRecoveryAbort(base: string): { attemptId: string; recoveryActio
     attemptId,
     resultId: settled.resultId,
     owner: "agent",
-    classification: { failureKind: "fatal" },
+    classification: { failureKind: action === "abort" ? "fatal" : "verification-failed" },
     summary: "The executor runtime is invalid.",
     evidence: { source: "executor" },
     rationale: "Stop until the executor is repaired.",
   });
-  assert.equal(abort.action, "abort");
+  assert.equal(abort.action, action);
   assert.equal(abort.resumeAuthorized, false);
   return { attemptId, recoveryActionId: abort.recoveryActionId };
 }
@@ -694,12 +694,13 @@ function assertTaskRecoveryResumeDurability(input: {
 }
 
 describe("Task recovery resume persistent retry parity", () => {
-  it("Pi and MCP authorize one repaired retry and replay after DB restart", async () => {
+  for (const action of ["abort", "remediate"] as const) {
+  it(`Pi and MCP authorize one repaired ${action} continuation and replay after DB restart`, async () => {
     let baseNative = "";
     let baseMcp = "";
     try {
       baseNative = makeTmpBase();
-      const nativeAbort = seedTaskRecoveryAbort(baseNative);
+      const nativeAbort = seedTaskRecoveryAction(baseNative, action);
       const nativeArgs = {
         recoveryActionId: nativeAbort.recoveryActionId,
         ...TASK_RECOVERY_RESUME_ARGS,
@@ -719,7 +720,7 @@ describe("Task recovery resume persistent retry parity", () => {
       closeDatabase();
 
       baseMcp = makeTmpBase();
-      const mcpAbort = seedTaskRecoveryAbort(baseMcp);
+      const mcpAbort = seedTaskRecoveryAction(baseMcp, action);
       const mcpArgs = {
         recoveryActionId: mcpAbort.recoveryActionId,
         ...TASK_RECOVERY_RESUME_ARGS,
@@ -753,6 +754,7 @@ describe("Task recovery resume persistent retry parity", () => {
       if (baseMcp) cleanup(baseMcp);
     }
   });
+  }
 });
 
 async function runPersistentSliceLifecycleMatrix(

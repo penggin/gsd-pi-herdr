@@ -32,6 +32,7 @@ import {
   hashLegacyImportValue,
 } from "../legacy-import-preview.ts";
 import { loadLegacyImportCorpusCase } from "./helpers/legacy-import-corpus.ts";
+import { historicalV48Expectation } from "./helpers/legacy-import-schema-49-expectations.ts";
 
 const CORPUS_ROOT = new URL("./__fixtures__/legacy-import-corpus/v1/", import.meta.url);
 const COMPOSITE_PATHS = [
@@ -360,7 +361,19 @@ describe("legacy supplemental captured-byte integration", () => {
       const context = supplementalContext(capture, spec);
       const interpretation = interpretLegacySupplementalCapture(capture, context);
 
-      assertOracleSemantics(interpretation, oracle);
+      // The external DB retains its v48 bytes. Under current v49 it gains one
+      // supported-historical info diagnostic and its mapped resolution.
+      let expected = oracle;
+      if (spec.name === "root-external-boundaries") {
+        const source = oracle.sources.find((candidate) => candidate.path === "$GSD_STATE_DIR/projects/project-external/gsd.db")!;
+        const historical = historicalV48Expectation(source, payloadBytes(capture, source.path));
+        expected = {
+          ...oracle,
+          diagnoses: [...oracle.diagnoses, historical.diagnosis],
+          resolutions: [...oracle.resolutions, historical.resolution],
+        };
+      }
+      assertOracleSemantics(interpretation, expected);
       assertRuntimeIdentity(capture, interpretation);
       assertNoDiagnosticSecretLeak(interpretation);
       assert.deepEqual(interpretation, interpretLegacySupplementalCapture(capture, context));

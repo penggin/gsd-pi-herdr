@@ -229,20 +229,43 @@ function normalizedMaxChars(maxChars: number): number {
   return Number.isFinite(maxChars) && maxChars > 0 ? Math.floor(maxChars) : 800;
 }
 
-export function truncateContextResultMessages(messages: MaskableMessage[], maxChars: number = 800): MaskableMessage[] {
+export type NativeResultBudgeter = (toolCallId: unknown, toolName: unknown, text: string) => string | undefined;
+
+function budgetResultContent(content: unknown, maxChars: number, callId: unknown, name: unknown, nativeBudget?: NativeResultBudgeter): unknown {
+  // Native execution producers deliberately emit exactly one text block. Never
+  // let a matching first block bless appended, unbounded external content.
+  if (typeof content === "string") return nativeBudget?.(callId, name, content) ?? truncateTextBlocks(content, maxChars);
+  if (Array.isArray(content) && content.length === 1 && isTextLikeBlock(content[0]) && typeof content[0].text === "string") {
+    const text = nativeBudget?.(callId, name, content[0].text);
+    if (text !== undefined) return text === content[0].text ? content : [{ ...content[0], text }];
+  }
+  return truncateTextBlocks(content, maxChars);
+}
+
+export function truncateContextResultMessages(messages: MaskableMessage[], maxChars: number = 800, nativeBudget?: NativeResultBudgeter): MaskableMessage[] {
   const limit = normalizedMaxChars(maxChars);
   return messages.map((message) => {
-    if (!isMaskableMessage(message)) return message;
-    const content = truncateTextBlocks(message.content, limit);
+    // Anthropic nests tool_result blocks in user messages. Do not truncate
+    // ordinary user text or change the existing observation-mask boundaries.
+    if (message.role === "user" && Array.isArray(message.content) && message.content.some((block) => block?.type === "tool_result")) {
+      const content = message.content.map((block) => block?.type === "tool_result"
+        ? { ...block, content: budgetResultContent(block.content, limit, block.tool_use_id, undefined, nativeBudget) }
+        : block);
+      return { ...message, content };
+    }
+    if (!isMaskableMessage(message) && message.role !== "tool") return message;
+    const content = message.role === "tool" || message.role === "toolResult"
+      ? budgetResultContent(message.content, limit, message.tool_call_id ?? message.toolCallId, message.name ?? message.toolName, nativeBudget)
+      : truncateTextBlocks(message.content, limit);
     return content === message.content ? message : { ...message, content };
   });
 }
 
-export function truncateResponsesInputResultItems(items: ResponsesInputItem[], maxChars: number = 800): ResponsesInputItem[] {
+export function truncateResponsesInputResultItems(items: ResponsesInputItem[], maxChars: number = 800, nativeBudget?: NativeResultBudgeter): ResponsesInputItem[] {
   const limit = normalizedMaxChars(maxChars);
   return items.map((item) => {
     if (item.type === "function_call_output") {
-      const output = truncateTextBlocks(item.output, limit);
+      const output = budgetResultContent(item.output, limit, item.call_id, undefined, nativeBudget);
       return output === item.output ? item : { ...item, output };
     }
     if (isResponsesBashResultUserItem(item)) {

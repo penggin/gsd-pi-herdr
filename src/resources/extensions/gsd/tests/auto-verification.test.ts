@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
 	_resolveVerificationTimeoutMsForTest,
 	_routeHostTechnicalFailureForTest,
@@ -8,6 +11,8 @@ import {
 import { DEFAULT_COMMAND_TIMEOUT_MS } from "../constants.ts";
 import { describeHostVerificationRationale } from "../verification-verdict.ts";
 import { cleanup, makeTempRepo } from "./test-utils.ts";
+import { buildEscalationArtifact } from "../escalation.ts";
+import { closeDatabase, getTask, insertMilestone, insertSlice, insertTask, openDatabase, setTaskEscalationPending } from "../gsd-db.ts";
 
 function createVerificationContext(currentUnit: { type: string; id: string } | null) {
 	return {
@@ -217,6 +222,158 @@ test("verification_timeout_ms unset stays 120s; set value is enforced (#1759)", 
 	assert.equal(_resolveVerificationTimeoutMsForTest(undefined), DEFAULT_COMMAND_TIMEOUT_MS);
 	assert.equal(_resolveVerificationTimeoutMsForTest({}), DEFAULT_COMMAND_TIMEOUT_MS);
 	assert.equal(_resolveVerificationTimeoutMsForTest({ verification_timeout_ms: 2500 }), 2500);
+});
+
+test("blocker-discovered completion pauses with the blocker surfaced instead of throwing (#2148)", async () => {
+	let paused = false;
+	let pauseMessage: string | undefined;
+	const session = {
+		basePath: process.cwd(),
+		canonicalProjectRoot: process.cwd(),
+		currentUnit: { type: "execute-task", id: "M001/S01/T01" },
+		lastTaskRecoveryAbortId: null,
+		pendingVerificationRetry: null,
+		verificationRetryCount: new Map<string, number>(),
+		verificationRetryFailureHashes: new Map<string, string>(),
+	};
+	const result = await runPostUnitVerification({
+		s: session,
+		ctx: { ui: { notify() {} } },
+		pi: {},
+		taskAuthority: {
+			readLatestTaskAttempt: () => ({
+				attemptId: "attempt-1",
+				resultId: "result-1",
+				resultFailureClass: "blocker-discovered",
+				resultSummary: "Plan requires gsd_requirement_* tools outside this unit's surface",
+				state: "settled",
+				outcome: "failed",
+				nextStage: "route",
+			}),
+			readTaskTechnicalVerdict: () => {
+				throw new Error("must not read host verdicts for a blocker attempt");
+			},
+			recordTaskTechnicalVerdict: () => {
+				throw new Error("must not record verdicts for a blocker attempt");
+			},
+			invalidateTaskTechnicalPass: () => {
+				throw new Error("must not invalidate for a blocker attempt");
+			},
+			routeTaskFailure: () => {
+				throw new Error("must not reroute a blocker attempt through task recovery");
+			},
+		},
+	} as never, async (_ctx, _pi, errorContext) => {
+		paused = true;
+		pauseMessage = errorContext?.message;
+	});
+
+	assert.equal(result, "pause");
+	assert.equal(paused, true);
+	assert.match(
+		pauseMessage ?? "",
+		/discovered blocker/,
+		`pause must name the discovered blocker, got: ${pauseMessage}`,
+	);
+	assert.match(
+		pauseMessage ?? "",
+		/Plan requires gsd_requirement_\* tools outside this unit's surface/,
+		`pause must surface the blocker description, got: ${pauseMessage}`,
+	);
+	assert.match(
+		pauseMessage ?? "",
+		/\/gsd auto/,
+		`pause must carry the resume instruction, got: ${pauseMessage}`,
+	);
+	assert.equal(session.lastTaskRecoveryAbortId, null, "a blocker pause is not a recovery abort");
+});
+
+for (const mismatch of [null, "milestoneId", "sliceId", "taskId"] as const) {
+	test(`blocker pause ${mismatch ? `ignores an escalation with mismatched ${mismatch}` : "shows a matching unresolved escalation"}`, async () => {
+		const basePath = mkdtempSync(join(tmpdir(), "gsd-blocker-escalation-scope-"));
+		mkdirSync(join(basePath, ".gsd"));
+		try {
+			openDatabase(":memory:");
+			insertMilestone({ id: "M001", title: "Milestone", status: "active" });
+			insertSlice({ id: "S01", milestoneId: "M001", title: "Slice" });
+			insertTask({ id: "T01", sliceId: "S01", milestoneId: "M001", title: "Task", status: "in_progress" });
+			const artifact = buildEscalationArtifact({
+				milestoneId: "M001", sliceId: "S01", taskId: "T01",
+				question: "Should this artifact decision be shown?",
+				options: [{ id: "A", label: "Proceed", tradeoffs: "Accept the change" }, { id: "B", label: "Wait", tradeoffs: "Delay the task" }],
+				recommendation: "B", recommendationRationale: "Need a decision", continueWithDefault: false,
+			});
+			if (mismatch) artifact[mismatch] = { milestoneId: "M002", sliceId: "S02", taskId: "T02" }[mismatch];
+			const artifactPath = join(basePath, "escalation.json");
+			writeFileSync(artifactPath, JSON.stringify(artifact));
+			setTaskEscalationPending("M001", "S01", "T01", artifactPath);
+			const taskBefore = getTask("M001", "S01", "T01");
+			let pauseMessage = "";
+			const forbidAuthorityWrite = () => { throw new Error("blocker display must not invoke verification/recovery authority"); };
+			const result = await runPostUnitVerification({
+				s: {
+					basePath, canonicalProjectRoot: basePath,
+					currentUnit: { type: "execute-task", id: "M001/S01/T01" },
+					lastTaskRecoveryAbortId: null, pendingVerificationRetry: null,
+					verificationRetryCount: new Map(), verificationRetryFailureHashes: new Map(),
+				},
+				ctx: { ui: { notify() {} } }, pi: {},
+				taskAuthority: {
+					readLatestTaskAttempt: () => ({
+						attemptId: "attempt-blocked", resultId: "result-blocked", resultFailureClass: "blocker-discovered",
+						resultSummary: "Current task needs an operator decision", state: "settled", outcome: "failed", nextStage: "route",
+					}),
+					readTaskTechnicalVerdict: forbidAuthorityWrite, recordTaskTechnicalVerdict: forbidAuthorityWrite,
+					invalidateTaskTechnicalPass: forbidAuthorityWrite, routeTaskFailure: forbidAuthorityWrite,
+				},
+			} as never, async (_ctx, _pi, errorContext) => { pauseMessage = errorContext?.message ?? ""; });
+			assert.equal(result, "pause");
+			assert.match(pauseMessage, /Current task needs an operator decision/);
+			assert.match(pauseMessage, /Task M001\/S01\/T01/);
+			if (mismatch) {
+				assert.ok(!pauseMessage.includes(artifact.question), "a stale artifact must not display another task's question");
+				assert.ok(!pauseMessage.includes("Resolve with:"), "a stale artifact must not expose its resolve command");
+			} else {
+				assert.ok(pauseMessage.includes(artifact.question));
+				assert.match(pauseMessage, /Resolve with: \/gsd escalate resolve T01/);
+			}
+			assert.deepEqual(getTask("M001", "S01", "T01"), taskBefore, "display cannot update task lifecycle/escalation state");
+		} finally {
+			closeDatabase();
+			rmSync(basePath, { recursive: true, force: true });
+		}
+	});
+}
+
+test("non-blocker failed attempt still throws at the verify gate (#2148)", async () => {
+	const result = runPostUnitVerification({
+		s: {
+			basePath: process.cwd(),
+			canonicalProjectRoot: process.cwd(),
+			currentUnit: { type: "execute-task", id: "M001/S01/T01" },
+			lastTaskRecoveryAbortId: null,
+			pendingVerificationRetry: null,
+			verificationRetryCount: new Map<string, number>(),
+			verificationRetryFailureHashes: new Map<string, string>(),
+		},
+		ctx: { ui: { notify() {} } },
+		pi: {},
+		taskAuthority: {
+			readLatestTaskAttempt: () => ({
+				attemptId: "attempt-1",
+				resultId: "result-1",
+				resultFailureClass: "executor-result-failed",
+				state: "settled",
+				outcome: "failed",
+				nextStage: "route",
+			}),
+		},
+	} as never, async () => {});
+
+	await assert.rejects(
+		result,
+		/Host verification requires the latest succeeded canonical Attempt at the verify stage/,
+	);
 });
 
 test("identical gate failures count 1/2, then 2/2, then exhaust into a durable abort (#1971)", async (t) => {

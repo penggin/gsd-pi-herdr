@@ -56,11 +56,12 @@ const EXECUTION_TOOL_NAMES = new Set([
   "exec_command",
   "functions.exec_command",
   "gsd_exec",
-  "gsd_exec_search",
   "gsd_uat_exec",
   "powershell",
 ]);
-const MCP_EXECUTION_TOOL_RE = /^mcp__.+__gsd_(?:uat_)?exec(?:_search)?$/;
+// Log retrieval (gsd_exec_search in every mode) is not execution evidence,
+// even when its result contains an earlier successful run.
+const MCP_EXECUTION_TOOL_RE = /^mcp__.+__gsd_(?:uat_)?exec$/;
 
 // ─── Module State ───────────────────────────────────────────────────────────
 
@@ -231,7 +232,7 @@ export function recordToolCall(toolCallId: string, toolName: string, input: Reco
       kind: "bash",
       toolCallId,
       // gsd_exec / gsd_uat_exec carry the script body in `script` (or `code`);
-      // bash-style tools use `command`/`cmd`; gsd_exec_search uses `query`.
+      // bash-style tools use `command`/`cmd`.
       command: formatExecutionEvidenceCommand(toolName, input),
       exitCode: -1,
       outputSnippet: "",
@@ -264,12 +265,12 @@ function pickString(input: Record<string, unknown>, ...keys: string[]): string {
 
 function canonicalExecutionToolLabel(toolName: string): string {
   const normalized = toolName.trim().toLowerCase();
-  const mcpMatch = normalized.match(/^mcp__.+__(gsd_(?:uat_)?exec(?:_search)?)$/);
+  const mcpMatch = normalized.match(/^mcp__.+__(gsd_(?:uat_)?exec)$/);
   return mcpMatch?.[1] ?? normalized;
 }
 
 function formatExecutionEvidenceCommand(toolName: string, input: Record<string, unknown>): string {
-  const body = pickString(input, "command", "script", "cmd", "code", "query");
+  const body = pickString(input, "command", "script", "cmd", "code");
   const tool = canonicalExecutionToolLabel(toolName);
   const purpose = pickString(input, "purpose");
   const runtime = pickString(input, "runtime").toLowerCase();
@@ -298,8 +299,35 @@ export function recordToolResult(
   if (entry.kind === "bash") {
     const text = extractResultText(result);
     entry.outputSnippet = text.slice(0, 500);
-    entry.exitCode = resolveExitCode(text, isError);
+    entry.exitCode = resolveStructuredExecExitCode(toolName, result, isError) ?? resolveExitCode(text, isError);
   }
+}
+
+/**
+ * Current GSD executors carry mechanical state outside the selected log text.
+ * MCP mirrors those details into structuredContent. A log can itself print an
+ * exit-code marker, so it must never override this matching executor envelope.
+ * Text-only historical results retain the existing fallback below.
+ */
+function resolveStructuredExecExitCode(toolName: string, result: unknown, isError: boolean): number | undefined {
+  const operation = canonicalExecutionToolLabel(toolName);
+  if (operation !== "gsd_exec" && operation !== "gsd_uat_exec") return undefined;
+  if (!result || typeof result !== "object") return undefined;
+  const record = result as Record<string, unknown>;
+  for (const candidate of [record.details, record.structuredContent]) {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) continue;
+    const status = candidate as Record<string, unknown>;
+    if (status.operation !== operation) continue;
+    const code = status.exit_code;
+    // -1 is the existing unknown/non-success sentinel, not an invented process
+    // exit code. Null/missing state and interrupted exit 0 cannot prove a pass.
+    if (typeof code !== "number" || !Number.isSafeInteger(code)) return -1;
+    if (code !== 0) return code;
+    if (isError || status.timed_out === true || status.aborted === true || status.force_resolved === true
+      || (status.signal !== undefined && status.signal !== null)) return -1;
+    return 0;
+  }
+  return undefined;
 }
 
 /**

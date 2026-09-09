@@ -3,6 +3,18 @@
 
 const LEASE_HELD_RE = /^Milestone\s+(\S+)\s+is held by worker\s+(.+?)\s+until\s+(.+?)\.?$/;
 
+/**
+ * Keep repeated claim rejections in one liveness signature when a holder's
+ * heartbeat changes only expiresAt. Retain both milestone and worker identity;
+ * other rejection reasons are already stable and pass through unchanged.
+ */
+export function stableClaimSignature(reason: string): string {
+  const match = reason.match(LEASE_HELD_RE);
+  if (!match) return reason;
+  const [, milestoneId, workerId] = match;
+  return `Milestone ${milestoneId} is held by worker ${workerId}`;
+}
+
 export interface LeaseConflictNoticeInput {
   milestoneId?: string | null;
   unitType: string;

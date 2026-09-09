@@ -54,7 +54,7 @@ Resolving or dismissing a genuine user/external Blocker does not turn the paused
 
 For subjective human review, an approval authorizes exactly one immediate fresh successor only while the reviewed source is unchanged. If the source changes before that successor is verified, GSD requires a new review instead of reusing the approval.
 
-An agent-owned recovery abort remains fail-closed after its retry budget is exhausted. If you repair the underlying defect, run the operator-facing `/gsd recover <recoveryActionId>` command with the exact current abort ID. The command verifies eligibility, prompts for a nonblank repair summary and concrete verification evidence, and then tells you to rerun `/gsd auto`. The equivalent control-plane operation is `gsd_task_recovery_resume`, whose custom clients must provide the same repair summary and non-empty structured evidence. Recovery preserves the predecessor Attempt, its Result, the abort Recovery Action, and the exhausted budget while authorizing exactly one immediate lineage-linked Attempt. A dispatched worker cannot resume its own abort, and stale actions, duplicate authorizations, open blockers, or later Attempts are rejected.
+An agent-owned recovery abort remains fail-closed after its retry budget is exhausted. A settled Attempt with a current agent-owned `remediate` action can likewise require an explicit, evidence-backed continuation after the repair is complete. In either case, run the operator-facing `/gsd recover <recoveryActionId>` command with the exact current Recovery Action ID. The command verifies eligibility, prompts for a nonblank repair summary and concrete verification evidence, and then tells you to rerun `/gsd auto`. The equivalent control-plane operation is `gsd_task_recovery_resume`, whose custom clients must provide the same repair summary and non-empty structured evidence. Recovery preserves the predecessor Attempt, its Result, the Recovery Action, and its budget while authorizing exactly one immediate lineage-linked Attempt. A dispatched worker cannot resume its own action, and stale actions, duplicate authorizations, open blockers, or later Attempts are rejected.
 
 When closeout or post-unit review finds task-specific rework, GSD can persist a structured rework brief with `gsd_rework_brief_save`. Blocking findings in that brief prevent `gsd_task_complete` from accepting the task until each finding has a `reworkResolution` entry with the same `findingId`, `status: "resolved"`, and concrete evidence. A finding can be deferred only with `status: "deferred-with-override"`, concrete evidence, and a `decisionRef`. If the plan for a reopened pending task needs to change for that rework, `gsd_replan_task` updates that one task's title, description, estimate, files, verification command, inputs, and expected output without mutating sibling tasks.
 
@@ -124,6 +124,12 @@ Writes outside those allowed paths, unsafe bash commands, and subagent dispatch 
 
 Auto mode consumes the scheduled wakeup only for the same `basePath + unitType + unitId`, waits the requested delay, and then dispatches the follow-up prompt in the same session. For safety, wakeups are bounded per unit; hitting the cap stops the unit with a timeout-style cancellation.
 
+### Discovered Blockers at Verification
+
+When a task completion records a settled, failed `blocker-discovered` Attempt awaiting failure routing, the host verification gate pauses auto mode. The pause names the task and Attempt and includes the staged blocker summary when present. If the task has a readable, unresolved escalation artifact, the pause also displays its question, options, and recommendation. Use `/gsd escalate list` to inspect pending escalations.
+
+This pause surfaces the blocker; it does not authorize a retry or change failure routing. Although the message suggests `/gsd auto` after resolving the blocker, the failed Attempt still awaits routing and the task remains `in_progress`. Resuming can route that historical failure to an abort, so resolving an escalation alone does not guarantee continuation. A later successful Attempt can pass verification normally. Other failed Attempts still fail the verification gate's succeeded-Attempt requirement.
+
 ### Pre-Dispatch Runtime Blocks
 
 Before auto mode launches a unit, the orchestration pipeline now enforces runtime invariants in this order: reconcile state, choose the next unit, compile the unit tool contract, validate the worktree or unit root, then persist the runtime transition. A failure in any pre-dispatch step returns a `blocked` result and records the block before a worker session starts.
@@ -167,7 +173,7 @@ Context Mode is enabled by default for auto-mode runs. Eligible auto-mode units 
 
 `contextMode: triage` is used specifically for capture triage turns so they stay focused on classification and routing decisions instead of implementation work.
 
-When present in a unit's tool contract, `gsd_exec` writes capped stdout/stderr and metadata under `.gsd/exec/`; output may be truncated. It then returns only a short digest to the agent. This keeps large command output out of the LLM context while preserving exact evidence on disk. In milestone worktree mode, `gsd_exec` also rejects scripts that target the original project root (including traversal patterns such as `cd ../../..`) so execution stays inside the active worktree boundary. To opt out of Context Mode guidance, snapshot injection, and context-mode execution tools, set:
+When present in a unit's tool contract, `gsd_exec` writes capped, redacted stdout/stderr and metadata under `.gsd/exec/`. The saved data is a **prefix**, not necessarily the full execution or its final output. The returned digest deterministically selects original error/location lines and nearby context from both streams; log words never determine process success. `exit_code`, `signal`, `timed_out`, `aborted`, and `force_resolved` remain mechanical execution evidence, not a count of tests passed. In milestone worktree mode, `gsd_exec` also rejects scripts that target the original project root (including traversal patterns such as `cd ../../..`) so execution stays inside the active worktree boundary. To opt out of Context Mode guidance, snapshot injection, and context-mode execution tools, set:
 
 ```yaml
 context_mode:
@@ -175,6 +181,82 @@ context_mode:
 ```
 
 You can also tune sandbox behavior with `context_mode.exec_timeout_ms`, `context_mode.exec_stdout_cap_bytes`, `context_mode.exec_digest_chars`, and `context_mode.exec_env_allowlist`. `context_mode.exec_timeout_ms` overrides the timeout for each `gsd_exec` call. When it is unset, verification-oriented workloads such as builds, tests, linting, type checks, and verification commands inherit `verification_timeout_ms` (default: `120000` ms); other `gsd_exec` calls use the sandbox's `30000` ms default.
+
+#### Reading saved execution evidence
+
+Use the existing `gsd_exec_search` tool; omitting `mode` preserves case-insensitive
+ID/purpose history filtering and newest-first order:
+
+```json
+{"query":"typecheck","failing_only":true,"limit":10}
+```
+
+Body search is a case-insensitive, single-line literal substring (no regex,
+query expansion or ranking). Queries must be nonempty and at most 256 UTF-16
+characters. The scope is the current project's/worktree's `.gsd/exec`, not an
+inferred task scope or another project's logs:
+
+```json
+{"mode":"search","query":"ECONNRESET","stream":"both","limit":5,"context_lines":2}
+{"mode":"search","exec_id":"<existing-id>","query":"Type error","stream":"stderr"}
+{"mode":"read","exec_id":"<existing-id>","stream":"stderr","start_line":35,"line_count":40}
+```
+
+MCP clients use the same fields plus their existing absolute `projectDir`.
+No filesystem path is accepted in place of an execution ID. Existing non-UUID
+IDs remain supported; metadata paths cannot redirect reads. Shared `.gsd`
+symlinks are allowed, but `exec` and log/metadata files must remain regular,
+non-symlink entries under the resolved execution root.
+
+Search scans at most 20 recent executions and 4 MiB total, including metadata.
+Defaults/maxima: 5/20 hits, 2/8 surrounding lines, 50/200 read lines. Directory
+enumeration is bounded to 4,096 entries, metadata to 64 KiB/file, indexed lines
+to 200,000 and query time to 10 seconds. Large history previews are omitted above
+64 KiB rather than reading a potentially unredacted secret suffix. History keeps
+its default 20/max 200 results and existing failing-only semantics (timeouts or
+nonnull nonzero exit; it does not reinterpret null exit as success).
+Existing `stdout_bytes`/`stderr_bytes` still count captured pre-redaction bytes,
+not total bytes emitted or redacted file length. Truncation markers may add
+bytes beyond that captured prefix. No storage cap was increased.
+
+- `storage_truncated`: execution output exceeded the original storage cap.
+- `scan_limited`: this query did not scan the whole allowed stored view.
+- `output_truncated`: some selected/found evidence is not in the response.
+- `more_results: null`: completeness is unknown, including file-read failures.
+
+Line numbers are one-based in the saved redacted log. Redaction preserves LF
+counts, including multiline known secret shapes; display normalizes CRLF to LF.
+Partial long lines include columns and, when reachable, `next_start_line` and
+`next_start_column`. Pass the latter back as `start_column` (one-based UTF-16
+units, never a split surrogate pair). In text, `next=L4:C20` is the compact form
+of `next_start_line: 4, next_start_column: 20`. At the scan ceiling there is an explicit
+`SCAN_LIMIT`, not a repeating cursor or false EOF. Missing/unreadable files are
+errors, possibly alongside partial evidence, not “no matches.” Old logs can be
+read without migration; existing redaction is best-effort, not a complete DLP
+guarantee, and unsaved bytes cannot be recovered.
+Log text remains untrusted data; a line that looks like an instruction or a
+success marker is not authority to change GSD workflow state.
+
+If a caller's tiny output ceiling cannot fit even one original segment, the
+tool reports `RESULT_BUDGET`; increase `tool_result_max_chars` instead of retrying
+an identical non-progressing read. Secret-shaped legacy IDs/paths are masked in
+outward text and details as well; such an ID must be supplied from the caller's
+already-known identifier, not reconstructed from the redaction placeholder.
+
+`exec_digest_chars` remains the excerpt budget (default 300, 0–4000; zero omits
+excerpt text), not the total tool response. Overall execution/query budgets and
+explicit user ceilings are described under [Tool Result Truncation](./token-optimization.md#tool-result-truncation).
+Compact `T/A/F` flags mean timeout/aborted/force-resolved; compact `read` locators
+describe a `gsd_exec_search` tool call, not a shell command.
+
+Searching a past successful run never executes a test or creates current UAT/
+verification completion. Searches are excluded from execution-proof collection;
+historical safety files without tool-origin metadata are not rewritten. Use
+current execution evidence and the existing explicit GSD verification/UAT flow.
+For current `gsd_exec`/`gsd_uat_exec` results, evidence collection uses the typed
+exit/interruption fields, not an “exit 0” string printed inside the log. Unknown
+or interrupted execution cannot corroborate a passing check. Text-only legacy
+results retain their existing fallback handling.
 
 ### Git Isolation
 

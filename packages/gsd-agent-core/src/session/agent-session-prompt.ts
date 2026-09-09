@@ -22,6 +22,9 @@ export class AgentSessionPromptModule {
 	constructor(readonly host: AgentSessionHost) {}
 
 	async runAgentPrompt(messages: AgentMessage | AgentMessage[]): Promise<void> {
+		// A new explicit run gets one overflow recovery. Internal continue() calls
+		// and their queued/synthetic messages must not replenish that allowance.
+		this.host._overflowRecoveryAttempted = false;
 		const previousLatencyMark = this.host.agent.latencyMark;
 		this.host.agent.latencyMark = (phase, data) => {
 			previousLatencyMark?.(phase, data);
@@ -508,6 +511,7 @@ export class AgentSessionPromptModule {
 
 	isRetryableError(message: AssistantMessage): boolean {
 		if (message.stopReason !== "error" || !message.errorMessage) return false;
+		if (message.errorMessage.startsWith("[length-halt]")) return false;
 
 		// Context overflow is handled by compaction, not retry
 		const contextWindow = this.host.model?.contextWindow ?? 0;

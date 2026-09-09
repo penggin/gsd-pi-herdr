@@ -45,7 +45,7 @@ export interface TaskExecutionCutoverDeps {
   readTaskAttempt(attemptId: string): TaskExecutionAttemptSnapshot | null;
   readTaskRecoveryRoute(attemptId: string): Pick<
     TaskRecoveryRouteSnapshot,
-    "recoveryActionId" | "action" | "recoveryOwner" | "resumeAuthorized"
+    "recoveryActionId" | "action" | "recoveryOwner" | "resumeAuthorized" | "resumeEligibility"
   > | null;
   readTaskTechnicalVerdict(attemptId: string): TaskTechnicalVerdictSnapshot | null;
   claimTaskAttempt(input: ClaimTaskAttemptInput): ClaimTaskAttemptReceipt;
@@ -468,11 +468,23 @@ export async function runWithTaskExecutionAttempt(
   run: () => Promise<UnitPhaseResult>,
   deps: TaskExecutionCutoverDeps,
 ): Promise<UnitPhaseResult> {
+  return runTaskExecutionAttempt(input, run, deps);
+}
+
+const MAX_RECOVERY_SUCCESSOR_REFRESHES = 3;
+
+async function runTaskExecutionAttempt(
+  input: TaskExecutionCutoverInput,
+  run: () => Promise<UnitPhaseResult>,
+  deps: TaskExecutionCutoverDeps,
+  refreshedPredecessor?: TaskExecutionAttemptSnapshot,
+  recoveryRefreshes = 0,
+): Promise<UnitPhaseResult> {
   if (input.unitType !== "execute-task") return run();
 
   const task = parseTaskIdentity(input.unitId);
   const identity = requireTaskClaimIdentity(input);
-  const predecessor = deps.readLatestTaskAttempt(task);
+  const predecessor = refreshedPredecessor ?? deps.readLatestTaskAttempt(task);
   if (isTaskAttemptAwaitingVerification(predecessor)) {
     return { action: "next", data: {} };
   }
@@ -495,12 +507,32 @@ export async function runWithTaskExecutionAttempt(
       const terminalRecovery = deps.readTaskRecoveryRoute(predecessor.attemptId);
       // Only a live route head carries an operative abort; a lineage closed by
       // task reopen is history and must not advertise a dead resume (#1948).
+      // A recorded resume may have been consumed by a successor, or may have
+      // lost its authority. Refresh before advertising another resume (#2112).
       if (
         predecessor.nextStage === "route" &&
         terminalRecovery?.recoveryOwner === "agent" &&
         terminalRecovery.action === "abort" &&
         !terminalRecovery.resumeAuthorized
       ) {
+        if (terminalRecovery.resumeEligibility?.failedGuard === "already-resumed") {
+          // Repeated concurrent successors must not cause unbounded re-entry.
+          // Evaluate the captured snapshot so another read cannot discard it.
+          if (recoveryRefreshes >= MAX_RECOVERY_SUCCESSOR_REFRESHES) {
+            return {
+              action: "break",
+              reason: `Task recovery changed across ${MAX_RECOVERY_SUCCESSOR_REFRESHES} successor refreshes. Rerun /gsd auto to inspect the latest Task Attempt.`,
+            };
+          }
+          const refreshed = deps.readLatestTaskAttempt(task);
+          if (refreshed && refreshed.attemptId !== predecessor.attemptId) {
+            return runTaskExecutionAttempt(input, run, deps, refreshed, recoveryRefreshes + 1);
+          }
+          return {
+            action: "break",
+            reason: "Task recovery resume is already recorded, but no newer Task Attempt could be read. Inspect the current recovery authority and rerun /gsd auto.",
+          };
+        }
         return taskRecoveryAbortResult(terminalRecovery.recoveryActionId);
       }
       if (predecessor.nextStage === "route") {

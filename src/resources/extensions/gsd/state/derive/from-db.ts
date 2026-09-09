@@ -11,21 +11,11 @@ import type { ActiveRef, GSDState, MilestoneRegistryEntry, Phase } from '../../t
 import { isClosedStatus, isDeferredStatus } from '../../status-guards.js';
 import { parseProject } from '../../schemas/parsers.js';
 import {
-  queryDecisions,
-  queryDecisionsFromMemories,
-} from '../../context-store.js';
-import {
-  getAllMilestones,
-  getArtifact,
-  getMilestoneScopedArtifacts,
-  getPlanMilestoneRecoveryBlock,
-  getPendingGateCountForTurn,
-  getReplanHistory,
-  getRequirementCounts,
-  getSlice,
-  getSliceTasks,
-  getSlicesByMilestoneIds,
-} from '../../gsd-db.js';
+  captureStateDerivationScope,
+  createStateDerivationReader,
+  type StateDerivationReader,
+  type StateDerivationScope,
+} from './reader.js';
 import type { MilestoneRow } from '../../db-milestone-artifact-rows.js';
 import type { SliceRow, TaskRow } from '../../db-task-slice-rows.js';
 import {
@@ -41,14 +31,11 @@ import {
   routeBlockerCategory,
 } from '../../out-of-surface-blocker.js';
 import { detectPendingEscalation } from '../../escalation.js';
-import { countUnmappedActiveRequirements, formatCompletePhaseNextAction } from '../../requirements-backlog.js';
-import { logWarning } from '../../workflow-logger.js';
+import { formatCompletePhaseNextAction } from '../../requirements-backlog.js';
 import {
   buildDbUnavailableState,
   ensureExistingWorkflowDbOpen,
-  getRequestedMilestoneLock,
 } from './db-open.js';
-import { resolveMilestoneValidationVerdict } from '../../milestone-validation-verdict.js';
 
 const isStatusDone = isClosedStatus;
 
@@ -82,6 +69,7 @@ function buildProgress(context: DerivedStateContext): NonNullable<GSDState["prog
 }
 
 function buildDerivedState(
+  reader: StateDerivationReader,
   context: DerivedStateContext,
   phase: Phase,
   nextAction: string,
@@ -92,7 +80,7 @@ function buildDerivedState(
     activeSlice: context.activeSlice ?? null,
     activeTask: context.activeTask ?? null,
     phase,
-    recentDecisions: loadRecentDecisionsFromDb(),
+    recentDecisions: reader.recentDecisions(),
     blockers: options.blockers ?? [],
     nextAction,
     ...(options.lastCompletedMilestone !== undefined
@@ -130,13 +118,6 @@ function buildCompletenessSet(basePath: string, milestones: MilestoneRow[]) {
   return { completeMilestoneIds, parkedMilestoneIds };
 }
 
-function loadRecentDecisionsFromDb(): string[] {
-  const fromMemories = queryDecisionsFromMemories();
-  const rows = fromMemories.length > 0 ? fromMemories : queryDecisions();
-  return rows.slice(-5).map(
-    (d) => `${d.id} (${d.when_context}): ${d.decision} -> ${d.choice}`,
-  );
-}
 
 // The IDs the user actually committed to as their roadmap, read from the
 // PROJECT.md artifact stored in the DB. A content-less queued milestone that
@@ -147,18 +128,19 @@ function loadRecentDecisionsFromDb(): string[] {
 // and must not be promoted. Returns an empty set when the PROJECT artifact is
 // absent or unparsable, which keeps phantom-only repos out of the promotion
 // path. Disk PROJECT.md is a projection and is never opened here.
-function loadProjectSequenceIds(): Set<string> {
-  const project = getArtifact("PROJECT.md");
+function loadProjectSequenceIds(reader: StateDerivationReader): Set<string> {
+  const project = reader.getArtifact("PROJECT.md");
   if (!project?.full_content) return new Set<string>();
   try {
     return new Set(parseProject(project.full_content).milestones.map((m) => m.id));
   } catch (e) {
-    logWarning('state', `failed to parse PROJECT.md milestone sequence: ${(e as Error).message}`);
+    reader.warn(`failed to parse PROJECT.md milestone sequence: ${(e as Error).message}`);
     return new Set<string>();
   }
 }
 
-async function buildRegistryAndFindActive(
+function buildRegistryAndFindActive(
+  reader: StateDerivationReader,
   milestones: MilestoneRow[],
   completeMilestoneIds: Set<string>,
   parkedMilestoneIds: Set<string>
@@ -170,12 +152,12 @@ async function buildRegistryAndFindActive(
   let activeMilestoneHasDraft = false;
   let firstPromotableQueuedShell: { id: string; title: string; deps: string[]; hasDraftContext: boolean } | null = null;
 
-  const projectSequenceIds = loadProjectSequenceIds();
+  const projectSequenceIds = loadProjectSequenceIds(reader);
 
   const activeMilestoneIds = milestones
     .filter((m) => !parkedMilestoneIds.has(m.id))
     .map((m) => m.id);
-  const slicesByMilestone = getSlicesByMilestoneIds(activeMilestoneIds);
+  const slicesByMilestone = reader.getSlicesByMilestoneIds(activeMilestoneIds);
 
   for (const m of milestones) {
     if (parkedMilestoneIds.has(m.id)) {
@@ -197,7 +179,7 @@ async function buildRegistryAndFindActive(
     const allSlicesDone = slices.length > 0 && slices.every(s => isStatusDone(s.status));
 
     const title = stripMilestonePrefix(m.title) || m.id;
-    const artifacts = getMilestoneScopedArtifacts(m.id);
+    const artifacts = reader.getMilestoneScopedArtifacts(m.id);
     const hasContext = artifacts.some((a) => a.artifact_type === "CONTEXT");
     const hasDraftContext = !hasContext && artifacts.some((a) => a.artifact_type === "CONTEXT-DRAFT");
     const readiness = classifyMilestoneReadiness({
@@ -275,6 +257,7 @@ async function buildRegistryAndFindActive(
 }
 
 function handleNoActiveMilestone(
+  reader: StateDerivationReader,
   registry: MilestoneRegistryEntry[],
   requirements: any,
   milestoneProgress: { done: number, total: number }
@@ -297,7 +280,7 @@ function handleNoActiveMilestone(
     // Genuine dependency block: at least one pending milestone is waiting on an
     // unmet dependency, so directing the user at those deps is accurate.
     if (blockerDetails.length > 0) {
-      return buildDerivedState(context, 'blocked', 'Resolve milestone dependencies before proceeding.', {
+      return buildDerivedState(reader, context, 'blocked', 'Resolve milestone dependencies before proceeding.', {
         blockers: blockerDetails,
       });
     }
@@ -309,7 +292,7 @@ function handleNoActiveMilestone(
     // path (#1524). Point the user at the doctor (which now flags these as
     // orphan milestone rows) or at planning a real milestone.
     const phantomIds = pendingEntries.map(e => e.id).join(', ');
-    return buildDerivedState(
+    return buildDerivedState(reader,
       context,
       'pre-planning',
       `Found queued milestone(s) with no planning content and no dependencies (${phantomIds}) — likely orphaned rows. Run /gsd doctor fix to repair them, or /gsd to plan a milestone.`,
@@ -318,7 +301,7 @@ function handleNoActiveMilestone(
 
   if (parkedEntries.length > 0) {
     const parkedIds = parkedEntries.map(e => e.id).join(', ');
-    return buildDerivedState(
+    return buildDerivedState(reader,
       context,
       'pre-planning',
       `All remaining milestones are parked (${parkedIds}). Run /gsd unpark <id> or create a new milestone.`,
@@ -326,7 +309,7 @@ function handleNoActiveMilestone(
   }
 
   if (registry.length === 0) {
-    return buildDerivedState(
+    return buildDerivedState(reader,
       { ...context, registry: [], milestoneProgress: { done: 0, total: 0 } },
       'pre-planning',
       'No milestones found. Run /gsd to create one.',
@@ -334,22 +317,23 @@ function handleNoActiveMilestone(
   }
 
   const lastEntry = registry[registry.length - 1];
-  const unmappedActive = countUnmappedActiveRequirements();
+  const unmappedActive = reader.countUnmappedActiveRequirements();
   const completionNote = formatCompletePhaseNextAction(unmappedActive);
-  return buildDerivedState(context, 'complete', completionNote, {
+  return buildDerivedState(reader, context, 'complete', completionNote, {
     lastCompletedMilestone: lastEntry ? { id: lastEntry.id, title: lastEntry.title } : null,
   });
 }
 
-async function handleAllSlicesDone(
+function handleAllSlicesDone(
+  reader: StateDerivationReader,
   basePath: string,
   activeMilestone: ActiveRef,
   registry: MilestoneRegistryEntry[],
   requirements: any,
   milestoneProgress: { done: number, total: number },
   sliceProgress: { done: number, total: number }
-): Promise<GSDState> {
-  const verdict = await resolveMilestoneValidationVerdict(basePath, activeMilestone.id);
+): GSDState {
+  const verdict = reader.readMilestoneValidationVerdict(activeMilestone.id);
 
   const context: DerivedStateContext = {
     activeMilestone,
@@ -360,7 +344,7 @@ async function handleAllSlicesDone(
   };
 
   if (verdict === undefined) {
-    return buildDerivedState(
+    return buildDerivedState(reader,
       context,
       'validating-milestone',
       `Validate milestone ${activeMilestone.id} before completion.`,
@@ -371,7 +355,7 @@ async function handleAllSlicesDone(
   // needs-remediation — remediation cannot progress without new slices.
   // Return blocked instead of re-dispatching validate-milestone (#4506).
   if (verdict === 'needs-attention') {
-    return buildDerivedState(
+    return buildDerivedState(reader,
       context,
       'blocked',
       `Resolve ${activeMilestone.id} validation attention before proceeding.`,
@@ -380,7 +364,7 @@ async function handleAllSlicesDone(
   }
 
   if (verdict === 'needs-remediation') {
-    return buildDerivedState(
+    return buildDerivedState(reader,
       context,
       'blocked',
       `Resolve ${activeMilestone.id} remediation before proceeding.`,
@@ -388,25 +372,24 @@ async function handleAllSlicesDone(
     );
   }
 
-  return buildDerivedState(
+  return buildDerivedState(reader,
     context,
     'completing-milestone',
     `All slices complete in ${activeMilestone.id}. Write milestone summary.`,
   );
 }
 
-function resolveSliceDependencies(activeMilestoneSlices: SliceRow[]): { activeSlice: ActiveRef | null, activeSliceRow: SliceRow | null } {
+function resolveSliceDependencies(reader: StateDerivationReader, activeMilestoneSlices: SliceRow[], sliceLock?: string): { activeSlice: ActiveRef | null, activeSliceRow: SliceRow | null } {
   const doneSliceIds = new Set(
     activeMilestoneSlices.filter(s => isStatusDone(s.status)).map(s => s.id)
   );
 
-  const sliceLock = process.env.GSD_PARALLEL_WORKER ? process.env.GSD_SLICE_LOCK : undefined;
   if (sliceLock) {
     const lockedSlice = activeMilestoneSlices.find(s => s.id === sliceLock);
     if (lockedSlice) {
       return { activeSlice: { id: lockedSlice.id, title: lockedSlice.title }, activeSliceRow: lockedSlice };
     } else {
-      logWarning("state", `GSD_SLICE_LOCK=${sliceLock} not found in active slices — worker has no assigned work`);
+      reader.warn(`GSD_SLICE_LOCK=${sliceLock} not found in active slices — worker has no assigned work`);
       return { activeSlice: null, activeSliceRow: null };
     }
   }
@@ -422,7 +405,7 @@ function resolveSliceDependencies(activeMilestoneSlices: SliceRow[]): { activeSl
   return { activeSlice: null, activeSliceRow: null };
 }
 
-async function detectBlockers(basePath: string, milestoneId: string, sliceId: string, tasks: TaskRow[]): Promise<string | null> {
+function detectBlockers(basePath: string, milestoneId: string, sliceId: string, tasks: TaskRow[]): string | null {
   const completedTasks = tasks.filter(t => isStatusDone(t.status));
   for (const ct of completedTasks) {
     if (ct.blocker_discovered) {
@@ -432,8 +415,8 @@ async function detectBlockers(basePath: string, milestoneId: string, sliceId: st
   return null;
 }
 
-function checkReplanTrigger(basePath: string, milestoneId: string, sliceId: string): boolean {
-  const sliceRow = getSlice(milestoneId, sliceId);
+function checkReplanTrigger(reader: StateDerivationReader, basePath: string, milestoneId: string, sliceId: string): boolean {
+  const sliceRow = reader.getSlice(milestoneId, sliceId);
   return !!sliceRow?.replan_triggered_at;
 }
 
@@ -445,17 +428,26 @@ export async function deriveStateFromDb(
     return buildDbUnavailableState();
   }
 
-  const requirements = getRequirementCounts();
+  return deriveStateFromReader(basePath, createStateDerivationReader());
+}
 
-  const allMilestones = getAllMilestones();
+/** Shared synchronous projection; all reads use the supplied reader and scope. */
+export function deriveStateFromReader(
+  basePath: string,
+  reader: StateDerivationReader,
+  scope: StateDerivationScope = captureStateDerivationScope(),
+): GSDState {
+  const requirements = reader.getRequirementCounts();
 
-  const milestoneLock = getRequestedMilestoneLock();
+  const allMilestones = reader.getAllMilestones();
+
+  const milestoneLock = scope.milestoneId;
   const milestones = milestoneLock
     ? allMilestones.filter(m => m.id === milestoneLock)
     : allMilestones;
 
   if (milestones.length === 0) {
-    return buildDerivedState(
+    return buildDerivedState(reader,
       {
         activeMilestone: null,
         registry: [],
@@ -469,7 +461,7 @@ export async function deriveStateFromDb(
 
   const { completeMilestoneIds, parkedMilestoneIds } = buildCompletenessSet(basePath, milestones);
   
-  const registryContext = await buildRegistryAndFindActive(milestones, completeMilestoneIds, parkedMilestoneIds);
+  const registryContext = buildRegistryAndFindActive(reader, milestones, completeMilestoneIds, parkedMilestoneIds);
   const { registry, activeMilestone, activeMilestoneSlices, activeMilestoneHasDraft } = registryContext;
   
   const milestoneProgress = {
@@ -478,13 +470,13 @@ export async function deriveStateFromDb(
   };
 
   if (!activeMilestone) {
-    return handleNoActiveMilestone(registry, requirements, milestoneProgress);
+    return handleNoActiveMilestone(reader, registry, requirements, milestoneProgress);
   }
 
   if (activeMilestoneSlices.length === 0) {
-    const planningBlocker = getPlanMilestoneRecoveryBlock(activeMilestone.id);
+    const planningBlocker = reader.getPlanMilestoneRecoveryBlock(activeMilestone.id);
     if (planningBlocker) {
-      return buildDerivedState(
+      return buildDerivedState(reader,
         { activeMilestone, registry, requirements, milestoneProgress },
         'blocked',
         `Milestone ${activeMilestone.id} planning is blocked. Resolve the planning failure before resuming auto-mode.`,
@@ -495,7 +487,7 @@ export async function deriveStateFromDb(
     const nextAction = activeMilestoneHasDraft
       ? `Discuss draft context for milestone ${activeMilestone.id}.`
       : `Plan milestone ${activeMilestone.id}.`;
-    return buildDerivedState(
+    return buildDerivedState(reader,
       { activeMilestone, registry, requirements, milestoneProgress },
       phase,
       nextAction,
@@ -516,22 +508,22 @@ export async function deriveStateFromDb(
   };
 
   if (allSlicesDone) {
-    return handleAllSlicesDone(basePath, activeMilestone, registry, requirements, milestoneProgress, sliceProgress);
+    return handleAllSlicesDone(reader, basePath, activeMilestone, registry, requirements, milestoneProgress, sliceProgress);
   }
 
-  const activeSliceContext = resolveSliceDependencies(activeMilestoneSlices);
+  const activeSliceContext = resolveSliceDependencies(reader, activeMilestoneSlices, scope.sliceId);
   if (!activeSliceContext.activeSlice) {
     // If locked slice wasn't found, it returns null but logs warning, we need to return 'blocked'
-    const sliceLock = process.env.GSD_PARALLEL_WORKER ? process.env.GSD_SLICE_LOCK : undefined;
+    const sliceLock = scope.sliceId;
     if (sliceLock) {
-      return buildDerivedState(
+      return buildDerivedState(reader,
         sliceStateContext,
         'blocked',
         'Slice lock references a non-existent slice — check orchestrator dispatch.',
         { blockers: [`GSD_SLICE_LOCK=${sliceLock} not found in active milestone slices`] },
       );
     }
-    return buildDerivedState(
+    return buildDerivedState(reader,
       sliceStateContext,
       'blocked',
       'Resolve dependency blockers or plan next slice.',
@@ -547,14 +539,14 @@ export async function deriveStateFromDb(
   // PLAN.md and preference flags are projections/configuration and are
   // deliberately not used to infer whether the slice itself is a sketch.
   if (activeSliceRow?.is_sketch === 1) {
-    return buildDerivedState(
+    return buildDerivedState(reader,
       { ...sliceStateContext, activeSlice },
       'refining',
       `Refine sketch slice ${activeSlice.id} (${activeSlice.title}) using prior slice context.`,
     );
   }
 
-  const tasks = getSliceTasks(activeMilestone.id, activeSlice.id);
+  const tasks = reader.getSliceTasks(activeMilestone.id, activeSlice.id);
   
   const taskProgress = {
     done: tasks.filter(t => isStatusDone(t.status)).length,
@@ -569,7 +561,7 @@ export async function deriveStateFromDb(
   const activeTaskRow = tasks.find(t => !isStatusDone(t.status));
 
   if (!activeTaskRow && tasks.length > 0) {
-    return buildDerivedState(
+    return buildDerivedState(reader,
       taskStateContext,
       'summarizing',
       `All tasks done in ${activeSlice.id}. Write slice summary and complete slice.`,
@@ -577,7 +569,7 @@ export async function deriveStateFromDb(
   }
 
   if (!activeTaskRow) {
-    return buildDerivedState(
+    return buildDerivedState(reader,
       taskStateContext,
       'planning',
       `Slice ${activeSlice.id} has no DB tasks. Plan slice tasks before execution.`,
@@ -597,24 +589,24 @@ export async function deriveStateFromDb(
   // phase — otherwise auto-loop stalls forever waiting for a gate that
   // this turn never evaluates. See gate-registry.ts for the ownership map.
   // Slices with zero gate rows (pre-feature or simple) skip straight through.
-  const pendingGateCount = getPendingGateCountForTurn(
+  const pendingGateCount = reader.getPendingGateCountForTurn(
     activeMilestone.id,
     activeSlice.id,
     "gate-evaluate",
   );
   if (pendingGateCount > 0) {
-    return buildDerivedState(
+    return buildDerivedState(reader,
       taskStateContext,
       'evaluating-gates',
       `Evaluate ${pendingGateCount} quality gate(s) for ${activeSlice.id} before execution.`,
     );
   }
 
-  const blockerTaskId = await detectBlockers(basePath, activeMilestone.id, activeSlice.id, tasks);
+  const blockerTaskId = detectBlockers(basePath, activeMilestone.id, activeSlice.id, tasks);
   if (blockerTaskId) {
     const blockerTask = tasks.find((task) => task.id === blockerTaskId);
     if (routeBlockerCategory(blockerTask?.blocker_source) === "surface-widen") {
-      return buildDerivedState(
+      return buildDerivedState(reader,
         activeTaskStateContext,
         "escalating-task",
         outOfSurfaceBlockerGuidance(blockerTaskId, activeSlice.id),
@@ -624,9 +616,9 @@ export async function deriveStateFromDb(
         },
       );
     }
-    const replanHistory = getReplanHistory(activeMilestone.id, activeSlice.id);
+    const replanHistory = reader.getReplanHistory(activeMilestone.id, activeSlice.id);
     if (replanHistory.length === 0) {
-      return buildDerivedState(
+      return buildDerivedState(reader,
         activeTaskStateContext,
         'replanning-slice',
         `Task ${blockerTaskId} reported blocker_discovered. Replan slice ${activeSlice.id} before continuing.`,
@@ -650,7 +642,7 @@ export async function deriveStateFromDb(
   // and the user's prior resolution never lands.
   const escalatingTaskId = detectPendingEscalation(tasks, basePath);
   if (escalatingTaskId) {
-    return buildDerivedState(
+    return buildDerivedState(reader,
       activeTaskStateContext,
       'escalating-task',
       `Run /gsd escalate show ${escalatingTaskId} to review, then /gsd escalate resolve ${escalatingTaskId} <choice> to proceed.`,
@@ -662,11 +654,11 @@ export async function deriveStateFromDb(
   }
 
   if (!blockerTaskId) {
-    const isTriggered = checkReplanTrigger(basePath, activeMilestone.id, activeSlice.id);
+    const isTriggered = checkReplanTrigger(reader, basePath, activeMilestone.id, activeSlice.id);
     if (isTriggered) {
-      const replanHistory = getReplanHistory(activeMilestone.id, activeSlice.id);
+      const replanHistory = reader.getReplanHistory(activeMilestone.id, activeSlice.id);
       if (replanHistory.length === 0) {
-        return buildDerivedState(
+        return buildDerivedState(reader,
           activeTaskStateContext,
           'replanning-slice',
           `Triage replan triggered for slice ${activeSlice.id}. Replan before continuing.`,
@@ -679,7 +671,7 @@ export async function deriveStateFromDb(
     }
   }
 
-  return buildDerivedState(
+  return buildDerivedState(reader,
     activeTaskStateContext,
     'executing',
     `Execute ${activeTask.id}: ${activeTask.title} in slice ${activeSlice.id}.`,

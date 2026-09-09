@@ -20,11 +20,12 @@ import {
 } from "../gsd-db.ts";
 import {
   claimTaskAttempt,
+  readLatestTaskAttempt,
   settleTaskAttempt,
 } from "../task-execution-domain-operation.ts";
 import { cleanup, makeTempRepo } from "./test-utils.ts";
 
-function createTaskContext(basePath: string, pauseCalls: string[]): PostUnitContext {
+function createTaskContext(basePath: string, pauseCalls: string[], notifyCalls: string[] = []): PostUnitContext {
   const session = new AutoSession();
   session.active = true;
   session.basePath = basePath;
@@ -36,7 +37,13 @@ function createTaskContext(basePath: string, pauseCalls: string[]): PostUnitCont
 
   return {
     s: session,
-    ctx: { ui: { notify: () => {} } } as unknown as PostUnitContext["ctx"],
+    ctx: {
+      ui: {
+        notify: (message: string) => {
+          notifyCalls.push(message);
+        },
+      },
+    } as unknown as PostUnitContext["ctx"],
     pi: {} as PostUnitContext["pi"],
     buildSnapshotOpts: () => ({}),
     lockBase: () => basePath,
@@ -136,6 +143,83 @@ test("DB-backed execute-task deterministic errors cannot write an artifact place
   assert.equal(pctx.s.lastToolInvocationError, null);
   assert.deepEqual(pauseCalls, []);
 });
+
+test("schema-rejected gsd_task_complete pauses with the deterministic cause (#2131)", async (t) => {
+  const basePath = scaffoldDbBackedTask();
+  t.after(() => {
+    closeDatabase();
+    cleanup(basePath);
+  });
+  const pauseCalls: string[] = [];
+  const notifyCalls: string[] = [];
+  const pctx = createTaskContext(basePath, pauseCalls, notifyCalls);
+  const fence = readDomainOperationFence();
+  const retryKey = "execute-task:M001/S01/T01";
+  pctx.s.verificationRetryCount.set(retryKey, 2);
+  pctx.s.verificationRetryFailureHashes.set(retryKey, "host-verification-failure");
+  pctx.s.lastToolInvocationError =
+    'gsd_task_complete: Validation failed for tool "gsd_task_complete": sliceId: must have required properties sliceId';
+
+  const result = await postUnitPreVerification(pctx, {
+    skipSettleDelay: true,
+    skipWorktreeSync: true,
+  });
+
+  assert.equal(result, "dispatched");
+  assert.deepEqual(pauseCalls, ["pause"], "pause instead of re-dispatching unchanged inputs");
+  assert.equal(pctx.s.lastToolInvocationError, null);
+  assert.deepEqual(notifyCalls, [
+    'Tool invocation/runtime failed for execute-task: gsd_task_complete: Validation failed for tool "gsd_task_complete": sliceId: must have required properties sliceId. Retrying cannot resolve this deterministic failure — pausing auto-mode.',
+  ]);
+  assert.equal(pctx.s.pendingVerificationRetry, null);
+  assert.equal(pctx.s.verificationRetryCount.get(retryKey), 2);
+  assert.equal(pctx.s.verificationRetryFailureHashes.get(retryKey), "host-verification-failure");
+  assert.deepEqual(readDomainOperationFence(), fence, "the pause must not mutate durable authority");
+  assert.equal(readLatestTaskAttempt({ milestoneId: "M001", sliceId: "S01", taskId: "T01" }), null);
+  assert.equal(existsSync(join(basePath, ".gsd", "milestones", "M001", "slices", "S01", "tasks", "T01-SUMMARY.md")), false);
+});
+
+for (const [errorClass, error] of [
+  ["transient tool-unavailable", "No such tool available: mcp__gsd-workflow__gsd_task_complete"],
+  ["deterministic policy", "gsd_task_complete: Error saving artifact: context write blocked"],
+  ["queued-user skip", "gsd_task_complete: Skipped due to queued user message."],
+  ["ordinary tool failure", "gsd_task_complete: Task has no active Attempt"],
+]) {
+  test(`durable execute-task ${errorClass} keeps deferring to durable authority`, async (t) => {
+    const basePath = scaffoldDbBackedTask();
+    t.after(() => {
+      closeDatabase();
+      cleanup(basePath);
+    });
+    const pauseCalls: string[] = [];
+    const notifyCalls: string[] = [];
+    const pctx = createTaskContext(basePath, pauseCalls, notifyCalls);
+    const fence = readDomainOperationFence();
+    const retryKey = "execute-task:M001/S01/T01";
+    pctx.s.lastToolInvocationError = error;
+    pctx.s.pendingVerificationRetry = { unitId: "M001/S01/T01", failureContext: "Legacy artifact retry", attempt: 2 };
+    pctx.s.toolUnavailableRetries = 2;
+    pctx.s.verificationRetryCount.set(retryKey, 2);
+    pctx.s.verificationRetryFailureHashes.set(retryKey, "host-verification-failure");
+
+    const result = await postUnitPreVerification(pctx, {
+      skipSettleDelay: true,
+      skipWorktreeSync: true,
+    });
+
+    assert.equal(result, "continue");
+    assert.equal(pctx.s.lastToolInvocationError, null);
+    assert.equal(pctx.s.pendingVerificationRetry, null);
+    assert.equal(pctx.s.toolUnavailableRetries, 0);
+    assert.deepEqual(pauseCalls, []);
+    assert.deepEqual(notifyCalls, []);
+    assert.equal(pctx.s.verificationRetryCount.get(retryKey), 2);
+    assert.equal(pctx.s.verificationRetryFailureHashes.get(retryKey), "host-verification-failure");
+    assert.deepEqual(readDomainOperationFence(), fence);
+    assert.equal(readLatestTaskAttempt({ milestoneId: "M001", sliceId: "S01", taskId: "T01" }), null);
+    assert.equal(existsSync(join(basePath, ".gsd", "milestones", "M001", "slices", "S01", "tasks", "T01-SUMMARY.md")), false);
+  });
+}
 
 // ── #1971: a staged Attempt awaiting host verification must not reset the
 // host auto-fix retry counter. Artifact readiness ("verify") only proves the

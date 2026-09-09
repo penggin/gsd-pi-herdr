@@ -148,6 +148,10 @@ export function writeUnitRuntimeRecord(
   return withRecordLock(path, () => {
     const prev = readUnitRuntimeRecord(basePath, unitType, unitId);
     const sameRun = prev?.startedAt === startedAt;
+    // A late tool failure must not replace the authoritative turn cancellation.
+    if (sameRun && prev?.harnessAbort?.kind === "turn-abort" && updates.harnessAbort?.kind === "tool-error") {
+      return prev;
+    }
     const updatesHarnessAbort = Object.prototype.hasOwnProperty.call(updates, "harnessAbort");
     const next: AutoUnitRuntimeRecord = {
       version: 1,
@@ -188,6 +192,38 @@ export function recordUnitHarnessAbort(
     },
     lastProgressAt: Date.now(),
     lastProgressKind: `harness-abort:${abort.kind}`,
+  });
+}
+
+/** Clear only a matching tool's transient failure in the same unit run. */
+export function clearUnitToolErrorHarnessAbort(
+  basePath: string,
+  unitType: string,
+  unitId: string,
+  startedAt: number,
+  toolName: string,
+): AutoUnitRuntimeRecord | null {
+  const path = runtimePath(basePath, unitType, unitId);
+  // A successful tool commonly has no prior abort. Do not create directories,
+  // lock files or empty runtime records just to record that there is none.
+  if (!existsSync(path)) return null;
+  return withRecordLock(path, () => {
+    const prev = readUnitRuntimeRecord(basePath, unitType, unitId);
+    if (!prev || prev.unitType !== unitType || prev.unitId !== unitId || prev.startedAt !== startedAt
+      || prev.harnessAbort?.kind !== "tool-error" || prev.harnessAbort.toolName !== toolName) {
+      return null;
+    }
+    const now = Date.now();
+    const next: AutoUnitRuntimeRecord = {
+      ...prev,
+      updatedAt: now,
+      lastProgressAt: now,
+      lastProgressKind: "tool-error-cleared",
+      harnessAbort: undefined,
+    };
+    // The record lock is already held; never re-enter writeUnitRuntimeRecord.
+    atomicWriteSync(path, JSON.stringify(next, null, 2) + "\n", "utf-8");
+    return next;
   });
 }
 

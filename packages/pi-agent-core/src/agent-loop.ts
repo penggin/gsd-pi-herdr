@@ -10,6 +10,7 @@ import {
 	createToolSearchShimResult,
 	EventStream,
 	isAgentToolName,
+	isContextOverflow,
 	isEmptyPathToolArguments,
 	isToolSearchToolName,
 	normalizeToolResultContent,
@@ -41,6 +42,11 @@ export type AgentEventSink = (event: AgentEvent) => Promise<void> | void;
 /** Cap consecutive turns where every tool call fails preparation (schema / not-found). */
 export const MAX_CONSECUTIVE_VALIDATION_FAILURES = 3;
 
+/** Additional output-limit continuations permitted within one loop invocation. */
+const MAX_LENGTH_CONTINUATIONS = 3;
+const LENGTH_CONTINUATION_PROMPT =
+	"Your previous response was cut off at the output limit. Continue exactly where you left off.";
+
 const ZERO_USAGE = {
 	input: 0,
 	output: 0,
@@ -49,6 +55,38 @@ const ZERO_USAGE = {
 	totalTokens: 0,
 	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 } as const;
+
+function createLengthStopMessage(
+	source: AssistantMessage,
+	reason: string,
+	contextOverflow = false,
+): AssistantMessage {
+	return {
+		role: "assistant",
+		content: [{ type: "text", text: `Agent stopped: provider returned stop_reason "length" and continuation was halted (${reason}).` }],
+		api: source.api,
+		provider: source.provider,
+		model: source.model,
+		usage: ZERO_USAGE,
+		stopReason: "error",
+		errorMessage: `[length-halt]${contextOverflow ? " [context_length_exceeded]" : ""} Provider stop_reason: length (${reason}; continuing was halted)`,
+		timestamp: Date.now(),
+	};
+}
+
+function createAbortedMessage(source: Pick<AssistantMessage, "api" | "provider" | "model">): AssistantMessage {
+	return {
+		role: "assistant",
+		content: [],
+		api: source.api,
+		provider: source.provider,
+		model: source.model,
+		usage: ZERO_USAGE,
+		stopReason: "aborted",
+		errorMessage: "Operation aborted",
+		timestamp: Date.now(),
+	};
+}
 
 /**
  * Close a loop stream after `runAgentLoop*` threw outside the per-turn error
@@ -232,11 +270,30 @@ async function runLoop(
 	let currentContext = initialContext;
 	let config = initialConfig;
 	let lastCompletedTurn: PrepareNextTurnContext | undefined;
+	let pendingLengthContinuation: AssistantMessage | undefined;
+	let lengthContinuations = 0;
 	// Check for steering messages at start (user may have typed while waiting)
 	let pendingMessages: AgentMessage[] = (await config.getSteeringMessages?.()) || [];
 	let consecutiveAllToolErrorTurns = 0;
 	let previousValidationFields: string[] = [];
 	let narrowedSchemaRetryGranted = false;
+
+	async function endWithTerminal(message: AssistantMessage): Promise<void> {
+		await emit({ type: "message_start", message });
+		await emit({ type: "message_end", message });
+		newMessages.push(message);
+		currentContext.messages.push(message);
+		await emit({ type: "turn_end", message, toolResults: [] });
+		await emit({ type: "agent_end", messages: newMessages });
+	}
+
+	function abortMessage(): AssistantMessage {
+		return createAbortedMessage(pendingLengthContinuation ?? lastCompletedTurn?.message ?? {
+			api: config.model.api,
+			provider: config.model.provider,
+			model: config.model.id,
+		});
+	}
 
 	// Outer loop: continues when queued follow-up messages arrive after agent would stop
 	while (true) {
@@ -244,20 +301,32 @@ async function runLoop(
 
 		// Inner loop: process tool calls and steering messages
 		while (hasMoreToolCalls || pendingMessages.length > 0) {
+			if (signal?.aborted) {
+				await endWithTerminal(abortMessage());
+				return;
+			}
 			if (lastCompletedTurn) {
-				const nextTurnSnapshot = await config.prepareNextTurn?.(lastCompletedTurn);
-				if (nextTurnSnapshot) {
-					currentContext = nextTurnSnapshot.context ?? currentContext;
-					config = {
-						...config,
-						model: nextTurnSnapshot.model ?? config.model,
-						reasoning:
-							nextTurnSnapshot.thinkingLevel === undefined
-								? config.reasoning
-								: nextTurnSnapshot.thinkingLevel === "off"
-									? undefined
-									: nextTurnSnapshot.thinkingLevel,
-					};
+				try {
+					const nextTurnSnapshot = await config.prepareNextTurn?.(lastCompletedTurn);
+					if (nextTurnSnapshot) {
+						currentContext = nextTurnSnapshot.context ?? currentContext;
+						config = {
+							...config,
+							model: nextTurnSnapshot.model ?? config.model,
+							reasoning:
+								nextTurnSnapshot.thinkingLevel === undefined
+									? config.reasoning
+									: nextTurnSnapshot.thinkingLevel === "off"
+										? undefined
+										: nextTurnSnapshot.thinkingLevel,
+						};
+					}
+				} catch (error) {
+					if (!signal?.aborted) throw error;
+				}
+				if (signal?.aborted) {
+					await endWithTerminal(abortMessage());
+					return;
 				}
 				// Preparation may take long enough for steering to arrive. Poll again
 				// only when the earlier poll was empty, preserving one-at-a-time mode.
@@ -265,6 +334,22 @@ async function runLoop(
 					pendingMessages = (await config.getSteeringMessages?.()) || [];
 				}
 				await emit({ type: "turn_start" });
+			}
+
+			if (pendingLengthContinuation && !signal?.aborted) {
+				// Preparation can replace/compact the context. Persist the pending
+				// continuation only after it finishes, exactly once, after tool results.
+				const continuation: AgentMessage = {
+					role: "user",
+					content: [{ type: "text", text: LENGTH_CONTINUATION_PROMPT }],
+					timestamp: Date.now(),
+				};
+				currentContext.messages.push(continuation);
+				newMessages.push(continuation);
+				await emit({ type: "message_start", message: continuation });
+				await emit({ type: "message_end", message: continuation });
+				lengthContinuations++;
+				pendingLengthContinuation = undefined;
 			}
 
 			// Process pending messages (inject before next assistant response)
@@ -277,9 +362,13 @@ async function runLoop(
 				}
 				pendingMessages = [];
 			}
+			if (signal?.aborted) {
+				await endWithTerminal(abortMessage());
+				return;
+			}
 
 			// Stream assistant response
-			const message = await streamAssistantResponse(currentContext, config, signal, emit, streamFn);
+			const message = await streamAssistantResponse(currentContext, config, signal, emit, streamFn, lastCompletedTurn?.message);
 			newMessages.push(message);
 
 			if (message.stopReason === "error" || message.stopReason === "aborted") {
@@ -288,14 +377,35 @@ async function runLoop(
 				return;
 			}
 
+			let continueAfterTruncation = false;
+			let lengthHaltReason: string | undefined;
+			let lengthHaltIsContextOverflow = false;
+			if (message.stopReason === "length") {
+				if (message.errorMessage || !(message.usage.output > 0)) {
+					lengthHaltIsContextOverflow = isContextOverflow(message, config.model.contextWindow)
+						|| (!!message.errorMessage && isContextOverflow({ ...message, stopReason: "error" }, config.model.contextWindow));
+					lengthHaltReason = message.errorMessage
+						? `provider error: ${message.errorMessage}`
+						: lengthHaltIsContextOverflow
+							? "no output was generated (context overflow, not output truncation)"
+							: "no output was generated";
+				} else if (lengthContinuations < MAX_LENGTH_CONTINUATIONS) {
+					continueAfterTruncation = true;
+				} else {
+					lengthHaltReason = `continuation cap (${MAX_LENGTH_CONTINUATIONS}) exhausted`;
+				}
+			}
+
 			// Check for tool calls
 			const toolCalls = message.content.filter((c) => c.type === "toolCall");
 
 			const toolResults: ToolResultMessage[] = [];
+			let toolBatchTerminated = false;
 			hasMoreToolCalls = false;
 			if (toolCalls.length > 0) {
 				const executedToolBatch = await executeToolCalls(currentContext, message, config, signal, emit);
 				toolResults.push(...executedToolBatch.messages);
+				toolBatchTerminated = executedToolBatch.terminate;
 				hasMoreToolCalls = !executedToolBatch.terminate;
 
 				for (const result of toolResults) {
@@ -329,7 +439,7 @@ async function runLoop(
 					previousValidationFields = currentValidationFields;
 				}
 
-				if (overload.grantNarrowedRetry) {
+				if (overload.grantNarrowedRetry && lengthHaltReason === undefined && !signal?.aborted) {
 					narrowedSchemaRetryGranted = true;
 					consecutiveAllToolErrorTurns = MAX_CONSECUTIVE_VALIDATION_FAILURES - 1;
 					const retryMessage: AgentMessage = {
@@ -341,7 +451,7 @@ async function runLoop(
 					newMessages.push(retryMessage);
 					await emit({ type: "message_start", message: retryMessage });
 					await emit({ type: "message_end", message: retryMessage });
-				} else if (overload.trip) {
+				} else if (overload.trip && lengthHaltReason === undefined && !signal?.aborted) {
 					const stopMessage: AssistantMessage = {
 						role: "assistant",
 						content: [
@@ -370,6 +480,18 @@ async function runLoop(
 			}
 
 			await emit({ type: "turn_end", message, toolResults });
+			if (signal?.aborted) {
+				await endWithTerminal(createAbortedMessage(message));
+				return;
+			}
+			if (continueAfterTruncation && toolBatchTerminated) {
+				continueAfterTruncation = false;
+				lengthHaltReason = "tool termination requested";
+			}
+			if (lengthHaltReason !== undefined) {
+				await endWithTerminal(createLengthStopMessage(message, lengthHaltReason, lengthHaltIsContextOverflow));
+				return;
+			}
 
 			lastCompletedTurn = {
 				message,
@@ -379,8 +501,18 @@ async function runLoop(
 			};
 
 			if (await config.shouldStopAfterTurn?.(lastCompletedTurn)) {
+				if (continueAfterTruncation) {
+					await endWithTerminal(signal?.aborted
+						? createAbortedMessage(message)
+						: createLengthStopMessage(message, "stop hook halted the continuation"));
+					return;
+				}
 				await emit({ type: "agent_end", messages: newMessages });
 				return;
+			}
+			if (continueAfterTruncation) {
+				pendingLengthContinuation = message;
+				hasMoreToolCalls = true;
 			}
 
 			pendingMessages = (await config.getSteeringMessages?.()) || [];
@@ -411,6 +543,7 @@ async function streamAssistantResponse(
 	signal: AbortSignal | undefined,
 	emit: AgentEventSink,
 	streamFn?: StreamFn,
+	abortedSource?: AssistantMessage,
 ): Promise<AssistantMessage> {
 	// Apply context transform if configured (AgentMessage[] → AgentMessage[])
 	let messages = context.messages;
@@ -441,6 +574,19 @@ async function streamAssistantResponse(
 	const resolvedApiKey =
 		(config.getApiKey ? await config.getApiKey(config.model.provider) : undefined) || config.apiKey;
 	stopApiKey({ provider: config.model.provider, resolved: !!resolvedApiKey });
+	// Context transforms and credential refresh can await long enough for abort.
+	// Do not create a new provider request after cancellation wins that boundary.
+	if (signal?.aborted) {
+		const message = createAbortedMessage(abortedSource ?? {
+			api: config.model.api,
+			provider: config.model.provider,
+			model: config.model.id,
+		});
+		context.messages.push(message);
+		await emit({ type: "message_start", message });
+		await emit({ type: "message_end", message });
+		return message;
+	}
 
 	const stopStreamCreate = startLatencyTimer(config, "agent_loop.stream_create");
 	const response = await streamFunction(config.model, llmContext, {
@@ -982,9 +1128,13 @@ async function executePreparedToolCall(
 		// execution against abort: once aborted, stop awaiting the tool and finalize
 		// it as aborted. The tool's own promise keeps running in the background, but
 		// the turn completes and every tool_execution_start gets a paired _end.
-		const outcome: ExecutedToolCallOutcome = signal
-			? await raceToolExecutionAgainstAbort(execution, signal)
-			: { result: await execution, isError: false };
+		let outcome: ExecutedToolCallOutcome;
+		if (signal) {
+			outcome = await raceToolExecutionAgainstAbort(execution, signal);
+		} else {
+			const result = await execution;
+			outcome = { result, isError: result?.isError ?? false };
+		}
 		await Promise.all(updateEvents);
 		return outcome;
 	} catch (error) {
@@ -1013,7 +1163,7 @@ async function raceToolExecutionAgainstAbort(
 	// later settlement so a background rejection does not surface as an unhandled
 	// rejection after the turn has moved on.
 	const guardedExecution = execution.then(
-		(result) => ({ result, isError: false }) satisfies ExecutedToolCallOutcome,
+		(result) => ({ result, isError: result?.isError ?? false }) satisfies ExecutedToolCallOutcome,
 		(error) => ({
 			result: createErrorToolResult(error instanceof Error ? error.message : String(error)),
 			isError: true,
@@ -1059,6 +1209,7 @@ async function finalizeExecutedToolCall(
 				result = normalizeAgentToolResult({
 					content: afterResult.content ?? result.content,
 					details: afterResult.details ?? result.details,
+					isError: afterResult.isError ?? result.isError,
 					usage: afterResult.usage ?? result.usage,
 					addedToolNames: afterResult.addedToolNames ?? result.addedToolNames,
 					terminate: afterResult.terminate ?? result.terminate,
@@ -1096,6 +1247,7 @@ function normalizeAgentToolResult(result: Partial<AgentToolResult<any>> | undefi
 	return {
 		content: normalizeToolResultContent(result?.content),
 		details: result?.details,
+		isError: result?.isError,
 		usage: result?.usage,
 		addedToolNames: result?.addedToolNames,
 		terminate: result?.terminate,

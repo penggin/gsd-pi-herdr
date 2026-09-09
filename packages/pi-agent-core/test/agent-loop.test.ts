@@ -417,6 +417,54 @@ describe("agentLoop with AgentMessage", () => {
 		expect(toolResult?.role === "toolResult" ? toolResult.usage : undefined).toEqual(patchedToolUsage);
 	});
 
+	it.each([
+		[false, "none"], [true, "none"],
+		[false, "retain"], [true, "retain"],
+		[false, "clear"], [true, "clear"],
+	] as const)("preserves resolved tool errors (signal=%s, after hook=%s)", async (withSignal, afterHook) => {
+		const schema = Type.Object({});
+		const usage = createUsage();
+		const tool: AgentTool<typeof schema, Record<string, unknown>> = {
+			name: "resolved-error", label: "Resolved error", description: "Returns an error without rejecting", parameters: schema,
+			async execute() {
+				return { content: [{ type: "text", text: "tool failed" }], details: {}, isError: true, usage, addedToolNames: ["discovered-tool"] };
+			},
+		};
+		const observedErrors: unknown[] = [];
+		const config: AgentLoopConfig = {
+			model: createModel(), convertToLlm: identityConverter,
+			...(afterHook === "none" ? {} : { afterToolCall: async ({ result, isError }) => {
+				observedErrors.push({ event: isError, result: result.isError });
+				return { details: { audited: true }, ...(afterHook === "clear" ? { isError: false } : {}) };
+			} } satisfies Pick<AgentLoopConfig, "afterToolCall">),
+		};
+		let calls = 0;
+		const streamFn = () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				const message = calls++ === 0
+					? createAssistantMessage([{ type: "toolCall", id: "tool-error-1", name: tool.name, arguments: {} }], "toolUse")
+					: createAssistantMessage([{ type: "text", text: "done" }]);
+				stream.push({ type: "done", reason: message.stopReason as "stop" | "toolUse", message });
+			});
+			return stream;
+		};
+		const stream = agentLoop([createUserMessage("run")], { systemPrompt: "", messages: [], tools: [tool] }, config,
+			withSignal ? new AbortController().signal : undefined, streamFn);
+		const events: AgentEvent[] = [];
+		for await (const event of stream) events.push(event);
+		const expectedError = afterHook !== "clear";
+		const end = events.find((event) => event.type === "tool_execution_end");
+		expect(end?.type).toBe("tool_execution_end");
+		if (end?.type === "tool_execution_end") {
+			expect(end.isError).toBe(expectedError);
+			expect(end.result.isError).toBe(expectedError);
+		}
+		const result = (await stream.result()).find((message) => message.role === "toolResult");
+		expect(result).toMatchObject({ isError: expectedError, usage, addedToolNames: ["discovered-tool"] });
+		if (afterHook !== "none") expect(observedErrors).toEqual([{ event: true, result: true }]);
+	});
+
 	it("does not start prepared parallel tools after a later preflight aborts", async () => {
 		const toolSchema = Type.Object({ value: Type.String() });
 		const executions: string[] = [];

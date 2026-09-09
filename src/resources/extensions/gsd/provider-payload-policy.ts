@@ -25,9 +25,10 @@ import { getSourceObservationStore, isAutoActive } from "./auto-runtime-state.js
 import { loadEffectiveGSDPreferences } from "./preferences.js";
 import { getEffectiveServiceTier, supportsServiceTier } from "./service-tier.js";
 import { injectSourceContextBlockIntoPayload } from "./source-observations.js";
+import { budgetNativeExecResult } from "./exec-result-provenance.js";
+import { DEFAULT_TOOL_RESULT_MAX_CHARS } from "./tools/exec-result-budget.js";
 
 const DEFAULT_OBSERVATION_MASK_TURNS = 8;
-const DEFAULT_TOOL_RESULT_MAX_CHARS = 800;
 
 type MessagePayload = Parameters<ReturnType<typeof createObservationMask>>[0];
 type ResponsesInputPayload = Parameters<ReturnType<typeof createResponsesInputObservationMask>>[0];
@@ -43,6 +44,7 @@ export interface ProviderPayloadPolicyDeps {
 export interface ProviderPayloadPolicyInput {
   payload: Record<string, unknown>;
   modelId?: string;
+  sessionId?: string;
   deps?: Partial<ProviderPayloadPolicyDeps>;
 }
 
@@ -57,12 +59,13 @@ export const DEFAULT_PROVIDER_PAYLOAD_POLICY_DEPS: ProviderPayloadPolicyDeps = {
 export function applyProviderPayloadPolicy({
   payload,
   modelId,
+  sessionId,
   deps: overrides,
 }: ProviderPayloadPolicyInput): Record<string, unknown> {
   const deps = { ...DEFAULT_PROVIDER_PAYLOAD_POLICY_DEPS, ...overrides };
 
   try {
-    applyContextManagement(payload, deps);
+    applyContextManagement(payload, deps, sessionId);
   } catch {
     // Provider payload shaping should not block a request when optional
     // context management preferences or adapters fail.
@@ -82,11 +85,12 @@ export function applyProviderPayloadPolicy({
 function applyContextManagement(
   payload: Record<string, unknown>,
   deps: ProviderPayloadPolicyDeps,
+  sessionId?: string,
 ): void {
   const config = deps.loadContextManagementConfig();
   applyContextInjectionFilter(payload);
   applyObservationBudget(payload, config, deps.isAutoActive());
-  applyDisplayTruncation(payload, config);
+  applyDisplayTruncation(payload, config, sessionId);
 }
 
 function applyContextInjectionFilter(payload: Record<string, unknown>): void {
@@ -117,14 +121,45 @@ function applyObservationBudget(
 function applyDisplayTruncation(
   payload: Record<string, unknown>,
   config: ContextManagementConfig | undefined,
+  sessionId?: string,
 ): void {
   const maxChars = config?.tool_result_max_chars ?? DEFAULT_TOOL_RESULT_MAX_CHARS;
 
+  // Wire conversions discard details. Authenticate native results through the
+  // out-of-band session/call/exact-content record instead; colliding wire calls
+  // are ineligible even if a converter shortened their originally distinct IDs.
+  const calls = new Map<string, { name: string; count: number }>();
+  const recordCall = (id: unknown, name: unknown) => {
+    if (typeof id !== "string" || typeof name !== "string") return;
+    calls.set(id, { name, count: (calls.get(id)?.count ?? 0) + 1 });
+  };
+  if (Array.isArray(payload.messages)) for (const message of payload.messages) {
+    if (message?.role !== "assistant") continue;
+    if (Array.isArray(message.tool_calls)) for (const call of message.tool_calls) recordCall(call?.id, call?.function?.name);
+    if (Array.isArray(message.content)) for (const block of message.content) {
+      if (block?.type === "tool_use" || block?.type === "toolCall") recordCall(block.id, block.name);
+    }
+  }
+  if (Array.isArray(payload.input)) for (const item of payload.input) {
+    if (item?.type === "function_call") recordCall(item.call_id, item.name);
+  }
+  const nativeBudget = (toolCallId: unknown, toolName: unknown, text: string) => {
+    const call = typeof toolCallId === "string" ? calls.get(toolCallId) : undefined;
+    if (!call || call.count !== 1 || (typeof toolName === "string" && toolName !== call.name)) return undefined;
+    try {
+      return budgetNativeExecResult({ sessionId, toolCallId, toolName: call.name, text, config });
+    } catch {
+      // Damaged/unrecognized native provenance must fall back to the ordinary
+      // cap, not escape all truncation through the outer optional-policy catch.
+      return undefined;
+    }
+  };
+
   if (Array.isArray(payload.messages)) {
-    payload.messages = truncateContextResultMessages(payload.messages as MessagePayload, maxChars);
+    payload.messages = truncateContextResultMessages(payload.messages as MessagePayload, maxChars, nativeBudget);
   }
   if (Array.isArray(payload.input)) {
-    payload.input = truncateResponsesInputResultItems(payload.input as ResponsesInputPayload, maxChars);
+    payload.input = truncateResponsesInputResultItems(payload.input as ResponsesInputPayload, maxChars, nativeBudget);
   }
 }
 

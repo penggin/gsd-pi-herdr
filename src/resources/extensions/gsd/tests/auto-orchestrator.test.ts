@@ -33,6 +33,7 @@ import { RuleRegistry, setRegistry, resetRegistry } from "../rule-registry.js";
 import type { UnifiedRule } from "../rule-types.js";
 import { supportsStructuredQuestions } from "../workflow-mcp.js";
 import {
+  _getAdapter,
   closeDatabase,
   insertArtifact,
   insertAssessment,
@@ -44,8 +45,8 @@ import {
 } from "../gsd-db.js";
 import { AutoSession } from "../auto/session.js";
 import { markWorkerCrashed, registerAutoWorker } from "../db/auto-workers.js";
-import { claimMilestoneLease, forceReleaseLeasesForWorker, getMilestoneLease, releaseMilestoneLease } from "../db/milestone-leases.js";
-import { recordDispatchClaim } from "../db/unit-dispatches.js";
+import { claimMilestoneLease, forceReleaseLeasesForWorker, getMilestoneLease, refreshMilestoneLease, releaseMilestoneLease } from "../db/milestone-leases.js";
+import { getActiveForWorker, recordDispatchClaim } from "../db/unit-dispatches.js";
 import { claimTaskAttempt, settleTaskAttempt } from "../task-execution-domain-operation.js";
 import { recordFailureAndSelectRecovery, resumeTaskRecovery } from "../task-recovery-domain-operation.js";
 import { internalExecutionInvocation } from "../execution-invocation.js";
@@ -942,6 +943,106 @@ test("ADR-047: unavailable liveness storage fails the advance boundary closed", 
   if (result.kind !== "blocked") throw new Error("expected a blocked advance");
   assert.equal(result.action, "stop");
   assert.match(result.reason, /liveness backstop unavailable/i);
+});
+
+test("ADR-047: rejected unit-run claims retain their reason and trip an actionable wedge on repeat", async (t) => {
+  const f = makeFixture();
+  t.after(() => f.cleanup());
+  f.session.workerId = null;
+
+  const first = await f.orchestrator.advance();
+  assert.equal(first.kind, "blocked");
+  if (first.kind !== "blocked") throw new Error("expected a blocked claim");
+  assert.equal(first.action, "stop");
+  assert.equal(first.reason, "missing-worker");
+  assert.ok(f.journalNames().includes("advance-blocked"));
+  assert.ok(!f.journalNames().includes("advance"));
+  assert.equal(f.orchestrator.getStatus().activeUnit, undefined);
+  const beforeRepeat = getOpenWedge(normalizeRealPath(f.base));
+  assert.equal(beforeRepeat.ok, true);
+  assert.equal(beforeRepeat.ok ? beforeRepeat.wedge : null, null);
+
+  const second = await f.orchestrator.advance();
+  assert.equal(second.kind, "blocked");
+  if (second.kind !== "blocked") throw new Error("expected a second blocked claim");
+  assert.equal(second.action, "stop");
+  assert.match(second.reason, /liveness backstop tripped/);
+  const open = getOpenWedge(normalizeRealPath(f.base));
+  assert.equal(open.ok, true);
+  if (!open.ok || !open.wedge) throw new Error("expected a unit-run-claim wedge");
+  assert.equal(open.wedge.guardId, "unit-run-claim");
+  assert.equal(open.wedge.occurrenceCount, 2);
+  assert.equal(open.wedge.unitType, "execute-task");
+  assert.equal(open.wedge.unitId, "M001/S01/T01");
+  assert.match(open.wedge.sanctionedExit, /could not claim a unit-run for execute-task M001\/S01\/T01/);
+  assert.match(open.wedge.sanctionedExit, /missing-worker/);
+  assert.match(open.wedge.sanctionedExit, /\/gsd status/);
+  assert.match(open.wedge.sanctionedExit, /once the lease is released/);
+  assert.match(open.wedge.sanctionedExit, /\/gsd doctor/);
+});
+
+test("ADR-047: a lease heartbeat preserves rejected-claim identity and the holder's authority", async (t) => {
+  const f = makeFixture();
+  t.after(() => f.cleanup());
+  const holderId = registerAutoWorker({ projectRootRealpath: normalizeRealPath(f.base) });
+  // The live test runner parent represents a different local worker process.
+  _getAdapter()!.prepare("UPDATE workers SET pid = :pid WHERE worker_id = :worker_id")
+    .run({ ":pid": process.ppid, ":worker_id": holderId });
+  const held = claimMilestoneLease(holderId, "M001");
+  if (!held.ok) throw new Error("expected fixture holder lease");
+
+  const first = await f.orchestrator.advance();
+  assert.equal(first.kind, "blocked", JSON.stringify(first));
+  if (first.kind !== "blocked") throw new Error("expected a blocked claim");
+  assert.equal(first.reason, `Milestone M001 is held by worker ${holderId} until ${held.expiresAt}.`);
+  assert.equal(first.action, "stop");
+  assert.equal(refreshMilestoneLease(holderId, "M001", held.token), true);
+  const refreshed = getMilestoneLease("M001");
+  assert.notEqual(refreshed?.expires_at, held.expiresAt);
+
+  const second = await f.orchestrator.advance();
+  assert.equal(second.kind, "blocked");
+  if (second.kind !== "blocked") throw new Error("expected a repeated blocked claim");
+  assert.match(second.reason, /liveness backstop tripped/);
+  const open = getOpenWedge(normalizeRealPath(f.base));
+  if (!open.ok || !open.wedge) throw new Error("expected a unit-run-claim wedge");
+  assert.equal(open.wedge.guardId, "unit-run-claim");
+  assert.equal(open.wedge.occurrenceCount, 2);
+  assert.ok(open.wedge.sanctionedExit.includes(holderId));
+  assert.equal(getMilestoneLease("M001")?.worker_id, holderId);
+  assert.equal(getMilestoneLease("M001")?.fencing_token, held.token);
+  assert.equal(getActiveForWorker(f.session.workerId!), null);
+  assert.ok(!f.journalNames().includes("advance"));
+
+  assert.equal(releaseMilestoneLease(holderId, "M001", held.token), true);
+  const unacknowledged = await f.orchestrator.advance();
+  assert.equal(unacknowledged.kind, "blocked");
+  if (unacknowledged.kind !== "blocked") throw new Error("expected the unacknowledged wedge to remain blocked");
+  assert.match(unacknowledged.reason, /will not re-enter until you acknowledge/);
+  assert.equal(getActiveForWorker(f.session.workerId!), null);
+});
+
+test("ADR-047: rejected claims against a replacement lease holder do not combine occurrences", async (t) => {
+  const f = makeFixture();
+  t.after(() => f.cleanup());
+  for (let holder = 0; holder < 2; holder += 1) {
+    const holderId = registerAutoWorker({ projectRootRealpath: normalizeRealPath(f.base) });
+    _getAdapter()!.prepare("UPDATE workers SET pid = :pid WHERE worker_id = :worker_id")
+      .run({ ":pid": process.ppid, ":worker_id": holderId });
+    const held = claimMilestoneLease(holderId, "M001");
+    if (!held.ok) throw new Error("expected fixture holder lease");
+
+    const blocked = await f.orchestrator.advance();
+    assert.equal(blocked.kind, "blocked");
+    if (blocked.kind !== "blocked") throw new Error("expected a blocked claim");
+    assert.equal(blocked.reason, `Milestone M001 is held by worker ${holderId} until ${held.expiresAt}.`);
+    assert.equal(getMilestoneLease("M001")?.worker_id, holderId);
+    const open = getOpenWedge(normalizeRealPath(f.base));
+    assert.equal(open.ok, true);
+    assert.equal(open.ok ? open.wedge : null, null, "different holders must have independent signatures");
+    assert.equal(releaseMilestoneLease(holderId, "M001", held.token), true);
+  }
+  assert.equal((await f.orchestrator.advance()).kind, "advanced", "a released lease still permits the normal claim path");
 });
 
 test("completeActiveUnit allows a different next unit to advance", async (t) => {

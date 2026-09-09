@@ -12,6 +12,8 @@ import { EXEC_DEFAULTS, runExecSandbox, type ExecSandboxOptions } from '../exec-
 import { buildExecOptions, executeGsdExec } from '../tools/exec-tool.ts';
 import { isContextModeEnabled } from '../preferences-types.ts';
 import { validatePreferences } from '../preferences-validation.ts';
+import { executeExecSearch } from '../tools/exec-search-tool.ts';
+import { redactExecLog } from '../exec-log-text.ts';
 
 function freshBase(): string {
   return mkdtempSync(join(tmpdir(), 'gsd-exec-test-'));
@@ -33,6 +35,86 @@ function baseOpts(base: string, overrides: Partial<ExecSandboxOptions> = {}): Ex
     ...overrides,
   };
 }
+
+test('failure evidence includes stderr even when stdout contains progress', async () => {
+  const base = freshBase();
+  try {
+    const result = await runExecSandbox({ runtime: 'node', script: 'console.log("Starting build..."); console.error("src/player.ts:42: Type error: incompatible return type"); process.exitCode=1;' }, baseOpts(base, { digest_chars: 400 }));
+    assert.equal(result.exit_code, 1);
+    assert.match(result.digest, /src\/player\.ts:42: Type error/);
+    assert.match(result.digest, /stderr/);
+  } finally { cleanup(base); }
+});
+
+test('failure evidence selects middle stdout errors and includes both relevant streams', async () => {
+  const base = freshBase();
+  try {
+    const result = await runExecSandbox({ runtime: 'node', script: 'console.log("begin\\nsrc/a.ts:9: failed check\\n"+"noise\\n".repeat(80)); console.error("src/b.ts:5: Error: secondary cause"); process.exitCode=2;' }, baseOpts(base, { digest_chars: 500 }));
+    assert.match(result.digest, /src\/a\.ts:9: failed check/);
+    assert.match(result.digest, /src\/b\.ts:5: Error/);
+    assert.equal(result.exit_code, 2);
+  } finally { cleanup(base); }
+});
+
+test('error words do not determine process success and all emitted evidence is redacted', async () => {
+  const base = freshBase();
+  const secret = 'sk-'+'S'.repeat(40);
+  try {
+    const result = await runExecSandbox({ runtime: 'node', purpose: `check ${secret}`, metadata: { expected: secret, nested: { text: 'password="SYNTHETIC_PASSWORD"' } }, script: `console.log(${JSON.stringify(`error count: 0\n${secret}`)});` }, baseOpts(base, { digest_chars: 400 }));
+    assert.equal(result.exit_code, 0);
+    for (const value of [result.digest, readFileSync(result.stdout_path, 'utf8'), readFileSync(result.meta_path, 'utf8')]) assert(!value.includes(secret));
+    assert(!readFileSync(result.meta_path, 'utf8').includes('SYNTHETIC_PASSWORD'));
+  } finally { cleanup(base); }
+});
+
+test('spawn failure uses the same redacted bounded evidence path', async () => {
+  const base = freshBase();
+  const secret = 'sk-' + 'X'.repeat(40);
+  try {
+    const result = await runExecSandbox({ runtime: 'node', script: 'unused' }, baseOpts(base, { env: { PATH: process.env.PATH, BAD_INPUT: secret + '\0' }, env_allowlist: ['BAD_INPUT'] }));
+    assert.equal(result.exit_code, null);
+    assert.equal(result.force_resolved, false);
+    assert(!JSON.stringify(result).includes(secret));
+    assert(!readFileSync(result.stderr_path, 'utf8').includes(secret));
+    assert(result.digest.length <= 120);
+  } finally { cleanup(base); }
+});
+
+test('saved prefix limits and split UTF-8 are honest in digest and retrieval', async () => {
+  const base = freshBase();
+  try {
+    const result = await runExecSandbox({ runtime: 'node', script: 'process.stdout.write("가나다"+"noise".repeat(200)+"ERROR_OUTSIDE_CAPTURE");process.exitCode=1' }, baseOpts(base, { stdout_cap_bytes: 4, digest_chars: 200 }));
+    const stored = readFileSync(result.stdout_path, 'utf8');
+    assert.equal(result.stdout_bytes, 4);
+    assert.equal(result.stdout_truncated, true);
+    assert(stored.startsWith('가\n[truncated:'));
+    assert(!stored.includes('\uFFFD'));
+    assert(!result.digest.includes('ERROR_OUTSIDE_CAPTURE'));
+    assert(!/whole|full.*tail/i.test(result.digest));
+    const search = await executeExecSearch({ mode: 'search', exec_id: result.id, query: 'ERROR_OUTSIDE_CAPTURE' }, { baseDir: base });
+    assert.equal(search.details.matches, 0);
+    assert.equal(search.details.storage_truncated, true);
+    assert.match(search.content[0].text, /scanned range/);
+  } finally { cleanup(base); }
+});
+
+test('PEM redaction preserves persisted log coordinates and repeated BEGIN input is bounded', async () => {
+  const base = freshBase();
+  const pem = '-----BEGIN RSA PRIVATE KEY-----\r\nSYNTHETIC_PRIVATE_MATERIAL\r\n-----END RSA PRIVATE KEY-----\r\nsrc/a.ts:4: Error: cause\r\n';
+  try {
+    const result = await runExecSandbox({ runtime: 'node', script: `process.stderr.write(${JSON.stringify(pem)});process.exitCode=1` }, baseOpts(base, { digest_chars: 300 }));
+    const stored = readFileSync(result.stderr_path, 'utf8');
+    assert(!stored.includes('SYNTHETIC_PRIVATE_MATERIAL'));
+    assert.equal(stored.split('\n')[3], 'src/a.ts:4: Error: cause\r');
+    const read = await executeExecSearch({ mode: 'read', exec_id: result.id, stream: 'stderr', start_line: 4, line_count: 1 }, { baseDir: base });
+    assert.equal((read.details.results as any[])[0].text, 'src/a.ts:4: Error: cause');
+    const repeated = '-----BEGIN RSA PRIVATE KEY-----\n'.repeat(16000) + 'SYNTHETIC_PRIVATE_MATERIAL\n-----END RSA PRIVATE KEY-----';
+    const redacted = redactExecLog(repeated);
+    assert(!redacted.includes('SYNTHETIC_PRIVATE_MATERIAL'));
+    assert.equal(redacted.split('\n').length, repeated.split('\n').length);
+    assert.equal(redactExecLog(redacted), redacted);
+  } finally { cleanup(base); }
+});
 
 test('runExecSandbox: captures stdout, persists artifacts, returns digest', async () => {
   const base = freshBase();

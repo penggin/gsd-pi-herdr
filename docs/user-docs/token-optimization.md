@@ -310,7 +310,32 @@ This pairs with the existing compaction system: masking reduces context pressure
 
 ### Tool Result Truncation
 
-Individual tool results that exceed `tool_result_max_chars` (default: 800) are truncated with a `…[truncated]` marker. This prevents a single large tool output from dominating the context window.
+Ordinary tool results exceeding `tool_result_max_chars` (default: 800) retain the
+existing `…[truncated]` behavior. This applies after provider conversion to
+Completions `messages`, Responses `input` and nested Anthropic tool results.
+
+Only native `gsd_exec`, `gsd_uat_exec` execution receipts and `gsd_exec_search`
+results use finite metadata-aware envelopes: at most 2,000 execution characters
+or 4,000 history/search/read characters when this setting is **omitted**. An
+explicit `context_management.tool_result_max_chars` remains a hard ceiling,
+including an explicit 800 or 200; it never raises those internal maxima. The
+existing project/user preference layer precedence is unchanged. The separate
+`context_mode.exec_digest_chars` still limits excerpt content, not the receipt.
+
+Evidence is reduced before status, execution ID, stream/line locator, independent
+storage/scan/output-limit flags and re-read guidance. At tiny caps the receipt
+uses compact flags. If exceptional identifiers/metadata alone cannot fit, the
+result explicitly reports metadata omission rather than returning a clipped ID
+or broken JSON. Character limits count UTF-16 units, not measured model tokens;
+UTF-8 byte counts are separate.
+
+Native provenance is kept only by the in-process execution callback, associated
+with session ID, tool call ID/name and exact content. Body markers, arbitrary
+`details`, an external MCP result or a `gsd_` name alone cannot bypass ordinary
+limits. No internal fields are added to provider requests. Existing observation
+masking runs first; masked results are not restored. Provenance has a finite
+256-entry cache; after restart/reload or eviction, unmatched old results use the
+ordinary limit. This is not a new memory or compaction mechanism.
 
 ## Phase Handoff Anchors
 

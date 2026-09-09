@@ -2,6 +2,7 @@
 // File Purpose: Resolve the authoritative milestone validation verdict from SQLite.
 
 import { getLatestAssessmentByScope, isDbAvailable } from "./gsd-db.js";
+import type { DbAdapter } from "./db-adapter.js";
 import {
   isValidMilestoneVerdict,
   type ValidationVerdict,
@@ -13,9 +14,10 @@ import {
  */
 export function readMilestoneValidationVerdict(
   milestoneId: string,
+  adapter?: DbAdapter,
 ): ValidationVerdict | undefined {
-  if (!isDbAvailable()) return undefined;
-  const assessment = getLatestAssessmentByScope(milestoneId, "milestone-validation");
+  if (!adapter && !isDbAvailable()) return undefined;
+  const assessment = getLatestAssessmentByScope(milestoneId, "milestone-validation", adapter);
   const status = typeof assessment?.status === "string" ? assessment.status : undefined;
   return status && isValidMilestoneVerdict(status) ? status : undefined;
 }

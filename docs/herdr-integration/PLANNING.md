@@ -1,8 +1,8 @@
 # GSD–Herdr Living Plan
 
 > **Status:** M0–M7 and final downstream-isolation revalidation complete
-> **Last updated:** 2026-09-07
-> **Current milestone:** GPT/Astra/efficiency commits pushed; Mac and penglab installed and verified at code commit 394104b30; existing sessions await safe restart
+> **Last updated:** 2026-09-09
+> **Current milestone:** Approved commit/push and Penglab refresh of accumulated verified changes; candidate package gates and activation in progress. Existing GSD sessions remain untouched.
 > **Canonical rule:** Every Herdr-integration development session starts by reading this file and ends by updating it.
 
 ## 1. Mission
@@ -4006,6 +4006,350 @@ this session does not merge, push, tag, or publish.
   code. Inspect with `gsd --build-info`. Rollback restores the saved Mac package
   at its original path or repoints the two remote links to the retained prior
   prefix; do not delete runtime artifacts or reset model policy during rollback.
+
+### 2026-09-07 — GSD Pi upstream selective review
+
+- Operator requested valuable GSD Pi upstream patches plus a persistent record of
+  the last reviewed upstream version. Started clean at `0417606d3` on focused
+  branch `feature/gsd-upstream-backports-20260907`. No main merge or installation
+  update is implied. This source is `open-gsd/gsd-pi`, not the separate Pi engine.
+- Read-only fetch observed main `68acbe7863f79fb4256574c7a3aa65b2e8bec9ac` and
+  stable v1.18.0 `0a735e2293c53366d50e2937d560a84a8be9de57`; both declare 1.18.0
+  but are distinct objects. The unchanged full-sync base is `4b26a642...` (1.16.2).
+  Inventoried 69 commits and selected eight behavioral patches. Full source SHAs,
+  adaptations, already-covered fixes, deferred candidates and review depth are in
+  `docs/dev/gsd-upstream.md` plus `scripts/gsd-upstream.json`.
+- Implemented missing no-create DB guard, blocker-aware verification pause,
+  retry-bound dispatch stop, resolved-tool isError propagation, UAT schema retry
+  cleanup, streaming render starvation fix, browser daemon inherited-pipe fix and
+  doctor remote-HEAD correction. Kept downstream session rebinding, tool usage,
+  abort authority, role configuration and large existing TUI tests.
+- Adaptations intentionally narrow upstream behavior: UAT cleanup requires an
+  explicit success from the same tool/run and avoids nested locks; browser stderr
+  uses bounded same-descriptor reads and honors short reads. Ctrl-O painting,
+  extra output-limit model calls, broad remediation authorization, live startup
+  hashing, provider catalog churn and optional runtime features remain deferred.
+- Added a manual `audit:gsd-upstream` freshness check reusing Pi ref parsers. It
+  only queries refs, exits 2 on moved tag/main and never rewrites the review record.
+  The downstream boundary permits only the exact audit tool/metadata source URL;
+  runtime, CI, installer and release destinations stay downstream-only.
+- Initial focused gates: workflow/DB 221 tests, tool/UAT/runtime 100, rendering/
+  browser/doctor 80; audit/ref/boundary 16; pi patch allowlist passes. Cross-review
+  and combined build/regression remain. No user config/DB, provider request,
+  live browser/pane, native artifact or installed package was changed.
+- Exact next task: finish independent review, final combined targeted tests and
+  type/core build gates, validate tracking metadata against immutable refs and
+  document actual outcomes without claiming a full v1.18.0 upgrade.
+- Final cross-review identified and fixed two upstream-adaptation guard gaps:
+  durable tool-error cleanup now compares stored unitType and raw unitId in
+  addition to startedAt/toolName (normalized filenames can collide); blocker
+  display checks the escalation artifact's milestone/slice/task IDs before
+  showing another task's question or resolution command. Targeted red cases
+  reproduced each issue. No filename migration or new lifecycle authority added.
+- Freshness tracking uses the exact published tag and separately fetched main
+  commit. The live manual check reports `current`; repeated checks never advance
+  metadata automatically. Tests cover new/moved tags, numeric stable ordering,
+  peeled annotated tags, moved main, malformed/absent refs, help without queries,
+  redacted malformed output, document/metadata alignment and distinct Pi/GSD pins.
+  Root AGENTS now points future upstream-review sessions to this ledger.
+- Final verification: `test:changed:src` **214/214**; combined model/phase/abort/
+  TaskAttempt/compaction/subagent/Herdr regression **189/189**; streaming plus
+  browser/doctor source suites **80/80** (includes unchanged controller coverage);
+  agent-loop/Agent Vitest **55/55**; Herdr integration/downstream boundary
+  **31/31**; Pi/GSD audit parser tests **12/12**. Counts overlap with earlier
+  targeted runs. Core build, extension typecheck, Pi boundary and patch allowlist
+  checks, script syntax and final diff check pass. Existing unrelated full-suite
+  limitations from earlier entries are not claimed resolved.
+- Canonical record: `docs/dev/gsd-upstream.md`; machine refs and source patch
+  inventory: `scripts/gsd-upstream.json`; manual command:
+  `pnpm run audit:gsd-upstream`. Last reviewed main is
+  `68acbe7863f79fb4256574c7a3aa65b2e8bec9ac`; latest observed stable tag remains
+  v1.18.0 at `0a735e2293c53366d50e2937d560a84a8be9de57`. Full-sync base, Pi vendor
+  pin, native binaries and downstream version remain unchanged.
+- Exact next task: maintainer review of the eight scoped backports, then explicit
+  commit/push/package/install if requested. Current Mac/penglab installations
+  remain code build `394104b30`; no live processes were restarted, user configs
+  edited, model calls made, or upstream repository mutated. Later candidates and
+  the partially deferred Ctrl-O change must retain their documented review scope.
+
+### 2026-09-07 — Full deferred-upstream implementation goal
+
+- Operator explicitly requested all six recommended bundles in sequence and
+  Astra/xhigh as the primary development-subagent model. Exact requirements,
+  source commits and completion evidence are tracked in
+  `docs/dev/gsd-upstream-deferred-implementation.md`; no partial bundle redefines
+  the objective. Existing uncommitted eight-patch backports remain intact.
+- Native collaboration accepted three `gpt-6-astra` / `xhigh` workers for R1
+  (schema completion cause, commit retry routing, claim liveness identity).
+  Their file ownership is disjoint. Installed Astra/medium/GLM/Luna policy,
+  user configs, live sessions and upstream repositories remain unchanged.
+- Exact next task: validate R1 together, then implement R2, R3, R4, R5 and R6
+  with the evidence matrix in the goal document. Preserve GSD lifecycle authority,
+  source revision binding, bounded retry and current Herdr execution contracts.
+- R1 is verified: combined cause/retry/liveness/loop/verification suite 244/244
+  and extension typecheck pass. Red cases demonstrated all three missing behaviors.
+  Extra coverage preserves unrelated retry contexts, one publication before a
+  failed commit, heartbeat normalization without conflating holders, lease token
+  authority and existing wedge acknowledgment. R2 browser-snapshot/PLAN-whitespace
+  implementation is now assigned to Astra/xhigh workers. R3–R6 remain mandatory.
+- R2 verified: combined browser evidence/renderer/UAT regression 107 passing,
+  10 existing skips, zero failures; extension typecheck passes. Explicit browser
+  snapshots survive nearby database terms and wrapped negative requirements remain
+  excluded. PLAN empty separators have no whitespace while nonempty bytes remain.
+  R3 runtime remediation and legacy parser chains are now assigned to two
+  Astra/xhigh workers with an independent Astra/xhigh authority review. Recovery
+  baseline 131/131 passes before edits; no real project DB/config changes.
+- R3 verified: runtime/native/MCP/CLI 264/264, parser/preview/recover 272/272,
+  existing adoption 98/98 and real two-process SQLite contention 4/4, plus
+  typecheck/diff checks. Preserved one-time grants, exact identities, unapproved
+  abort refusal, blocker gates and bounded captured-successor refresh. Parser
+  correction rejects contradictory SUMMARY headings; sealed v48 evidence/oracles
+  remain unchanged while current v49 expectations are separately asserted.
+  R4 begins with isolated read-transaction/shared projection design; R5/R6 remain
+  required. Scope, worker model requests and detailed evidence stay in goal doc.
+- R4 verified: core/runtime 98/98, interface/CLI 43/43, independent isolation
+  9/9, native relative-path/scope 2/2 and MCP workflow/parity 84/84 (overlap).
+  Parent final snapshot/progress/isolation 27/27, typecheck, core no-emit,
+  Pi boundary/patch inventory, audit metadata 7/7 and diff checks pass.
+  New `gsd_project_snapshot` native/MCP and `gsd read snapshot` read one isolated
+  DB transaction without global handle replacement, migration, queue repair or
+  notification writes. Existing unreadable DBs fail explicitly, and foreign
+  project reads discard caller scope. Real CLI, WAL writes, path replacement,
+  caller statements, Unicode and complete envelope limits are covered.
+  ADR-H045 and `docs/dev/project-snapshot.md` record the adaptation and remaining
+  auxiliary-file consistency boundary. The preceding goal turn was progress:
+  read-only acceptance evidence and implementation advanced authoritative code.
+  Exact next task: complete R5 bounded output continuation/session integration,
+  then R6 resource drift/Ctrl-O behavior and final combined regression/build gates.
+  Astra/xhigh workers are reused; no model policy, install or live session changed.
+- R5 verified: loop/Agent/schema 75/75, parent source session/module/integration
+  52/52 and final independent persistent integration 6/6; package typechecks and
+  diff checks pass. Three output-continuation injections per loop, deferred intent
+  after next-turn preparation, stop/abort precedence, source attribution and
+  zero synthetic usage are covered. Context overflow retries once without erasing
+  historical assistant/tool records; an actual persisted follow-up bridges an
+  assistant-only retained tail after successful compaction. Existing schema-field
+  notation mismatch remains documented and is not silently widened.
+  Role/effort/backend regression 118/118 and Herdr boundary/plugin 31/31 pass.
+  R6 resource fingerprint and real terminal paint work now proceeds; exact next
+  task is finish both, then final combined source/package/build/boundary gates.
+- R6 resource half verified at 60/60 adjacent tests plus independent 7/7 (parent
+  drift/policy combination 13/13). `GSD_RESOURCE_FINGERPRINT_MODE=auto|live|bundled`
+  preserves immutable package content-hash startup while detecting development
+  drift. Actual mid-copy and pre-stamp races converge; no installed setting changed.
+  UI half remains in progress: real Ctrl-O collapse is already correct, but
+  Ctrl-T loses live components on replay/failure and tall WRITE elapsed metadata
+  triggers a 288KB full repaint. Transactional replay and tall-card status footer
+  are being implemented without changing TUI scrollback policy. Final broad
+  workflow run found four more existing v48/v49 test-expectation mismatches;
+  sealed fixtures remain untouched while exact epoch assertions are maintained.
+- R6 UI and final goal verified: full TUI/controller 750/750, component 66/66,
+  changed-source 875 passing / 10 existing skips / zero failures, and full
+  subagent/Local/Cmux/Herdr/worker regression 170/170. Core build, final extension
+  typecheck, Pi boundary/patch allowlist and upstream metadata checks pass.
+  Role/effort/backend 118/118, loop 75/75 and persisted-session recovery 6/6
+  remain green. Final broader legacy family 182/182 passes after exact test-only
+  v48/v49 maintenance; sealed bytes/digest are unchanged. Counts overlap.
+  Ctrl-T replay is staged, preserves live IDs/pinned/orphaned state and survives
+  getter-only mode properties and exceptions. Tall expanded tool status moves to
+  the visible footer, reducing the measured WRITE append from 288,541 bytes/full
+  repaint to 924 bytes/no full repaint. Semantic repaint policy is unchanged.
+  Thirteen obsolete TUI expectations now assert the existing bottom-anchor,
+  resize and viewport-shrink behavior; no pi-tui runtime change was made.
+  ADR-H048 and `docs/dev/interactive-render-backports.md` record the decision.
+  Final requirement audit and commands are in the deferred implementation record.
+- Exact next task: maintainer review, then commit/push/package/install only on
+  explicit instruction. This goal has no implementation task remaining. Current
+  installed Mac/penglab code and model preferences, source version/fork baseline,
+  live sessions and upstream repositories remain unchanged. The actual supported
+  Herdr wire contract and GSD orchestration authority remain covered by regression.
+
+### 2026-09-08 — Penglab deployment and Mac configuration replica
+
+- User explicitly requested latest remote installation, OpenCodex setup and Mac
+  configuration parity. Built core/web, passed package validation, retained a
+  5,753-entry source snapshot and installed the verified dirty working-tree
+  artifact into `gsd-pi-herdr-1.16.2-0417606d-dirty-14725a27`. Package SHA-256 is
+  `14725a271a0c3fcc3bcbd598573afb043fc2ccf5b67e24c485f86767c3065b91`.
+  This is not a clean commit/full 1.18 merge; no commit/push or Mac global
+  installation was performed.
+- OpenCodex 2.42.0, Codex CLI 0.153.4, Node 24.19.0 and pnpm 10.12.1 now match
+  Mac versions; Bun 1.3.14 and Herdr 0.8.2 already matched. Backed up primary
+  configs and shared links, then atomically switched all 13 executable links.
+  Both SSH shell modes resolve the candidate. OpenCodex uses its Linux user
+  systemd service on loopback 10100, enabled/active with lingering.
+- Mirrored 12 primary config files with one optional-pack path translation,
+  plus separately required native Codex auth. Credentials stayed private/0600;
+  equality checks pass. Mirrored 13 agents, 36 managed skills, eight project
+  skills and the optional assessment pack. Preserved Mac GSD role/effort and
+  OpenCodex's separate routing policies. No GSD project DB or session copy/rewrite.
+- Repaired expired remote native Codex auth after initial readiness failure;
+  final proxy readiness is HTTP 200/ready. Actual installed GSD provider calls
+  return the exact marker for Astra/medium and GLM/max. Installed native addon
+  loads with 98 exports; MCP handshake lists 57 tools; isolated resource sync
+  matches `e3f8e52530b4b375`; Linux Herdr schema/capability check passes.
+- Browser native 0.2.2 and user-local Chrome 152.0.7977.82 are installed and
+  library/digest checks pass, but the real about:blank probe is blocked by
+  AppArmor's user-namespace restriction. No sandbox/security policy was disabled.
+  Existing GSD/Herdr PIDs 948361/934555 and project lifecycle state were preserved.
+- Exact next task: obtain approval for a narrowly scoped, sandbox-compatible
+  browser setup; restart the old GSD session normally at a safe boundary to load
+  new code. The separate Codex/Claude GSD skill runtime was offered as optional
+  scope and was not implicitly copied. Full evidence, backups and limitations:
+  `PENGLAB-DEPLOYMENT-20260908.md`.
+
+### 2026-09-08 — Approved Chrome-only policy, pending sudo authentication
+
+- User approved the Chrome-specific AppArmor setup. Fresh remote inspection
+  confirmed AppArmor enabled, parser 4.0.1, and global userns restriction still 1.
+  `sudo -n -l` requires password authentication; no privileged change was made and
+  no Docker/socket/other-account bypass was attempted.
+- Prepared and uploaded the operator-run `install-chrome-apparmor.py` in the
+  private deployment directory. It pins archive and Chrome hashes, copies into
+  root-private staging before verifying, validates 308 archive entries and installs
+  a non-setid, root-owned versioned browser plus one exact-path profile. It never
+  changes global sysctl/AppArmor service state or adds no-sandbox flags. Existing
+  targets are refused; uncertain kernel-load failures retain matching artifacts
+  and report residual state rather than guessing at rollback.
+- Verification: seven nonprivileged safety tests pass on Mac and Penglab; the
+  actual remote archive/profile compile preflight passes with no kernel load.
+  Independent review confirmed bounded regular-file copying and failure handling.
+  Script SHA-256 is
+  `46fcb6a5cf295395e94eddab1b9769ed1f32753a133a4c04c39b597104e57098`.
+- Exact next task: operator executes the documented `sudo python3 -I` command
+  in their terminal, then verify an isolated browser as penglab with the sandbox
+  enabled and persist the supported root-owned browser path. Root-owned runtime
+  installation, profile load and successful browser smoke are NOT claimed yet.
+  GSD/OpenCodex configuration, running sessions and project DBs were not modified.
+
+- The operator's interactive sudo attempt confirmed
+  `penglab is not in the sudoers file`, superseding the earlier authentication-only
+  diagnosis. The prepared installer still exists with unchanged SHA; the root
+  runtime/profile remain absent and global userns restriction stays 1. Next task
+  requires execution by an existing administrator/root account. Do not retry as
+  penglab, use Docker to bypass authorization, or broaden sudo membership. Keep
+  the full Python/script invocation on one line.
+
+### 2026-09-08 — Administrator-installed Chrome sandbox verified
+
+- Operator supplied the successful root installation receipt. Independently
+  verified the root-owned Chrome hash, exact AppArmor profile and 317 protected
+  tree entries; no symlinks, setid or group/world-writable entries were found.
+  Global userns restriction remains 1. Running uid-1001 browser has the exact
+  pinned executable and `gsd-browser-chromium-152.0.7977.82 (unconfined)` label.
+- Explicit-path CLI browser startup passed; fixed one smoke-script quoting error
+  without changing production code. Persisted native user `config.toml` at 0600.
+  Path-only startup exposed native headed-by-default behavior/no DISPLAY; adding
+  `headless=true` made default startup succeed without CLI/environment overrides.
+- Actual default CLI about:blank DOM, snapshot, click and PNG screenshot pass.
+  Chrome's internal sandbox page confirms Namespace/PID/network/Seccomp-BPF;
+  no no-sandbox flag or global protection change was used. The real installed
+  GSD managed adapter's stdio MCP navigation/evaluation/click also pass with the
+  same config and sandbox. All owned daemons were stopped; no pinned browser
+  processes remain. Existing GSD/Herdr sessions and OpenCodex service were preserved.
+- Separate finding: native 0.2.2 MCP screenshot handler drops the image and
+  returns success text only; `mcp --json` also fails to deliver image evidence.
+  Source review confirms the hardcoded behavior. CLI image capture success is
+  recorded separately; no fake MCP screenshot success, upgrade or broad source
+  patch is claimed. Exact next task: review/fix that MCP payload issue if requested,
+  and restart the old GSD session normally at a safe boundary for latest code.
+- Updated `PENGLAB-DEPLOYMENT-20260908.md` with configuration, full evidence paths,
+  historical sudo handoff and current limitations. No further administrator action
+  is needed for the now-verified Chrome sandbox setup.
+- Final regression checks: managed browser/launch-config tests 27 pass, 1
+  installation-layout-dependent skip; downstream boundary tests 6/6 pass;
+  `git diff --check` passes. These adapter/config tests do not cover the native
+  MCP screenshot payload defect found by the real remote probe above.
+
+### 2026-09-08 — Managed browser image-delivery correction
+
+- User requested repair of the confirmed text-only native MCP screenshot bug.
+  Fixed only the downstream managed browser adapter; native browser dependency,
+  browser engine selection, GSD lifecycle/model policy and existing dirty work
+  remain unchanged. ADR-H049 and `docs/dev/managed-browser-images.md` describe
+  the same-session CLI image bridge and its explicit limits.
+- Captures reuse connected launch/session/identity/cwd and frozen child env.
+  PNG/JPEG data is bounded, fully decoded, checked against envelope metadata and
+  constrained with existing image sizing. Text/details do not contain raw image
+  data. Requested browser_verify screenshots retain options and fail truthfully;
+  no-screenshot verification remains unchanged. Capture count and aggregate image
+  bytes are bounded. POSIX abort/teardown kills the capture's short-lived group,
+  not the persistent browser daemon; Windows capture is explicitly unsupported.
+- Existing 128-test browser baseline passed despite the bug. New public SDK/CLI
+  fixture tests failed before implementation and pass with actual image output.
+  Independent review caught leading-hyphen selector parsing and synchronous NUL
+  argument error disclosure; both are fixed. Final browser matrix: 157 pass,
+  one Windows-only skip; adjacent configuration/image constraints: 17 pass,
+  one installation-layout skip. Extension typecheck and core build pass.
+- Native remote contract probe confirms JSON bytes without output files and PNG
+  for selector crops even when JPEG is requested; five captures kept one PID/page.
+  Its own daemon was stopped. Existing GSD/Herdr processes and sandbox settings
+  were preserved. Final candidate package/install and public managed-tool remote
+  smoke are still pending in this entry; no remote activation is claimed yet.
+- Exact next task: finish package/changed-source gates, verify PNG/JPEG/crop/full
+  page/browser_verify image delivery on the isolated remote candidate, then switch
+  only GSD launcher/source links while retaining the previous installation.
+- Final provider review caught an overbroad new `producesImages` declaration on
+  conditional browser_verify: the repository treats it as a hard API tool filter,
+  which would hide image-free verification on GPT/GLM. Removed that declaration
+  (always-image browser_screenshot keeps its prior guard) and added an actual
+  provider-filter regression: red before correction, green for completions,
+  Responses and Codex Responses afterward. Combined image/provider tests 75 pass,
+  one platform skip. No provider capability or model policy was changed.
+- Final gates: changed-source **922 pass / 11 skips / zero failures**, final
+  extension typecheck/resource compilation, core build and package validation
+  pass. Browser 157/1 and adjacent 17/1 matrices plus 6/6 downstream boundary
+  remain green (counts overlap). No subagent execution code changed.
+- Final remote package SHA-256:
+  `230c8983c091b8300cf2416eef2a0065ee3189a41ba7fdbfd4181890156a4b48`;
+  prefix `gsd-pi-herdr-1.16.2-0417606d-dirty-230c8983`, source digest
+  `dc445e4939d15c28f12809ff46803f7e265371e1732190aab414ead9b16948f6`,
+  managed fingerprint `439fb4b0bac83b30`. Normal and login shell GSD aliases
+  point to this verified candidate. Four GSD executable links and sources/current
+  changed; OpenCodex, model/auth settings, user browser policy and project DBs
+  did not. Existing GSD/Herdr PIDs 948361/934555 were preserved.
+- Actual public-tool image tests pass from installed and independently copied
+  managed resources: viewport PNG, JPEG, 240×120 element PNG, full-page PNG and
+  browser_verify JPEG, plus invalid/missing/aborted failure paths. The copied
+  resource smoke uses private GSD_HOME/skill destinations, not user state. Chrome
+  retains the pinned AppArmor label and namespace/seccomp sandbox, global userns
+  restriction 1; probe PIDs are gone and OpenCodex remains HTTP 200/ready.
+  Final proofs: private `browser-image-fix-qDCPM4-final/proof-XvI4XW/proof.json`
+  and `proof-7Dn6ek/proof.json`. A geometry-only smoke assertion was corrected
+  for the existing 1568px image scaling; the failed proof remains preserved.
+- The intermediate 11dd9c40 image build was superseded after the provider-flag
+  review. Final operational docs are copied separately into remote artifact
+  storage; packaging-time source snapshots/hashes remain immutable. No commit,
+  push, upstream mutation or Mac global reinstall was performed.
+- Exact next task: safely exit/restart the existing remote GSD session when its
+  active work permits, then continue normal work. Standalone native MCP image
+  delivery and Windows capture remain explicit limitations, not completed fixes.
+
+### 2026-09-09 — Approved downstream commit and Penglab release preparation
+
+- Operator requested committing/pushing the accumulated downstream changes and
+  installing that revision on Penglab. The feature branch remains
+  `feature/gsd-upstream-backports-20260907`; no merge to main, upstream write or
+  Mac global reinstall is included. OpenCodex version/settings are out of scope.
+- Includes the already reviewed selective upstream/R1–R6 work, managed browser
+  image fix, bounded execution evidence/log search and provider result budgets.
+  Scout prompt improvement and its offline evaluation tooling are separately
+  committed so the prompt can be reverted independently. No live model A/B or
+  model usage reduction is claimed.
+- Fresh combined source gate: 1,192 pass / 11 skips / zero failures (1,203 total).
+  Changed package Node tests 158/158, agent-loop tests 47/47, evaluator/upstream/
+  downstream-boundary scripts 39/39, extension typecheck and Pi boundary/patch
+  inventory pass. Credential scan found only the intentional nested redaction
+  sentinel; a path-and-sentinel-specific exception preserves the scanner gate.
+- Initial full backend run had one Cmux fixture failure (173/174); unchanged
+  isolated Cmux tests pass 7/7 and the full rerun passes 174/174. The initial
+  intermittent failure remains recorded; no Cmux code changed. Web standalone
+  build/staging passes. Final clean-commit core/package verification is still
+  required before activation.
+- Exact next task: finish gates, create separate downstream commits, build and
+  checksum the clean source package, push only the named origin feature branch,
+  verify a side-by-side Linux candidate, then switch GSD/source links while
+  retaining rollback targets and preserving live GSD/Herdr sessions and configs.
 
 ## 11. Working-session protocol
 

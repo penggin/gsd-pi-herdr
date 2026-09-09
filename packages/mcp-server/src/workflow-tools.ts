@@ -47,6 +47,8 @@ interface GsdMcpBridge {
   invalidateStateCache: (...args: any[]) => any;
   isReusableGhostMilestone: (...args: any[]) => any;
   readProgressFromDb: (...args: any[]) => any;
+  readProjectSnapshotFromDb: (basePath: string, options?: { scope?: { milestoneId?: string; sliceId?: string } }) => Promise<any | null>;
+  projectReadOptionsForTarget: (targetBasePath: string, sessionBasePath: string) => { scope?: { milestoneId?: string; sliceId?: string } };
   loadEffectiveGSDPreferences: (...args: any[]) => any;
   saveDecisionToDb: (...args: any[]) => any;
   saveRequirementToDb: (...args: any[]) => any;
@@ -1312,23 +1314,16 @@ async function runSerializedWorkflowDbOperation<T>(
 
 /**
  * DB-authoritative progress payload for the `gsd_progress` tool
- * (ADR-046). Runs inside the workflow serialization queue with the bridge's
- * project-scoped DB open, so back-to-back calls for different projects
- * cannot serve one project's state for another.
+ * (ADR-046). The shared reader owns an isolated read transaction, so a read
+ * never migrates a database or replaces a running workflow's global adapter.
  *
- * Returns null when the project database is missing or cannot be opened, so
- * the caller falls back to the projection reader, matching `gsd read progress`.
- * Schema-version errors and failures after a successful open remain loud.
+ * Returns null only when the project database is absent, matching the CLI's
+ * projection fallback. Present locked/incompatible databases fail explicitly.
  */
 export async function readProjectProgressViaBridge(projectDir: string): Promise<unknown | null> {
   return runSerializedWorkflowOperation(async () => {
     const bridge = await importBridgeModule();
-    const opened = bridge.openExistingWorkflowDatabase(projectDir);
-    if (!opened.ok) {
-      if (opened.reason === "schema-too-new") throw opened.error;
-      return null;
-    }
-    return bridge.readProgressFromDb(projectDir);
+    return bridge.readProgressFromDb(projectDir, bridge.projectReadOptionsForTarget(projectDir, process.cwd()));
   });
 }
 
@@ -2500,7 +2495,7 @@ const taskReopenSchema = z.object(taskReopenParams);
 
 const taskRecoveryResumeParams = {
   projectDir: projectDirParam,
-  recoveryActionId: nonEmptyString("recoveryActionId").describe("Exact current abort Recovery Action ID"),
+  recoveryActionId: nonEmptyString("recoveryActionId").describe("Exact current abort or remediate Recovery Action ID"),
   repairSummary: nonEmptyString("repairSummary").describe("What was repaired and why retry is now safe"),
   evidence: unknownRecord.refine(
     (value) => Object.keys(value).length > 0,
@@ -2661,10 +2656,17 @@ const uatResultSaveSchema = z.object(uatResultSaveParams);
 
 const execSearchParams = {
   projectDir: projectDirParam,
-  query: z.string().optional().describe("Substring matched against id and purpose, case-insensitive."),
+  mode: z.enum(["history", "search", "read"]).optional().describe("Default history filters ID/purpose. Search/read inspect stored stdout/stderr without execution."),
+  query: z.string().optional().describe("History: ID/purpose substring. Search: nonempty single-line literal, maximum 256 chars. Case-insensitive."),
+  exec_id: z.string().max(200).optional().describe("Existing execution ID, not a path. Required for read."),
+  stream: z.enum(["stdout", "stderr", "both"]).optional().describe("Search defaults both; read requires stdout or stderr."),
+  context_lines: z.number().int().min(0).max(8).optional().describe("Search surrounding lines, default 2."),
+  start_line: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).optional().describe("One-based starting line, default 1."),
+  line_count: z.number().int().min(1).max(200).optional().describe("Read line count, default 50."),
+  start_column: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).optional().describe("One-based UTF-16 column for partial long-line continuation."),
   runtime: z.enum(["bash", "node", "python"]).optional().describe("Restrict to one runtime."),
   failing_only: z.boolean().optional().describe("Only non-zero exit codes and timeouts."),
-  limit: z.number().int().min(1).max(200).optional().describe("Max results (default 20, cap 200)."),
+  limit: z.number().int().min(1).max(200).optional().describe("History default 20/max 200; search default 5/max 20."),
 };
 const execSearchSchema = z.object(execSearchParams);
 
@@ -2771,6 +2773,38 @@ export function registerWorkflowTools(
   // Read-only access to the canonical GSD database state. These tools
   // return the DB truth, not projections (REQUIREMENTS.md, DECISIONS.md).
   // Error contracts: db_unavailable, not_found, query_error.
+
+  server.tool(
+    "gsd_project_snapshot",
+    "Read canonical database authority, current focus, progress, blockers, open questions, verification, and bounded milestones in one consistent snapshot. Inspect truncation metadata for omitted detail.",
+    { projectDir: z.string().min(1).optional().describe("Project directory to read; defaults to MCP server cwd.") },
+    async (args: Record<string, unknown>) => {
+      const { projectDir } = parseWorkflowArgs(z.object({ projectDir: z.string().min(1).optional() }).strict(), args);
+      try {
+        const bridge = await importBridgeModule();
+        // The shared reader opens its own isolated read transaction; a workflow
+        // pre-open would migrate or replace another project's global adapter.
+        const snapshot = await bridge.readProjectSnapshotFromDb(projectDir, bridge.projectReadOptionsForTarget(projectDir, process.cwd()));
+        if (snapshot === null) throw Object.assign(new Error("GSD database is not available."), { code: "db_unavailable" });
+        return adaptExecutorResult({
+          content: [{ type: "text" as const, text: JSON.stringify(snapshot) }],
+          details: { operation: "read_project_snapshot", revision: snapshot.authority.revision, truncation: snapshot.truncation, consistency: snapshot.consistency },
+        });
+      } catch (err) {
+        const cause = err as { name?: string; code?: string } | null;
+        const error = cause?.name === "GSDSchemaTooNewError" ? "schema_too_new"
+          : cause?.code === "db_unavailable" || cause?.code === "snapshot_too_large" ? cause.code
+          : "query_error";
+        const message = error === "query_error" ? "GSD project snapshot could not be read."
+          : (err instanceof Error ? err.message : "GSD database is not available.").slice(0, 2048);
+        return adaptExecutorResult({
+          isError: true,
+          content: [{ type: "text" as const, text: `Error reading project snapshot: ${message}` }],
+          details: { operation: "read_project_snapshot", error, message },
+        });
+      }
+    },
+  );
 
   const decisionListSchema = z.object({
     projectDir: z.string().optional(),
@@ -3531,7 +3565,7 @@ export function registerWorkflowTools(
 
   server.tool(
     "gsd_task_recovery_resume",
-    "Authorize one new Task Attempt after the current durable abort cause has been repaired.",
+    "Authorize one new Task Attempt after the current durable abort or remediation cause has been repaired.",
     taskRecoveryResumeParams,
     async (args: Record<string, unknown>, extra?: WorkflowMcpRequestExtra) => {
       const parsed = parseWorkflowArgs(taskRecoveryResumeSchema, args);
@@ -3734,17 +3768,18 @@ export function registerWorkflowTools(
 
   server.tool(
     "gsd_exec_search",
-    "Search prior gsd_exec runs from .gsd/exec/*.meta.json without re-running them.",
+    "Read-only execution history or literal stored-log search/read under the current project/worktree .gsd/exec; never reruns commands or creates current validation evidence.",
     execSearchParams,
-    async (args: Record<string, unknown>) => {
+    async (args: Record<string, unknown>, extra?: { signal?: AbortSignal }) => {
       const { projectDir, ...params } = parseWorkflowArgs(execSearchSchema, args);
       const { executeExecSearch } = await importLocalModule<any>(
         "../../../src/resources/extensions/gsd/tools/exec-search-tool.js",
       );
       return adaptExecutorResult(
-        executeExecSearch(params, {
+        await executeExecSearch(params, {
           baseDir: projectDir,
           preferences: await loadProjectPreferences(projectDir),
+          signal: extra?.signal,
         }),
       );
     },

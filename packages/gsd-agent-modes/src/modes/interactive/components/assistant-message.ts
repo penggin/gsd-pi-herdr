@@ -102,6 +102,19 @@ export class AssistantMessageComponent extends Container {
 		}
 	}
 
+	/** Create a staged visibility variant without mutating a mounted message. */
+	cloneWithThinkingVisibility(hide: boolean): AssistantMessageComponent {
+		const clone = new AssistantMessageComponent(
+			this.lastMessage,
+			hide,
+			this.markdownTheme,
+			this.timestampFormat,
+			this.range ? { ...this.range } : undefined,
+		);
+		clone.setShowMetadata(this.showMetadata);
+		return clone;
+	}
+
 	/** @deprecated Plain transcript has no connected rails. */
 	setContinuesToUser(_value: boolean): void {}
 

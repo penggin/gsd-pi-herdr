@@ -6,6 +6,7 @@ import { Type, type TSchema } from "@sinclair/typebox";
 import { BROWSER_CONTRACT_TOOL_NAMES, type BrowserContractToolName } from "../../shared/browser-contract.js";
 import { resolveGsdBrowserMcpLaunchConfig, type GsdBrowserMcpLaunchConfig } from "../../shared/gsd-browser-cli.js";
 import { buildMcpChildEnv } from "../../mcp-client/manager.js";
+import { captureManagedScreenshot, ManagedScreenshotError, MAX_MANAGED_SCREENSHOT_BYTES } from "./managed-screenshot.js";
 
 type ManagedBrowserToolResult = AgentToolResult<ManagedBrowserToolDetails> & { isError?: boolean };
 
@@ -30,6 +31,8 @@ interface ManagedConnection {
   client: Client;
   transport: StdioClientTransport;
   launch: GsdBrowserMcpLaunchConfig;
+  childEnv: Record<string, string>;
+  screenshotAbortController: AbortController;
 }
 
 type ConnectManagedGsdBrowser = (
@@ -84,6 +87,7 @@ interface ManagedBrowserToolSpec {
 const DEFAULT_MAX_LINES = 2_000;
 const DEFAULT_MAX_BYTES = 50 * 1024;
 const MCP_CALL_TIMEOUT_MS = 60_000;
+const MAX_VERIFY_SCREENSHOTS = 5;
 
 const AssertionCheck = Type.Object({
   kind: Type.String({ description: "Assertion kind, e.g. url_contains, text_visible, selector_visible, no_console_errors, no_failed_requests." }),
@@ -220,6 +224,10 @@ export const MANAGED_BROWSER_TOOL_SPECS: Record<BrowserContractToolName, Managed
           },
         ];
         const verifyChecks = Array.isArray(args.checks) ? args.checks as Array<Record<string, unknown>> : [];
+        const screenshotChecks = verifyChecks.filter((check) => check.screenshot === true);
+        if (screenshotChecks.length > MAX_VERIFY_SCREENSHOTS) {
+          throw new ManagedScreenshotError(`Verification supports at most ${MAX_VERIFY_SCREENSHOTS} requested screenshots per call.`);
+        }
         const assertChecks: Array<Record<string, unknown>> = [];
         for (const check of verifyChecks) {
           if (typeof check.expectedText === "string") {
@@ -236,14 +244,20 @@ export const MANAGED_BROWSER_TOOL_SPECS: Record<BrowserContractToolName, Managed
         if (assertChecks.length > 0) {
           calls.push({ mcpTool: "browser_assert", args: { checks: assertChecks } });
         }
-        if (verifyChecks.some((check) => check.screenshot === true)) {
-          calls.push({ mcpTool: "browser_screenshot", args: {}, optional: true });
+        for (const check of screenshotChecks) {
+          const screenshotArgs: Record<string, unknown> = {};
+          for (const key of ["selector", "fullPage", "quality", "format"]) {
+            if (check[key] !== undefined) screenshotArgs[key] = check[key];
+          }
+          calls.push({ mcpTool: "browser_screenshot", args: screenshotArgs });
         }
         return calls;
       },
     },
     label: "Browser Verify",
     description: "Run a structured browser verification flow and return evidence from the managed gsd-browser session.",
+    // Images are conditional here. producesImages is a hard provider filter,
+    // so declaring it would also remove image-free verification on GPT/GLM.
     parameters: Type.Object({
       url: Type.String({ description: "URL to verify." }),
       checks: Type.Array(Type.Object({
@@ -252,6 +266,9 @@ export const MANAGED_BROWSER_TOOL_SPECS: Record<BrowserContractToolName, Managed
         expectedText: Type.Optional(Type.String()),
         expectedVisible: Type.Optional(Type.Boolean()),
         screenshot: Type.Optional(Type.Boolean()),
+        fullPage: Type.Optional(Type.Boolean()),
+        quality: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+        format: Type.Optional(Type.Union([Type.Literal("jpeg"), Type.Literal("png")])),
       }, { additionalProperties: true })),
       timeout: Type.Optional(Type.Number({ description: "Navigation timeout in milliseconds." })),
     }, { additionalProperties: true }),
@@ -263,7 +280,8 @@ export const MANAGED_BROWSER_TOOL_SPECS: Record<BrowserContractToolName, Managed
     parameters: Type.Object({
       fullPage: Type.Optional(Type.Boolean({ description: "Capture the full scrollable page." })),
       selector: Type.Optional(Type.String({ description: "CSS selector to crop." })),
-      quality: Type.Optional(Type.Number({ description: "JPEG quality when supported." })),
+      quality: Type.Optional(Type.Integer({ minimum: 1, maximum: 100, description: "JPEG quality when supported." })),
+      format: Type.Optional(Type.Union([Type.Literal("jpeg"), Type.Literal("png")])),
     }, { additionalProperties: true }),
   },
   browser_snapshot_refs: {
@@ -497,17 +515,18 @@ async function connectManagedGsdBrowser(
   signal?: AbortSignal,
 ): Promise<ManagedConnection> {
   const client = new Client({ name: "gsd-pi-browser-tools", version: "1.0.0" });
+  const childEnv = buildMcpChildEnv(launch.env);
   const transport = new StdioClientTransport({
     command: launch.command,
     args: launch.args,
-    env: buildMcpChildEnv(launch.env),
+    env: childEnv,
     cwd: launch.cwd,
     stderr: "pipe",
   });
 
   try {
     await client.connect(transport, { signal, timeout: 30000 });
-    return { client, transport, launch };
+    return { client, transport, launch, childEnv, screenshotAbortController: new AbortController() };
   } catch (error) {
     try {
       await transport.close();
@@ -524,6 +543,7 @@ async function connectManagedGsdBrowser(
 }
 
 async function closeManagedGsdBrowserConnection(connection: ManagedConnection): Promise<void> {
+  connection.screenshotAbortController.abort();
   try {
     await connection.client.close();
   } catch {
@@ -666,6 +686,14 @@ function callGsdBrowserMcp(
   args: Record<string, unknown>,
   signal?: AbortSignal,
 ): Promise<McpToolCallResult> {
+  // Native 0.2.2 MCP discards the screenshot daemon response and only emits
+  // "Screenshot captured". Its JSON CLI exposes the bytes for the same session.
+  // Dispatch once here so direct screenshots and translated verification share
+  // the same capture/validation path without an extra MCP capture.
+  if (mcpTool === "browser_screenshot") {
+    return captureManagedScreenshot(connection.launch, args, connection.childEnv,
+      combineAbortSignals(connection.screenshotAbortController.signal, signal));
+  }
   return connection.client.callTool(
     { name: mcpTool, arguments: args },
     undefined,
@@ -711,6 +739,7 @@ async function callTranslatedGsdBrowserTool(
   const calls = translation.build(args);
   const contentItems: McpContentItem[] = [];
   const toolsUsed: string[] = [];
+  let imageBytes = 0;
   let lastResult: McpToolCallResult = {};
 
   for (const call of calls) {
@@ -723,7 +752,15 @@ async function callTranslatedGsdBrowserTool(
     }
     if (call.optional && result.isError) continue;
     toolsUsed.push(call.mcpTool);
-    if (Array.isArray(result.content)) contentItems.push(...result.content as McpContentItem[]);
+    if (Array.isArray(result.content)) {
+      for (const item of result.content as McpContentItem[]) {
+        if (item.type === "image" && typeof item.data === "string") imageBytes += Buffer.byteLength(item.data, "base64");
+        if (imageBytes > MAX_MANAGED_SCREENSHOT_BYTES) {
+          throw new ManagedScreenshotError("Verification screenshot evidence exceeds the combined image size limit.");
+        }
+        contentItems.push(item);
+      }
+    }
     lastResult = result;
     // Later calls assume the earlier ones took effect (e.g. assert after a
     // failed navigation would report misleading evidence), so stop here.
@@ -763,6 +800,9 @@ async function callManagedGsdBrowserTool(
 
 function formatManagedBrowserError(toolName: string, error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
+  if (error instanceof ManagedScreenshotError) {
+    return `${toolName} failed: ${message} Requested screenshot evidence is incomplete.`;
+  }
   return [
     `gsd-browser engine or tool unavailable for ${toolName}: ${message}`,
     "",

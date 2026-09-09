@@ -4,6 +4,7 @@
  *   gsd read progress --json --project /path
  *   gsd read roadmap --json --project /path [--milestone M001]
  *   gsd read memory --json --project /path --query "auth"
+ *   gsd read snapshot --json --project /path
  */
 
 import { existsSync } from 'node:fs'
@@ -91,15 +92,33 @@ async function loadDbProgressReader(
       `selected GSD extensions do not support DB-backed progress reads; synchronize the extension bundle (${detail})`,
     )
   }
-  if (typeof mod.readProgressFromDb !== 'function') {
+  if (typeof mod.readProgressFromDb !== 'function' || typeof mod.projectReadOptionsForTarget !== 'function') {
     throw new Error('selected GSD extensions do not support DB-backed progress reads; synchronize the extension bundle')
   }
-  return (projectDir: string) => mod.readProgressFromDb(projectDir)
+  return (projectDir: string) => mod.readProgressFromDb(projectDir, mod.projectReadOptionsForTarget(projectDir, process.cwd()))
+}
+
+export type DbSnapshotReader = (projectDir: string) => Promise<unknown | null>
+export type DbSnapshotModuleImporter = (path: string) => Promise<unknown>
+
+async function loadDbSnapshotReader(
+  moduleImporter: DbSnapshotModuleImporter = (path) => jiti.import(path, {}),
+): Promise<DbSnapshotReader> {
+  let mod: any
+  try {
+    mod = await moduleImporter(gsdExtensionPath('state/project-snapshot.ts'))
+  } catch {
+    throw Object.assign(new Error('selected GSD extensions do not support DB-backed snapshot reads; synchronize the extension bundle'), { code: 'snapshot_reader_unavailable' })
+  }
+  if (typeof mod?.readProjectSnapshotFromDb !== 'function' || typeof mod?.projectReadOptionsForTarget !== 'function') {
+    throw Object.assign(new Error('selected GSD extensions do not support DB-backed snapshot reads; synchronize the extension bundle'), { code: 'snapshot_reader_unavailable' })
+  }
+  return (projectDir: string) => mod.readProjectSnapshotFromDb(projectDir, mod.projectReadOptionsForTarget(projectDir, process.cwd()))
 }
 
 /**
  * DB-backed progress payload, or null when the projection fallback applies:
- * no DB file, or the DB cannot be opened (locked/unreadable). Schema skew
+ * no DB file, including a file removed before the reader opens it. Schema skew
  * has already refused loudly via assertProjectDbSchemaSupported before this
  * runs. When the DB is usable but the read itself fails, the error propagates
  * — it must never be swallowed into a projection fallback, which would serve
@@ -123,14 +142,15 @@ async function tryReadProgressFromDb(
  * divergence). Opens the DB through the engine's isolated READ-ONLY path —
  * no migration, no global-handle side effects — and throws SchemaTooNewError
  * when the recorded schema version is newer than this binary supports. A
- * missing or unreadable DB keeps the existing degraded markdown behavior.
+ * missing DB keeps the existing degraded markdown behavior. The progress
+ * reader subsequently refuses a present unreadable database.
  *
  * After this guard, `gsd read progress` prefers a DB-derived payload
- * (state/progress-from-db.ts via the extension runtime). Unlike the
- * preflight, that read opens the DB through the engine's normal path: it
- * runs pending migrations and syncs the milestone queue-order projection —
- * the same contract as `gsd headless status`. A locked or unreadable DB
- * falls back to markdown; a failed DB-backed read refuses loudly instead.
+ * (state/progress-from-db.ts via the extension runtime). That reader owns an
+ * isolated read transaction and never migrates or syncs queue-order state.
+ * Only an absent database falls back to Markdown; a present locked/unreadable
+ * database refuses loudly. Snapshot bypasses this preflight because its reader
+ * validates authority and schema inside its own read transaction.
  */
 async function assertProjectDbSchemaSupported(
   dbPath: string,
@@ -155,7 +175,7 @@ async function assertProjectDbSchemaSupported(
   }
 }
 
-export type ReadKind = 'progress' | 'roadmap' | 'memory'
+export type ReadKind = 'progress' | 'roadmap' | 'memory' | 'snapshot'
 
 /** DB-backed progress reader — jiti-loaded in production, injected in tests. */
 export type DbProgressReader = (projectDir: string) => Promise<unknown>
@@ -182,7 +202,7 @@ function parseReadArgs(argv: string[]): ReadCliOptions | null {
   const args = argv.slice(readIndex + 1)
   if (args.length < 1) return null
   const kind = args[0] as ReadKind
-  if (!['progress', 'roadmap', 'memory'].includes(kind)) return null
+  if (!['progress', 'roadmap', 'memory', 'snapshot'].includes(kind)) return null
 
   let project: string | undefined
   let milestone: string | undefined
@@ -206,16 +226,43 @@ export async function runReadCli(
   preflight?: ReadCliSchemaPreflight,
   dbProgressReader?: DbProgressReader,
   dbProgressModuleImporter?: DbProgressModuleImporter,
+  dbSnapshotReader?: DbSnapshotReader,
+  dbSnapshotModuleImporter?: DbSnapshotModuleImporter,
 ): Promise<number> {
   const opts = parseReadArgs(argv)
   if (!opts) {
     process.stderr.write(
-      'Usage: gsd read <progress|roadmap|memory> --json --project <path> [--milestone M001] [--query text]\n',
+      'Usage: gsd read <progress|roadmap|memory|snapshot> --json --project <path> [--milestone M001] [--query text]\n',
     )
     return 1
   }
 
   const projectDir = resolve(opts.project)
+  if (opts.kind === 'snapshot') {
+    // Snapshot owns schema validation and the isolated read transaction. The
+    // projection-read preflight below must not open a second adapter first.
+    try {
+      const read = dbSnapshotReader ?? await loadDbSnapshotReader(dbSnapshotModuleImporter)
+      const snapshot = await read(projectDir)
+      if (snapshot === null) throw Object.assign(new Error('GSD database is not available.'), { code: 'db_unavailable' })
+      const envelope: ReadEnvelope = { integration_version: INTEGRATION_VERSION, kind: 'snapshot', projectDir, data: snapshot }
+      process.stdout.write(JSON.stringify(opts.json ? envelope : snapshot, null, 2) + '\n')
+      return 0
+    } catch (err) {
+      const cause = err as { name?: string; code?: string } | null
+      const code = cause?.name === 'GSDSchemaTooNewError' ? 'schema_too_new'
+        : cause?.code === 'db_unavailable' || cause?.code === 'snapshot_too_large' ? cause.code
+        : 'query_error'
+      const message = code === 'query_error' && cause?.code !== 'snapshot_reader_unavailable'
+        ? 'GSD project snapshot could not be read.'
+        : (err instanceof Error ? err.message : 'GSD database is not available.').slice(0, 2048)
+      if (opts.json) {
+        process.stdout.write(JSON.stringify({ integration_version: INTEGRATION_VERSION, kind: 'snapshot', projectDir, error: { code, message } }, null, 2) + '\n')
+      }
+      process.stderr.write(`[gsd] DB-backed snapshot read failed (${code}): ${message}\n`)
+      return 1
+    }
+  }
   let gsdRoot: string
   try {
     gsdRoot = resolveGsdRoot(projectDir)
@@ -244,7 +291,7 @@ export async function runReadCli(
   switch (opts.kind) {
     case 'progress': {
       // ADR-046: when the DB is present and openable, serve DB-derived state;
-      // the projection reader is the fallback for missing/locked DBs only.
+      // the projection reader is the fallback for absent DBs only.
       let fromDb: unknown | null
       try {
         fromDb = await tryReadProgressFromDb(

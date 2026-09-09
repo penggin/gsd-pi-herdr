@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
+  ensureBrowserDaemonStarted,
   prepareBrowserDaemonForUat,
   shouldWarmBrowserDaemonForUat,
   stopBrowserDaemon,
@@ -159,4 +163,67 @@ test("teardownWarmedBrowserDaemons is a no-op when nothing was warmed", () => {
   });
 
   assert.deepEqual(teardownWarmedBrowserDaemons(), []);
+});
+
+function fakeDaemon(dir: string, source: string): NodeJS.ProcessEnv {
+  const script = join(dir, "fake daemon.mjs");
+  writeFileSync(script, source);
+  return { GSD_BROWSER_MCP_COMMAND: `"${process.execPath}" "${script.replaceAll("\\", "/")}"` };
+}
+
+for (const [action, run] of [["start", ensureBrowserDaemonStarted], ["stop", stopBrowserDaemon]] as const) {
+  test(`daemon ${action} returns after launcher exit while a bounded grandchild still holds stdio`, (t) => {
+    const dir = mkdtempSync(join(tmpdir(), "gsd-daemon-pipe-"));
+    const pidPath = join(dir, "grandchild.pid");
+    t.after(() => {
+      try { process.kill(Number(readFileSync(pidPath, "utf8"))); } catch { /* exited */ }
+      rmSync(dir, { recursive: true, force: true });
+    });
+    const env = fakeDaemon(dir, [
+      'import { spawn } from "node:child_process";',
+      'import { writeFileSync } from "node:fs";',
+      'const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 5000)"], { stdio: "inherit", detached: true });',
+      `writeFileSync(${JSON.stringify(pidPath)}, String(child.pid));`,
+      'child.unref(); process.stdout.write("daemon ready\\n"); process.exit(0);',
+    ].join("\n"));
+    const started = performance.now();
+    const result = run(dir, { env, timeoutMs: 1_000 });
+    assert.deepEqual(result, { ok: true });
+    assert.ok(performance.now() - started < 900, "warm-up must not consume the configured timeout");
+  });
+}
+
+test("daemon failure preserves a bounded stderr head and tail and cleans its capture directory", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "gsd-daemon-capture-"));
+  const saved = { TMPDIR: process.env.TMPDIR, TEMP: process.env.TEMP, TMP: process.env.TMP };
+  t.after(() => {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    rmSync(dir, { recursive: true, force: true });
+  });
+  process.env.TMPDIR = process.env.TEMP = process.env.TMP = dir;
+  const env = fakeDaemon(dir, 'process.stderr.write("HEAD: missing Chrome\\n" + "x".repeat(5 * 1024 * 1024) + "\\nTAIL: configure GSD_BROWSER_PATH"); process.exitCode = 1;');
+  const result = ensureBrowserDaemonStarted(dir, { env, timeoutMs: 5_000 });
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.match(result.error, /HEAD: missing Chrome/);
+  assert.match(result.error, /TAIL: configure GSD_BROWSER_PATH/);
+  assert.match(result.error, /truncated/);
+  assert.ok(Buffer.byteLength(result.error) < 6_000, "failure diagnostics must remain bounded");
+  assert.deepEqual(readdirSync(dir), ["fake daemon.mjs"]);
+});
+
+test("daemon capture setup failure remains non-throwing", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "gsd-daemon-capture-failure-"));
+  const saved = { TMPDIR: process.env.TMPDIR, TEMP: process.env.TEMP, TMP: process.env.TMP };
+  t.after(() => {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const env = fakeDaemon(dir, 'process.stderr.write("missing Chrome\\n"); process.exitCode = 1;');
+  process.env.TMPDIR = process.env.TEMP = process.env.TMP = join(dir, "missing", "directory");
+  assert.equal(ensureBrowserDaemonStarted(dir, { env, timeoutMs: 5_000 }).ok, false);
 });

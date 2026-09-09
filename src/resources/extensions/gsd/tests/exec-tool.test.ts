@@ -203,3 +203,27 @@ test("registerExecTools exposes gsd_uat_exec intent as recoverable string schema
   assert.match(intentSchema.description, /uat-artifact-check/);
   assert.match(intentSchema.description, /artifact/);
 });
+
+test("tiny explicit output budgets preserve mechanical states rather than log words", async () => {
+  const states: Array<Partial<ExecSandboxResult>> = [
+    { exit_code: 0 }, { exit_code: 2 }, { exit_code: null },
+    { exit_code: null, signal: "SIGTERM" }, { exit_code: null, timed_out: true },
+    { exit_code: null, aborted: true }, { exit_code: null, signal: "SIGKILL", force_resolved: true, timed_out: true },
+  ];
+  for (const state of states) {
+    const result = await executeGsdExec({ runtime: "node", script: "unused" }, {
+      baseDir: "/tmp/fixture-only", preferences: { context_management: { tool_result_max_chars: 200 } },
+      run: async request => ({ ...makeExecResult(request), ...state, id: "00000000-0000-0000-0000-000000000001", digest: "success error failed ".repeat(200) }),
+    });
+    const text = result.content[0].text;
+    assert(text.length <= 200);
+    assert(text.includes("00000000-0000-0000-0000-000000000001"));
+    assert(text.includes("gsd_exec_search"));
+    assert.match(text, new RegExp(`exit=${state.exit_code ?? "null"}`));
+    assert(text.includes(`T${+(state.timed_out === true)}A${+(state.aborted === true)}F${+(state.force_resolved === true)}`));
+    assert.equal(result.details.exit_code, state.exit_code);
+    assert.equal(result.details.force_resolved, state.force_resolved ?? false);
+    assert.equal(result.isError, state.exit_code !== 0 || !!state.signal || !!state.timed_out || !!state.aborted || !!state.force_resolved);
+    assert.equal(result.details.output_truncated, true);
+  }
+});

@@ -90,6 +90,10 @@ import {
   type LegacyImportCorpusManifest,
 } from "./helpers/legacy-import-corpus.ts";
 
+// Sealed corpus databases retain their v48 producer epoch. Runtime schema
+// upgrades must not rewrite those bytes or reinterpret their version asserts.
+const SEALED_CORPUS_SCHEMA_VERSION = 48;
+
 const EXPECTED_SURFACE_IDS = [
   "database-targets",
   "gsd-assessment-truth",
@@ -546,7 +550,7 @@ test("legacy corpus manifest seals exact structure and aggregate accounting", ()
       SELECT
         (SELECT max(version) FROM schema_version) AS schema_version,
         (SELECT count(*) FROM workflow_import_applications) AS import_applications
-    `).get() }, { schema_version: SCHEMA_VERSION, import_applications: 0 });
+    `).get() }, { schema_version: SEALED_CORPUS_SCHEMA_VERSION, import_applications: 0 });
     assert.equal(database.prepare("PRAGMA integrity_check").get()?.integrity_check, "ok");
   });
   assert.equal(hashBytes(readFileSync(databasePath)), databaseBefore, "read-only boundary inspection must not mutate the database");
@@ -768,7 +772,7 @@ test("workflow_import_applications rejects an incomplete Preview envelope", () =
 });
 
 test("legacy import surface registry pins the deterministic Preview envelope contract", () => {
-  assert.equal(SCHEMA_VERSION, 48, "legacy import contract targets the accepted v48 schema");
+  assert.equal(SCHEMA_VERSION, 49, "current legacy import contract targets v49; sealed corpus databases remain v48");
   assert.equal(LEGACY_IMPORT_BASE_DATABASE_SCHEMA_VERSION, SCHEMA_VERSION);
   assert.equal(LEGACY_IMPORT_PREVIEW_SCHEMA_VERSION, 1);
   assert.deepEqual(LEGACY_IMPORT_CHANGE_ACTIONS, ["create", "update", "delete", "preserve"]);
@@ -1559,7 +1563,7 @@ test("legacy corpus gsd truth preserves hierarchy evidence and refuses competing
           WHERE milestone_id = 'M001' AND slice_id = 'S02') AS junction_dependency
     `).get() as Record<string, unknown>;
     assert.deepEqual({ ...conflict }, {
-      schema_version: SCHEMA_VERSION,
+      schema_version: SEALED_CORPUS_SCHEMA_VERSION,
       depends_json: '["S00"]',
       junction_dependency: "S99",
     });
@@ -2673,7 +2677,7 @@ test("legacy corpus capstone classifies database targets and changes without app
         revision,
         authority_epoch
       FROM project_authority WHERE singleton = 1
-    `).get() }, { schema_version: SCHEMA_VERSION, revision: 17, authority_epoch: 2 });
+    `).get() }, { schema_version: SEALED_CORPUS_SCHEMA_VERSION, revision: 17, authority_epoch: 2 });
     assert.equal(actionDatabase.prepare("PRAGMA integrity_check").get()?.integrity_check, "ok");
     const baseDecisions = actionDatabase.prepare("SELECT * FROM decisions ORDER BY id").all()
       .map((row) => ({ ...row }));

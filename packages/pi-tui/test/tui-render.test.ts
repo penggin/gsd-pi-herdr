@@ -30,6 +30,14 @@ class LoggingVirtualTerminal extends VirtualTerminal {
 	}
 }
 
+/** Downstream short frames are bottom-anchored; compare every viewport row. */
+function assertBottomAnchoredViewport(terminal: VirtualTerminal, lines: string[]): void {
+	assert.deepStrictEqual(terminal.getViewport(), [
+		...Array(Math.max(0, terminal.rows - lines.length)).fill(""),
+		...lines.slice(-terminal.rows),
+	]);
+}
+
 async function withEnv<T>(updates: Record<string, string | undefined>, run: () => Promise<T>): Promise<T> {
 	const previousValues = new Map<string, string | undefined>();
 	for (const [key, value] of Object.entries(updates)) {
@@ -166,14 +174,13 @@ describe("TUI resize handling", () => {
 			// Should have triggered a full redraw
 			assert.ok(tui.fullRedraws > initialRedraws, "Height change should trigger full redraw");
 
-			const viewport = terminal.getViewport();
-			assert.ok(viewport[0]?.includes("Line 0"), "Content preserved after height change");
+			assertBottomAnchoredViewport(terminal, ["Line 0", "Line 1", "Line 2"]);
 
 			tui.stop();
 		});
 	});
 
-	it("skips full re-render on height changes in Termux", async () => {
+	it("realigns on height changes in Termux without clearing scrollback", async () => {
 		await withEnv({ TERMUX_VERSION: "1" }, async () => {
 			const terminal = new LoggingVirtualTerminal(40, 10);
 			const tui = new TUI(terminal);
@@ -191,12 +198,13 @@ describe("TUI resize handling", () => {
 				await terminal.waitForRender();
 			}
 
-			assert.strictEqual(tui.fullRedraws, initialRedraws, "Height change should not trigger full redraw");
-			assert.ok(!terminal.getWrites().includes("\x1b[2J"), "Height change should not clear the screen");
+			// Current downstream geometry handling realigns every height change,
+			// including Termux. Clearing the viewport does not clear scrollback.
+			assert.strictEqual(tui.fullRedraws, initialRedraws + 4);
+			assert.strictEqual((terminal.getWrites().match(/\x1b\[2J/g) ?? []).length, 4);
 			assert.ok(!terminal.getWrites().includes("\x1b[3J"), "Height change should not clear scrollback");
 
-			const viewport = terminal.getViewport();
-			assert.ok(viewport.join("\n").includes("Line 19"), "Latest content remains visible after resize");
+			assertBottomAnchoredViewport(terminal, component.lines);
 
 			tui.stop();
 		});
@@ -248,12 +256,7 @@ describe("TUI content shrinkage", () => {
 		// Should have triggered a full redraw to clear empty rows
 		assert.ok(tui.fullRedraws > initialRedraws, "Content shrinkage should trigger full redraw");
 
-		const viewport = terminal.getViewport();
-		assert.ok(viewport[0]?.includes("Line 0"), "First line preserved");
-		assert.ok(viewport[1]?.includes("Line 1"), "Second line preserved");
-		// Lines below should be empty (cleared)
-		assert.strictEqual(viewport[2]?.trim(), "", "Line 2 should be cleared");
-		assert.strictEqual(viewport[3]?.trim(), "", "Line 3 should be cleared");
+		assertBottomAnchoredViewport(terminal, ["Line 0", "Line 1"]);
 
 		tui.stop();
 	});
@@ -274,9 +277,7 @@ describe("TUI content shrinkage", () => {
 		tui.requestRender();
 		await terminal.waitForRender();
 
-		const viewport = terminal.getViewport();
-		assert.ok(viewport[0]?.includes("Only line"), "Single line rendered");
-		assert.strictEqual(viewport[1]?.trim(), "", "Line 1 should be cleared");
+		assertBottomAnchoredViewport(terminal, ["Only line"]);
 
 		tui.stop();
 	});
@@ -431,15 +432,14 @@ describe("TUI differential rendering", () => {
 		tui.requestRender();
 		await terminal.waitForRender();
 
-		// cursorRow should be 2 (last line of new content)
-		// Verify by doing another render with a change on line 1
+		// Logical cursorRow 2 is the last screen row of the bottom-anchored frame.
+		assert.strictEqual(terminal.getCursorPosition().y, terminal.rows - 1);
+		// Verify by doing another render with a change on the middle content line.
 		component.lines = ["Line 0", "CHANGED", "Line 2"];
 		tui.requestRender();
 		await terminal.waitForRender();
 
-		const viewport = terminal.getViewport();
-		// Line 1 should show "CHANGED", proving cursor tracking was correct
-		assert.ok(viewport[1]?.includes("CHANGED"), `Expected "CHANGED" on line 1, got: ${viewport[1]}`);
+		assertBottomAnchoredViewport(terminal, ["Line 0", "CHANGED", "Line 2"]);
 
 		tui.stop();
 	});
@@ -462,10 +462,7 @@ describe("TUI differential rendering", () => {
 			tui.requestRender();
 			await terminal.waitForRender();
 
-			const viewport = terminal.getViewport();
-			assert.ok(viewport[0]?.includes("Header"), `Header preserved: ${viewport[0]}`);
-			assert.ok(viewport[1]?.includes(`Working ${frame}`), `Spinner updated: ${viewport[1]}`);
-			assert.ok(viewport[2]?.includes("Footer"), `Footer preserved: ${viewport[2]}`);
+			assertBottomAnchoredViewport(terminal, ["Header", `Working ${frame}`, "Footer"]);
 		}
 
 		tui.stop();
@@ -481,7 +478,9 @@ describe("TUI differential rendering", () => {
 		tui.start();
 		await terminal.waitForRender();
 
-		assert.strictEqual(getCellItalic(terminal, 1, 0), 0);
+		// Check the actual styled rows, rather than a blank top-padding cell.
+		assert.notStrictEqual(getCellItalic(terminal, terminal.rows - 2, 0), 0);
+		assert.strictEqual(getCellItalic(terminal, terminal.rows - 1, 0), 0);
 		tui.stop();
 	});
 
@@ -500,11 +499,7 @@ describe("TUI differential rendering", () => {
 		tui.requestRender();
 		await terminal.waitForRender();
 
-		const viewport = terminal.getViewport();
-		assert.ok(viewport[0]?.includes("CHANGED"), `First line changed: ${viewport[0]}`);
-		assert.ok(viewport[1]?.includes("Line 1"), `Line 1 preserved: ${viewport[1]}`);
-		assert.ok(viewport[2]?.includes("Line 2"), `Line 2 preserved: ${viewport[2]}`);
-		assert.ok(viewport[3]?.includes("Line 3"), `Line 3 preserved: ${viewport[3]}`);
+		assertBottomAnchoredViewport(terminal, ["CHANGED", "Line 1", "Line 2", "Line 3"]);
 
 		tui.stop();
 	});
@@ -524,11 +519,7 @@ describe("TUI differential rendering", () => {
 		tui.requestRender();
 		await terminal.waitForRender();
 
-		const viewport = terminal.getViewport();
-		assert.ok(viewport[0]?.includes("Line 0"), `Line 0 preserved: ${viewport[0]}`);
-		assert.ok(viewport[1]?.includes("Line 1"), `Line 1 preserved: ${viewport[1]}`);
-		assert.ok(viewport[2]?.includes("Line 2"), `Line 2 preserved: ${viewport[2]}`);
-		assert.ok(viewport[3]?.includes("CHANGED"), `Last line changed: ${viewport[3]}`);
+		assertBottomAnchoredViewport(terminal, ["Line 0", "Line 1", "Line 2", "CHANGED"]);
 
 		tui.stop();
 	});
@@ -548,12 +539,7 @@ describe("TUI differential rendering", () => {
 		tui.requestRender();
 		await terminal.waitForRender();
 
-		const viewport = terminal.getViewport();
-		assert.ok(viewport[0]?.includes("Line 0"), `Line 0 preserved: ${viewport[0]}`);
-		assert.ok(viewport[1]?.includes("CHANGED 1"), `Line 1 changed: ${viewport[1]}`);
-		assert.ok(viewport[2]?.includes("Line 2"), `Line 2 preserved: ${viewport[2]}`);
-		assert.ok(viewport[3]?.includes("CHANGED 3"), `Line 3 changed: ${viewport[3]}`);
-		assert.ok(viewport[4]?.includes("Line 4"), `Line 4 preserved: ${viewport[4]}`);
+		assertBottomAnchoredViewport(terminal, ["Line 0", "CHANGED 1", "Line 2", "CHANGED 3", "Line 4"]);
 
 		tui.stop();
 	});
@@ -569,28 +555,26 @@ describe("TUI differential rendering", () => {
 		tui.start();
 		await terminal.waitForRender();
 
-		let viewport = terminal.getViewport();
-		assert.ok(viewport[0]?.includes("Line 0"), "Initial content rendered");
+		assertBottomAnchoredViewport(terminal, ["Line 0", "Line 1", "Line 2"]);
 
 		// Clear to empty
 		component.lines = [];
 		tui.requestRender();
 		await terminal.waitForRender();
+		assertBottomAnchoredViewport(terminal, []);
 
 		// Add content back - this should work correctly even after empty state
 		component.lines = ["New Line 0", "New Line 1"];
 		tui.requestRender();
 		await terminal.waitForRender();
 
-		viewport = terminal.getViewport();
-		assert.ok(viewport[0]?.includes("New Line 0"), `New content rendered: ${viewport[0]}`);
-		assert.ok(viewport[1]?.includes("New Line 1"), `New content line 1: ${viewport[1]}`);
+		assertBottomAnchoredViewport(terminal, ["New Line 0", "New Line 1"]);
 
 		tui.stop();
 	});
 
-	it("full re-renders when deleted lines move the viewport upward", async () => {
-		const terminal = new VirtualTerminal(20, 5);
+	it("realigns only the viewport when tall content shrinks", async () => {
+		const terminal = new LoggingVirtualTerminal(20, 5);
 		const tui = new TUI(terminal);
 		const component = new TestComponent();
 		tui.addChild(component);
@@ -600,12 +584,16 @@ describe("TUI differential rendering", () => {
 		await terminal.waitForRender();
 
 		const initialRedraws = tui.fullRedraws;
+		terminal.clearWrites();
 
 		component.lines = Array.from({ length: 7 }, (_, i) => `Line ${i}`);
 		tui.requestRender();
 		await terminal.waitForRender();
 
-		assert.ok(tui.fullRedraws > initialRedraws, "Shrink should trigger a full redraw");
+		// Both frames exceed terminal height: current downstream uses a bounded
+		// viewport repaint before considering the clearOnShrink policy.
+		assert.strictEqual(tui.fullRedraws, initialRedraws);
+		assert.ok(!/\x1b\[[23]J/.test(terminal.getWrites()));
 		assert.deepStrictEqual(terminal.getViewport(), ["Line 2", "Line 3", "Line 4", "Line 5", "Line 6"]);
 
 		tui.stop();
@@ -635,13 +623,13 @@ describe("TUI differential rendering", () => {
 		await terminal.waitForRender();
 
 		assert.strictEqual(tui.fullRedraws, redrawsAfterShrink, "Append should stay on the differential path");
-		assert.deepStrictEqual(terminal.getViewport(), ["Line 0", "Line 1", "Line 2", "", ""]);
+		assertBottomAnchoredViewport(terminal, ["Line 0", "Line 1", "Line 2"]);
 
 		tui.stop();
 	});
 
 	it("clears stale content when maxLinesRendered was inflated by a transient component", async () => {
-		const terminal = new VirtualTerminal(40, 10);
+		const terminal = new LoggingVirtualTerminal(40, 10);
 		const tui = new TUI(terminal);
 		const chat = new TestComponent();
 		const editor = new TestComponent();
@@ -667,11 +655,13 @@ describe("TUI differential rendering", () => {
 		await terminal.waitForRender();
 
 		const redrawsBeforeSwitch = tui.fullRedraws;
+		terminal.clearWrites();
 		chat.lines = shortChat;
 		tui.requestRender();
 		await terminal.waitForRender();
 
-		assert.ok(tui.fullRedraws > redrawsBeforeSwitch, "Branch switch should trigger a full redraw");
+		assert.strictEqual(tui.fullRedraws, redrawsBeforeSwitch, "Tall-to-tall shrink realigns the viewport");
+		assert.ok(!/\x1b\[[23]J/.test(terminal.getWrites()));
 
 		const viewport = terminal.getViewport();
 		for (let i = 0; i < 10; i++) {

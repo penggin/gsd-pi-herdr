@@ -104,3 +104,61 @@ test("golden: message_start assistant resets streaming state for new turn", asyn
 	assert.equal(rs.lastProcessedContentIndex, 0);
 	assert.equal(rs.lastContentLength, 0);
 });
+
+test("message_update requests non-forced renders throughout continuous streaming", async (t) => {
+	t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+	const host = makeMinimalHost(new Container());
+	const requests: boolean[] = [];
+	host.ui.requestRender = (force?: boolean) => { requests.push(force === true); };
+	await handleAgentEvent(host as any, {
+		type: "message_start", message: { role: "assistant", content: [] },
+	} as any);
+	requests.length = 0;
+	for (let index = 0; index < 100; index++) {
+		const prior = requests.length;
+		await handleAgentEvent(host as any, {
+			type: "message_update",
+			message: { role: "assistant", content: [{ type: "text", text: `Streaming response ${index}` }] },
+			assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: `${index}` },
+		} as any);
+		assert.ok(requests.length > prior, `delta ${index} must request a render without waiting for silence`);
+		t.mock.timers.tick(10);
+	}
+	assert.ok(requests.every((forced) => !forced), "the TUI must retain its own coalescing/throttle");
+});
+
+test("stream boundaries request a normal render without resetting segment state", () => {
+	const state = createStreamingRenderState();
+	state.lastProcessedContentIndex = 4;
+	state.lastContentLength = 12;
+	const forces: Array<boolean | undefined> = [];
+	state.flushPendingStreamingWork({ requestRender: (force?: boolean) => forces.push(force) } as any);
+	assert.deepEqual(forces, [undefined]);
+	assert.equal(state.lastProcessedContentIndex, 4);
+	assert.equal(state.lastContentLength, 12);
+});
+
+test("session reset clears segments and pinned state without scheduling stale render work", (t) => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const state = createStreamingRenderState();
+	state.lastProcessedContentIndex = 4;
+	state.lastContentLength = 12;
+	state.renderedSegments.push({ kind: "tool", contentIndex: 0, component: {} as any });
+	state.orphanedSegments.push({ kind: "tool", contentIndex: 1, component: {} as any });
+	state.lastPinnedText = "old session";
+	state.hasToolsInTurn = true;
+	state.pinnedZoneNeedsViewportRealign = true;
+	let spinnerStops = 0;
+	state.pinnedBorder = { stopSpinner: () => spinnerStops++ } as any;
+	state.resetForSessionChange();
+	t.mock.timers.tick(100);
+	assert.equal(spinnerStops, 1);
+	assert.equal(state.lastProcessedContentIndex, 0);
+	assert.equal(state.lastContentLength, 0);
+	assert.deepEqual(state.renderedSegments, []);
+	assert.deepEqual(state.orphanedSegments, []);
+	assert.equal(state.lastPinnedText, "");
+	assert.equal(state.hasToolsInTurn, false);
+	assert.equal(state.pinnedZoneNeedsViewportRealign, false);
+	assert.equal(state.pinnedBorder, undefined);
+});

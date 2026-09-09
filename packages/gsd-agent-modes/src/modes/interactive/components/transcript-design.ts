@@ -564,7 +564,7 @@ export function renderCompactToolStrip(
 export function renderPlainToolMessage(
 	bodyLines: string[],
 	width: number,
-	opts: { title: string; target?: string; meta?: string; tone: StatusTone },
+	opts: { title: string; target?: string; meta?: string; tone: StatusTone; metaPosition?: "header" | "footer" },
 ): string[] {
 	const outerWidth = Math.max(20, width);
 	const indent = TRANSCRIPT_CARD_INDENT;
@@ -576,7 +576,7 @@ export function renderPlainToolMessage(
 		: styledHeader(opts.title, "borderAccent");
 	const left = `${theme.fg("borderAccent", TRANSCRIPT_TOOL_MARKER)} ${titleText}`;
 	const right = opts.meta ? theme.fg(statusColorForTone(opts.tone), opts.meta) : "";
-	const header = padLine(alignRight(left, right, outerWidth), outerWidth);
+	const header = padLine(alignRight(left, opts.metaPosition === "footer" ? "" : right, outerWidth), outerWidth);
 
 	const hasImage = bodyLines.some((line) => isImageLine(line));
 	const bodySource = hasImage ? bodyLines : collapseBlankLines(bodyLines);
@@ -591,7 +591,10 @@ export function renderPlainToolMessage(
 		return padLine(truncateToWidth(line, outerWidth, ""), outerWidth);
 	};
 
-	return [header, ...bodySource.map(paintBody), ""];
+	const footer = opts.metaPosition === "footer" && right
+		? [padLine(alignRight("", right, outerWidth), outerWidth)]
+		: [];
+	return [header, ...bodySource.map(paintBody), ...footer, ""];
 }
 
 /** @deprecated Prefer renderCompactToolStrip (Variant A). */

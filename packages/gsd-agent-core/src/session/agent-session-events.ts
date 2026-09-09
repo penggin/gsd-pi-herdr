@@ -1,6 +1,6 @@
 import type { AgentEvent, AgentMessage } from "@gsd/pi-agent-core";
 import type { AssistantMessage, Message, TextContent } from "@gsd/pi-ai";
-import { cleanupSessionResources } from "@gsd/pi-ai";
+import { cleanupSessionResources, isContextOverflow } from "@gsd/pi-ai";
 import type {
 	MessageEndEvent,
 	MessageStartEvent,
@@ -35,7 +35,6 @@ export class AgentSessionEventsModule {
 		// When a user message starts, check if it's from either queue and remove it BEFORE emitting
 		// This ensures the UI sees the updated queue state
 		if (event.type === "message_start" && event.message.role === "user") {
-			this.host._overflowRecoveryAttempted = false;
 			const messageText = this.getUserMessageText(event.message);
 			if (messageText) {
 				// Check steering queue first
@@ -89,14 +88,20 @@ export class AgentSessionEventsModule {
 				this.host._lastAssistantMessage = event.message;
 
 				const assistantMsg = event.message as AssistantMessage;
-				this.host._lastTurnCost = assistantMsg.usage?.cost?.total ?? 0;
-				if (assistantMsg.stopReason !== "error") {
+				// A synthetic halt has zero usage; retain the provider response's
+				// cost while persisting the diagnostic as a separate zero-cost event.
+				if (!(assistantMsg.stopReason === "error" && assistantMsg.errorMessage?.startsWith("[length-halt]"))) {
+					this.host._lastTurnCost = assistantMsg.usage?.cost?.total ?? 0;
+				}
+				const successfulResponse = (assistantMsg.stopReason === "stop" || assistantMsg.stopReason === "toolUse")
+					&& !isContextOverflow(assistantMsg, this.host.model?.contextWindow ?? 0);
+				if (successfulResponse) {
 					this.host._overflowRecoveryAttempted = false;
 				}
 
 				// Reset retry counter immediately on successful assistant response
 				// This prevents accumulation across multiple LLM calls within a turn
-				if (assistantMsg.stopReason !== "error" && this.host._retryAttempt > 0) {
+				if (successfulResponse && this.host._retryAttempt > 0) {
 					this.emit({
 						type: "auto_retry_end",
 						success: true,

@@ -43,6 +43,25 @@ test("does not suppress when session has no execution tool calls", () => {
   assert.equal(_hasExecutionToolCallsInSessionForTest(entries), false);
 });
 
+for (const toolName of ["gsd_exec_search", "mcp__custom-workflow__gsd_exec_search"]) {
+  for (const mode of [undefined, "history", "search", "read"] as const) {
+    test(`does not suppress missing-execution warning for ${toolName} ${mode ?? "legacy history"}`, () => {
+      const toolCall = {
+        type: "toolCall",
+        name: toolName,
+        arguments: mode === "read"
+          ? { mode, exec_id: "old-run", stream: "stdout", start_line: 1 }
+          : { ...(mode ? { mode } : {}), query: "pnpm test" },
+      };
+      const message = { role: "assistant", content: [toolCall] };
+      // The guard consumes all three representations at different entry points.
+      for (const entry of [toolCall, message, { type: "message", message }]) {
+        assert.equal(_hasExecutionToolCallsInSessionForTest([entry]), false);
+      }
+    });
+  }
+}
+
 test("detects top-level gsd_exec tool call with normalized name", () => {
   const entries = [
     { type: "toolCall", name: "  GSD_EXEC  ", arguments: { command: "npm test" } },

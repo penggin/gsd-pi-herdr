@@ -7,8 +7,8 @@
  * divergence). The preflight must:
  *   - exit NON-ZERO with the exact engine refuse-newer message on stderr
  *     when the project DB records a schema version above supported;
- *   - leave genuinely DB-unavailable projects (missing/corrupt gsd.db) on
- *     the existing degraded/fail-closed markdown path with exit 0.
+ *   - leave missing databases on the degraded Markdown path, while refusing
+ *     present corrupt databases instead of serving stale projections.
  *
  * The preflight is exercised through its injectable seam (the same pattern
  * as runHeadlessQuery's modules parameter): the injected probe is built
@@ -153,15 +153,15 @@ test("gsd read progress --json without a gsd.db keeps the existing degraded exit
   }
 });
 
-test("gsd read progress --json with an unreadable gsd.db keeps the existing degraded exit-0 path", async () => {
+test("gsd read progress --json refuses an unreadable existing database instead of serving projections", async () => {
   const base = makeProject();
   try {
     writeFileSync(join(base, ".gsd", "gsd.db"), "not a sqlite database");
 
     const run = await captureReadCli(readProgressArgv(base), readProgressFromDb);
-    assert.equal(run.exitCode, 0);
-    const envelope = JSON.parse(run.stdout);
-    assert.equal(envelope.kind, "progress");
+    assert.equal(run.exitCode, 1);
+    assert.equal(run.stdout, "");
+    assert.match(run.stderr, /DB-backed progress read failed/);
   } finally {
     rmSync(base, { recursive: true, force: true });
   }

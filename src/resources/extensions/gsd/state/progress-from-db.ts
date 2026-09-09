@@ -4,20 +4,17 @@
 // is the sole workflow authority, so integration reads must not serve
 // projection data that can lag it.
 
-import { deriveState, invalidateStateCache } from "./derive/index.js";
-import { ensureExistingWorkflowDbOpen } from "./derive/db-open.js";
+import { deriveStateFromReader } from "./derive/from-db.js";
+import { createStateDerivationReader } from "./derive/reader.js";
+import { readCanonicalProjectDb, type CanonicalProjectReadOptions } from "./canonical-db-read.js";
+import type { DbAdapter } from "../db-adapter.js";
 import {
   getHierarchyCompletionCounts,
   getInFlightSliceCount,
   getMilestoneStatusCounts,
-  getProjectAuthorityVersion,
-  isDbAvailable,
-  _getAdapter,
-  readTransaction,
 } from "../gsd-db.js";
 import type { GSDState } from "../types.js";
-
-const MAX_REVISION_ATTEMPTS = 3;
+export { projectReadOptionsForTarget } from "./canonical-db-read.js";
 
 /**
  * Structural mirror of `ProgressResult`
@@ -48,37 +45,12 @@ interface ProgressHierarchy {
   slicesActive: number;
 }
 
-interface ProgressStabilityToken {
-  revision: number;
-  authorityEpoch: number;
-  dataVersion: number;
-}
-
-function readProgressStabilityToken(): ProgressStabilityToken {
-  const authority = getProjectAuthorityVersion();
-  const row = _getAdapter()?.prepare("PRAGMA data_version").get();
-  const dataVersion = Number(row?.["data_version"]);
-  if (!Number.isSafeInteger(dataVersion) || dataVersion < 0) {
-    throw new Error("GSD database data version is not available");
-  }
-  return { ...authority, dataVersion };
-}
-
-function stabilityTokensMatch(
-  before: ProgressStabilityToken,
-  after: ProgressStabilityToken,
-): boolean {
-  return before.revision === after.revision
-    && before.authorityEpoch === after.authorityEpoch
-    && before.dataVersion === after.dataVersion;
-}
-
-function readProgressHierarchy(): ProgressHierarchy {
-  return readTransaction(() => ({
-    counts: getHierarchyCompletionCounts(),
-    milestones: getMilestoneStatusCounts(),
-    slicesActive: getInFlightSliceCount(),
-  }));
+function readProgressHierarchy(adapter: DbAdapter): ProgressHierarchy {
+  return {
+    counts: getHierarchyCompletionCounts(adapter),
+    milestones: getMilestoneStatusCounts(adapter),
+    slicesActive: getInFlightSliceCount(adapter),
+  };
 }
 
 function buildProgressResult(
@@ -122,32 +94,14 @@ function buildProgressResult(
 }
 
 /**
- * Derive the integration progress payload from the database. `deriveState`
- * supplies current refs, phase, blockers, and next action (the same source
- * the runtime and auto-mode use); project-wide milestone/slice/task counts
- * come from the read seam, since `deriveState` may be execution-scoped while
- * `ProgressResult` buckets are project-wide.
- *
- * Note: the derive open path runs pending migrations and syncs the
- * milestone queue-order projection (same behavior as `gsd headless status`).
- * Results are bound to stable authority and data-version tokens; under
- * sustained concurrent commits or same-process interleaved writes, a snapshot
- * may still straddle revisions.
+ * Project-wide counts and execution-scoped phase share one isolated SQLite
+ * read transaction. The runtime's phase policy is reused without migrations,
+ * queue-order repair, or global-cache/handle changes. Incompatible databases
+ * fail explicitly; no mixed final retry or projection fallback is produced.
  */
-export async function readProgressFromDb(basePath: string): Promise<DbProgressResult | null> {
-  ensureExistingWorkflowDbOpen(basePath);
-  if (!isDbAvailable()) return null;
-
-  invalidateStateCache();
-  for (let attempt = 1; ; attempt++) {
-    const before = readProgressStabilityToken();
-    const state = await deriveState(basePath);
-    const result = buildProgressResult(state, readProgressHierarchy());
-    const after = readProgressStabilityToken();
-
-    if (stabilityTokensMatch(before, after)) return result;
-
-    if (attempt === MAX_REVISION_ATTEMPTS) return result;
-    invalidateStateCache();
-  }
+export async function readProgressFromDb(basePath: string, options: CanonicalProjectReadOptions = {}): Promise<DbProgressResult | null> {
+  return readCanonicalProjectDb(basePath, options, ({ adapter, scope }) => buildProgressResult(
+    deriveStateFromReader(basePath, createStateDerivationReader(adapter), scope),
+    readProgressHierarchy(adapter),
+  ));
 }

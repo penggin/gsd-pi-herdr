@@ -218,6 +218,8 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 * If it returns true, the loop emits `agent_end` and exits before polling steering or follow-up queues,
 	 * without starting another LLM call. The current assistant response and any tool executions finish normally.
 	 * This callback runs before `prepareNextTurn` and sees the completed-turn context.
+	 * If output was truncated, stopping appends a zero-usage terminal assistant error;
+	 * no output-limit continuation is persisted and no next-turn preparation runs.
 	 *
 	 * Use this to request a graceful stop after the current turn, e.g. before context gets too full.
 	 *
@@ -229,6 +231,8 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 * Called after `turn_end` when the loop will continue, immediately before the next turn starts.
 	 * Return replacement context/model/thinking state to affect that turn.
 	 * Return undefined to keep using the current context/config.
+	 * A pending output-limit continuation is appended only after this callback,
+	 * so replacing the context cannot discard it or duplicate its message events.
 	 */
 	prepareNextTurn?: (
 		context: PrepareNextTurnContext,
@@ -367,6 +371,8 @@ export interface AgentToolResult<T> {
 	content: (TextContent | ImageContent)[];
 	/** Arbitrary structured details for logs or UI rendering. */
 	details: T;
+	/** Whether the tool execution resulted in an error without throwing. */
+	isError?: boolean;
 	/** Usage from the final tool execution itself, if available. Not used for main LLM context accounting. */
 	usage?: Usage;
 	/**

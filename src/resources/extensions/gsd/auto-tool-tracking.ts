@@ -151,6 +151,7 @@ export function clearInFlightTools(): void {
 const TOOL_INVOCATION_ERROR_RE = /Validation failed for tool|Input validation error|Invalid arguments for tool|MCP error -32602|No such tool available|Expected ',' or '\}'(?: after property value)?(?: in JSON)?|Unexpected end of JSON|Unexpected token.*in JSON|does not provide an export named|Named export .* not found|Cannot find module|ERR_MODULE_NOT_FOUND|ERR_MODULE_NOT_EXPORTED|ERR_PACKAGE_PATH_NOT_EXPORTED/i;
 const DETERMINISTIC_POLICY_ERROR_RE = /(?:^|\b)(?:HARD BLOCK:|Blocked: \/gsd queue is a planning tool|Direct writes to \.gsd\/STATE\.md and \.gsd\/gsd\.db are blocked|This is a mechanical gate)/i;
 const SCHEDULE_WAKEUP_CONTINUATION_ERROR = "`prompt` is required when `stop` is not true";
+const TOOL_SCHEMA_VALIDATION_ERROR_RE = /Validation failed for tool|Input validation error|Invalid arguments for tool|MCP error -32602/i;
 const SCHEDULE_WAKEUP_TOOL_NAMES = new Set(["ScheduleWakeup", "gsd_schedule_wakeup"]);
 
 /**
@@ -169,6 +170,11 @@ const TOOL_UNAVAILABLE_ERROR_RE = new RegExp(`No such tool available|${TOOL_SURF
 export function isToolInvocationError(errorMsg: string): boolean {
   if (!errorMsg) return false;
   return TOOL_INVOCATION_ERROR_RE.test(errorMsg) || isDeterministicPolicyError(errorMsg);
+}
+
+/** Model-fixable input rejection, rather than a truncated harness execution. */
+export function isToolSchemaValidationError(errorMsg: string): boolean {
+  return Boolean(errorMsg) && TOOL_SCHEMA_VALIDATION_ERROR_RE.test(errorMsg);
 }
 
 /**

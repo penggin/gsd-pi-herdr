@@ -92,6 +92,12 @@ interface CutoverDeps {
     recoveryOwner: "agent" | "user" | "external";
     action: "retry" | "repair" | "remediate" | "replan" | "abort" | "clarify" | "pause";
     resumeAuthorized?: boolean;
+    resumeEligibility?: {
+      recoveryActionId: string;
+      eligible: boolean;
+      failedGuard?: string;
+      detail?: string;
+    };
   } | null;
   readTaskTechnicalVerdict(attemptId: string): {
     attemptId: string;
@@ -1451,6 +1457,146 @@ test("an unresumed abort on a failed predecessor stops before a replacement clai
   });
   assert.equal(ran, false);
   assert.equal(domain.claims.length, 0);
+});
+
+test("an abort rejected by a different resume guard remains fail-closed", async () => {
+  const { runWithTaskExecutionAttempt } = await subject();
+  const domain = fakeDomain();
+  domain.attempts.push({
+    attemptId: "attempt-1",
+    resultId: "result-1",
+    attemptNumber: 1,
+    state: "settled",
+    outcome: "succeeded",
+    nextStage: "route",
+    coordinationDispatchId: 40,
+    workerId: "worker-1",
+    milestoneLeaseToken: 7,
+  });
+
+  const result = await runWithTaskExecutionAttempt(input(), async () => {
+    throw new Error("an open blocker must prevent successor execution");
+  }, {
+    ...domain.deps,
+    readTaskRecoveryRoute() {
+      return {
+        recoveryActionId: "recovery-action-1",
+        recoveryOwner: "agent",
+        action: "abort",
+        resumeAuthorized: false,
+        resumeEligibility: {
+          recoveryActionId: "recovery-action-1",
+          eligible: false,
+          failedGuard: "open-blockers",
+          detail: "Task lifecycle has an open Blocker",
+        },
+      };
+    },
+  });
+
+  assert.deepEqual(result, {
+    action: "break",
+    reason: TASK_RECOVERY_ABORT_REASON,
+  });
+  assert.equal(domain.claims.length, 0);
+});
+
+function consumedRecoveryAttempt(attemptNumber: number): AttemptSnapshot {
+  return {
+    attemptId: `attempt-${attemptNumber}`,
+    resultId: `result-${attemptNumber}`,
+    attemptNumber,
+    state: "settled",
+    outcome: "failed",
+    nextStage: "route",
+    coordinationDispatchId: 40 + attemptNumber,
+    workerId: "worker-1",
+    milestoneLeaseToken: 7,
+  };
+}
+
+const consumedRecoveryRoute: ReturnType<CutoverDeps["readTaskRecoveryRoute"]> = {
+  recoveryActionId: "consumed-action",
+  recoveryOwner: "agent",
+  action: "abort",
+  resumeAuthorized: false,
+  resumeEligibility: {
+    recoveryActionId: "consumed-action",
+    eligible: false,
+    failedGuard: "already-resumed",
+  },
+};
+
+test("consumed recovery evaluates the captured successor without rereading it", async () => {
+  const { runWithTaskExecutionAttempt } = await subject();
+  const domain = fakeDomain();
+  let reads = 0;
+  const result = await runWithTaskExecutionAttempt(input({ unitId: "m001/S01/t01" }), async () => {
+    throw new Error("the succeeded successor must reach host verification without execution");
+  }, {
+    ...domain.deps,
+    readLatestTaskAttempt(task) {
+      assert.deepEqual(task, { milestoneId: "m001", sliceId: "S01", taskId: "t01" });
+      reads += 1;
+      if (reads > 2) throw new Error("the captured successor was discarded and reread");
+      return reads === 1
+        ? consumedRecoveryAttempt(1)
+        : { ...consumedRecoveryAttempt(2), outcome: "succeeded", nextStage: "verify" };
+    },
+    readTaskRecoveryRoute: () => consumedRecoveryRoute,
+  });
+  assert.deepEqual(result, { action: "next", data: {} });
+  assert.equal(reads, 2);
+  assert.equal(domain.claims.length + domain.settlements.length + domain.routes.length, 0);
+});
+
+for (const refreshed of ["missing", "same"] as const) {
+  test(`consumed recovery with a ${refreshed} successor stops without another resume lever`, async () => {
+    const { runWithTaskExecutionAttempt } = await subject();
+    const domain = fakeDomain();
+    let reads = 0;
+    const result = await runWithTaskExecutionAttempt(input(), async (): Promise<UnitPhaseResult> => {
+      throw new Error("a missing successor must not execute");
+    }, {
+      ...domain.deps,
+      readLatestTaskAttempt() {
+        reads += 1;
+        return reads === 1 || refreshed === "same" ? consumedRecoveryAttempt(1) : null;
+      },
+      readTaskRecoveryRoute: () => consumedRecoveryRoute,
+    });
+    assert.equal(result.action, "break");
+    assert.ok(result.action === "break");
+    assert.match(result.reason, /already recorded.*no newer Task Attempt/i);
+    assert.match(result.reason, /\/gsd auto/);
+    assert.doesNotMatch(result.reason, /gsd_task_recovery_resume|\/gsd recover/);
+    assert.equal(reads, 2);
+    assert.equal(domain.claims.length + domain.settlements.length + domain.routes.length, 0);
+  });
+}
+
+test("repeated consumed recovery refreshes stop at a bounded limit without mutation", async () => {
+  const { runWithTaskExecutionAttempt } = await subject();
+  const domain = fakeDomain();
+  let reads = 0;
+  const result = await runWithTaskExecutionAttempt(input(), async (): Promise<UnitPhaseResult> => {
+    throw new Error("unstable recovery must not execute");
+  }, {
+    ...domain.deps,
+    readLatestTaskAttempt() {
+      reads += 1;
+      if (reads > 6) throw new Error("consumed recovery refresh is unbounded");
+      return consumedRecoveryAttempt(reads);
+    },
+    readTaskRecoveryRoute: () => consumedRecoveryRoute,
+  });
+  assert.equal(result.action, "break");
+  assert.ok(result.action === "break");
+  assert.match(result.reason, /changed across 3 successor refreshes/i);
+  assert.match(result.reason, /\/gsd auto/);
+  assert.doesNotMatch(result.reason, /gsd_task_recovery_resume|\/gsd recover/);
+  assert.equal(reads, 4);
+  assert.equal(domain.claims.length + domain.settlements.length + domain.routes.length, 0);
 });
 
 test("a historical terminal abort stops a failed predecessor before attempt.route", async () => {

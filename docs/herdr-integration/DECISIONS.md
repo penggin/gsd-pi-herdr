@@ -923,3 +923,147 @@ reuse classification only inside one unit and anchor unchanged synthetic context
 within its user turn. Source/state changes remain visible and GSD remains the sole
 authority over lifecycle, verification and model selection. Evidence and rollback
 scope are in `docs/workflow-improvements/CACHE-WORKFLOW-AUDIT.md`.
+
+## ADR-H045 — Project snapshots use an isolated transactional read surface
+
+**Status:** Accepted and verified in goal R4
+**Date:** 2026-09-07
+
+The approved project-snapshot feature must report one DB-authoritative view
+through native GSD, MCP and CLI. It reuses the existing isolated, read-only,
+file-identity-bound SQLite opener and independent read transaction. It does not
+close/reopen the caller's global database, migrate a schema, repair queue order,
+create a missing database or return the last mixed revision after repeated churn.
+
+Current workflow focus must share the runtime's state-projection rules through an
+explicit adapter-bound reader. This is a shared pure projection, not a second
+planner or a new global database scope. Runtime dispatch retains its existing
+opener, migration/queue repair and cache semantics; read surfaces do not invoke
+them. Execution scope is explicit/captured and never changed via process-global
+environment writes. Counts remain project-wide.
+
+Variable collections and text are bounded with deterministic ordering and honest
+truncation metadata; aggregate counts are not truncated. Native/MCP/CLI return
+explicit missing/incompatible-authority errors, never a successful fabricated
+zero snapshot. Auxiliary escalation artifacts remain outside SQLite revision
+consistency and must not be described as transactionally versioned evidence.
+
+This is the downstream adaptation of upstream `1af48f0d1`, `f0c4ac525` and
+`59d5a3588`. Their original global-handle restore and final mixed-attempt fallback
+are not adopted. Actual multi-database, no-write, WAL concurrency, size-limit and
+transport tests are mandatory before R4 is complete. No VS Code runtime or
+separate App Server executor is required by this read contract.
+
+R4 proof: core/runtime 98/98, independent isolation 9/9, interface/CLI 43/43,
+MCP workflow/parity 84/84, and native relative-path/scope 2/2 pass. Existing
+unreadable databases fail explicitly rather than authorizing projection fallback.
+Foreign project reads discard the caller's unbound execution locks; canonical
+aliases retain same-project scope. Read-only projection warnings do not append
+session notifications or log-buffer entries. Public limits and caveats are in
+[`project-snapshot.md`](../dev/project-snapshot.md).
+
+## ADR-H046 — Output-limit continuation preserves the downstream turn boundary
+
+**Status:** Accepted and verified in goal R5
+**Date:** 2026-09-07
+
+Positive-output `length` stops may add three continuation injections within one
+low-level agent loop. Exhaustion, provider failure and explicit stop produce a
+source-attributed zero-usage terminal error rather than successful completion.
+Cancellation retains aborted semantics. This provider-neutral behavior does not
+change role models, effort policy, GSD workflow ownership or Herdr's runtime role.
+
+The stop hook remains before next-turn preparation. Continuation is held as
+pending intent and persisted only after preparation, preserving compaction and
+context replacement without duplicate message events or an unanswered prompt on
+stop. Complete tool-call/result pairs remain ordered. The cap is not a global
+project budget and does not count separately owned summary or workflow retries.
+
+Session retry and threshold compaction cannot bypass a terminal `[length-halt]`.
+Explicit context overflow retains one compact-and-retry allowance, not replenished
+by failed length responses or internal user messages. Cleanup affects only the
+failed transient-context tail, never canonical history. Successful compaction may
+enqueue one existing follow-up message when retained assistant history otherwise
+makes Agent.continue() non-resumable; cancelled, failed and exhausted recovery
+cannot enqueue that bridge. Original provider usage and last-provider cost remain.
+
+This adapts upstream `5fbf5dca9` rather than transplanting its preparation ordering
+or indiscriminately removing historical assistant messages. Proof includes 75
+loop tests, the source session regression matrix and six actual AgentSession +
+disk SessionManager integrations. See
+[`output-limit-continuation.md`](../dev/output-limit-continuation.md).
+
+## ADR-H047 — Mutable bundles opt into live resource identity
+
+**Status:** Accepted and verified in the resource half of goal R6
+**Date:** 2026-09-07
+
+Default `auto` resource fingerprint selection hashes the live selected bundle
+when this package has its own `.git` file/directory or uses `src/resources`.
+Installed immutable packages use their shipped hash; an ancestor application's
+Git checkout does not change that classification. Explicit `live` and `bundled`
+modes allow controlled development/hotfix workflows without mutating user settings.
+Invalid modes fail before managed-resource mutation. The existing preference for
+`dist/resources` remains: editing source does not bypass the resource build step.
+
+The comparison hash is computed once before copying and stamped unchanged.
+Non-reverting bundle advances during copying or stamping are detected on the next
+live-mode launch. This is convenience synchronization, not an atomic snapshot:
+an ABA mutation can still escape detection. Hash-path normalization matches build
+output. Release mode avoids full-content hashing but retains existing pruning and
+missing-file directory checks. Exact tests and local measurements are in
+[`managed-resource-sync.md`](../dev/managed-resource-sync.md).
+
+## ADR-H048 — Preserve live views during visibility changes; keep tall status visible
+
+**Status:** Accepted and verified in goal R6
+**Date:** 2026-09-07
+
+Thinking visibility is a staged view transaction. Historical replay reuses only
+the current matching live invocation, clones thinking views without mutating the
+mounted originals, and preserves pinned/streaming state. Own property descriptors
+support the actual mode's getter-only state surface. New staged tools are disposed
+on failure; mounted live tool identity and timers are not replaced by historical
+replay. A throwing settings setter gets a best-effort restoration attempt, not
+a promise of atomic settings-file storage. This is presentation, not GSD workflow
+state mutation.
+
+For expanded cards taller than the terminal, dynamic status/elapsed metadata and
+the collapse hint are placed in a visible footer. Short/collapsed layout remains.
+This avoids an offscreen changing header forcing a whole-transcript repaint while
+preserving semantic path/body repaint behavior. The TUI engine, its scrollback
+policy and global clearOnShrink setting are unchanged; no transient flag is
+restored before a deferred paint and falsely claimed to fix it.
+
+Actual default Ctrl-O/Ctrl-T input, xterm writes, expanded WRITE updates, images,
+resize, live identities, orphan thinking and failure paths are covered. The full
+750-test TUI/controller matrix and 66 component tests pass. Thirteen inherited
+TUI expectations were updated to its already-existing downstream layout, without
+changing TUI runtime code. Details and measured limits are in
+[`interactive-render-backports.md`](../dev/interactive-render-backports.md).
+
+## ADR-H049 — Deliver requested managed screenshots through the same native session
+
+**Status:** Accepted and verified; installed on Penglab
+**Date:** 2026-09-08
+
+Pinned gsd-browser 0.2.2's MCP screenshot response omits image data even when its
+daemon captured successfully. GSD's managed adapter uses the native JSON CLI for
+screenshot requests, with the connected MCP launch/session/identity/environment,
+instead of performing a second capture or changing browser engines. Other tools
+retain MCP. The native dependency and external MCP clients remain unchanged.
+
+An explicitly requested image is validated and emitted as image content; absent,
+malformed, cancelled or failed captures are tool errors, including screenshot
+checks within browser_verify. No-screenshot checks keep their existing semantics.
+Because `producesImages` is a hard provider tool filter, only the always-image
+browser_screenshot declares it; conditional browser_verify remains available for
+image-free GPT/GLM verification. Existing provider capability policy is unchanged.
+This does not grant browser tools GSD validation or lifecycle authority and does
+not introduce another artifact/state store. Raw bytes do not enter text/details.
+
+Capture uses bounded argv-only execution and full image decoding, reusing current
+dimension constraints. Limits, unsupported custom launch shapes, Windows
+process-tree cancellation limitations and verification procedure are documented
+in [`managed-browser-images.md`](../dev/managed-browser-images.md). Linux sandbox
+policy and root-owned browser setup are preserved; no broad exception is needed.

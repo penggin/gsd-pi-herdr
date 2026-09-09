@@ -34,6 +34,7 @@ import {
 import {
   isDeterministicPolicyError,
   isQueuedUserMessageSkip,
+  isToolSchemaValidationError,
   isToolInvocationError,
   isToolUnavailableError,
 } from "../auto-tool-tracking.js";
@@ -86,7 +87,7 @@ import {
   matchesUnitWorkflowToolName,
 } from "../unit-tool-contracts.js";
 import { flushAllManifests } from "../workflow-manifest.js";
-import { recordUnitHarnessAbort, type UnitHarnessAbortRecord } from "../unit-runtime.js";
+import { clearUnitToolErrorHarnessAbort, recordUnitHarnessAbort, type UnitHarnessAbortRecord } from "../unit-runtime.js";
 import { clearNativeMilestoneStatusSourceRevisions } from "./query-tools.js";
 import {
   activateDeferredApprovalGate,
@@ -112,6 +113,19 @@ function recordCurrentUnitHarnessAbort(
     dash.currentUnit.id,
     dash.currentUnit.startedAt,
     abort,
+  );
+}
+
+function clearCurrentUnitToolErrorHarnessAbort(toolName: string): void {
+  if (toolName !== "gsd_exec" && toolName !== "gsd_uat_exec") return;
+  const dash = getAutoRuntimeSnapshot();
+  if (!dash.active || !dash.basePath || !dash.currentUnit) return;
+  clearUnitToolErrorHarnessAbort(
+    dash.basePath,
+    dash.currentUnit.type,
+    dash.currentUnit.id,
+    dash.currentUnit.startedAt,
+    toolName,
   );
 }
 
@@ -666,6 +680,7 @@ function isRetryableHarnessToolError(toolName: string, result: unknown, errorTex
     if (isAbortedExecutionToolResult(toolName, result)) return true;
     if (isToolUnavailableError(errorText)) return true;
     if (isQueuedUserMessageSkip(errorText)) return true;
+    if (isToolSchemaValidationError(errorText)) return false;
     return isToolInvocationError(errorText);
   }
   if (isToolUnavailableError(errorText)) return true;
@@ -1556,6 +1571,7 @@ export function registerHooks(
       recordRetryableHarnessToolError(toolName, resultPayload, errorText);
     } else if (isAutoActive()) {
       clearToolInvocationError(event.toolName);
+      if (event.isError === false) clearCurrentUnitToolErrorHarnessAbort(toolName);
     }
     // Interactive Closeout adapter (ADR-032): auto-mode owns closeout for its
     // own units; interactive completions get the durable git subset (commit +
@@ -1767,6 +1783,7 @@ export function registerHooks(
       recordRetryableHarnessToolError(toolName, event.result, errorText);
     } else if (isAutoActive()) {
       clearToolInvocationError(event.toolName);
+      if (event.isError === false) clearCurrentUnitToolErrorHarnessAbort(toolName);
     }
     // Safety harness: record tool execution results for evidence cross-referencing
     if (isAutoActive()) {
@@ -1792,10 +1809,12 @@ export function registerHooks(
   pi.on("before_provider_request", async (event, ctx) => {
     const payload = event.payload as Record<string, unknown> | null;
     if (!payload || typeof payload !== "object") return;
-
+    let execSessionId: string | undefined;
+    try { execSessionId = ctx?.sessionManager?.getSessionId?.(); } catch { /* Missing/stale context has no trusted execution provenance. */ }
     const policyPayload = applyProviderPayloadPolicy({
       payload,
       modelId: event.model?.id,
+      sessionId: execSessionId,
     });
     try {
       const { rewriteActiveCheckpointPayload } = await import("../codex-compact/integration.js");

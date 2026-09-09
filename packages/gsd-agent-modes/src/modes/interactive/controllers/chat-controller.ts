@@ -261,7 +261,7 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 					}
 				}
 
-					runSegmentWalker(host, rs, timestampFormat);
+				runSegmentWalker(host, rs, timestampFormat);
 
 				// Update index: fully processed blocks won't need re-scanning.
 				// Keep the last block's index (it may still be accumulating data),
@@ -278,10 +278,9 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 					startLoadingAnimation(host);
 				}
 
-				// Batch renders, not the walker: sub-turn replacement and
-				// suppression logic must observe every intermediate state,
-				// while consecutive renders within one 50ms window can coalesce.
-				rs.scheduleDebouncedRender(host.ui);
+				// Let the TUI coalesce requests within its 16ms render interval.
+				// A trailing debounce starves rendering while deltas keep arriving.
+				host.ui.requestRender();
 			}
 			break;
 
@@ -327,6 +326,7 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 						host.chatContainer.addChild(host.streamingComponent);
 						markFirstVisibleAssistantOutput(host, "message_end_only");
 						reconcileChatTurnConnections(host.chatContainer.children);
+						host.ui.requestRender();
 					}
 					if (host.streamingComponent) {
 						host.streamingComponent.setShowMetadata(true);

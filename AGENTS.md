@@ -36,6 +36,7 @@ Before ending the session:
 - Read-only upstream research, fetches, and source comparisons are permitted when evaluating or importing updates.
 - Do not push, open issues, create PRs, publish, or otherwise mutate an upstream source project unless the user explicitly requests that external action.
 - Record reviewed source imports and any downstream compatibility decisions in the appropriate planning or decision document.
+- Before reviewing GSD Pi application patches, consult `docs/dev/gsd-upstream.md` and `scripts/gsd-upstream.json`; update the exact reviewed tag/main SHAs and patch dispositions after validation. Keep this separate from the Pi engine vendor record in `docs/dev/pi-upstream.md` and `scripts/pi-upstream.json`. A reviewed version is not a full merge or installed version.
 - Runtime, CI, release, installer, documentation, and support links must target `penggin/gsd-pi-herdr` or remain local.
 - Prefer normal abstractions over tiny patch seams when the downstream architecture benefits from a proper refactor.
 - Preserve inherited behavior unless a downstream decision explicitly changes it, and run the relevant regression matrix for every intentional change.

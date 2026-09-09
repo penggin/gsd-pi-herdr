@@ -15,6 +15,9 @@ import type { ExtensionAPI } from "@gsd/pi-coding-agent";
 
 import { registerScreenshotTools } from "../../browser-tools/tools/screenshot.ts";
 import { registerZoomTools } from "../../browser-tools/tools/zoom.ts";
+import { registerManagedGsdBrowserTools } from "../../browser-tools/engine/managed-gsd-browser.ts";
+import { registerToolCompatibility, resetToolCompatibilityRegistry } from "@gsd/pi-coding-agent";
+import { filterToolsForProvider } from "../model-router.js";
 
 interface CapturedToolDef {
   name: string;
@@ -59,4 +62,22 @@ test("browser_zoom_region declares producesImages: true", () => {
     true,
     "browser_zoom_region must declare producesImages so it is filtered on providers without imageToolResults",
   );
+});
+
+test("conditional managed verification remains available on GPT and GLM API paths", () => {
+  const { pi, tools } = makeCapturingPi();
+  registerManagedGsdBrowserTools(pi);
+  resetToolCompatibilityRegistry();
+  try {
+    for (const tool of tools) {
+      registerToolCompatibility(tool.name, { producesImages: tool.compatibility?.producesImages });
+    }
+    for (const api of ["openai-completions", "openai-responses", "openai-codex-responses"]) {
+      const result = filterToolsForProvider(["browser_verify", "browser_screenshot"], api);
+      assert.deepEqual(result.compatible, ["browser_verify"], `${api}: image-free verification must not disappear with image-result filtering`);
+      assert.deepEqual(result.filtered, ["browser_screenshot"], `${api}: always-image screenshot retains the existing provider guard`);
+    }
+  } finally {
+    resetToolCompatibilityRegistry();
+  }
 });

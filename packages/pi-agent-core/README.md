@@ -112,6 +112,12 @@ The `beforeToolCall` hook runs after `tool_execution_start` and validated argume
 
 Tools can also return `terminate: true` to hint that the automatic follow-up LLM call should be skipped. The loop only stops early when every finalized tool result in that batch sets `terminate: true`. Mixed batches continue normally.
 
+### Output Limit Continuation
+
+When a provider returns `stopReason: "length"` with positive output usage and no error, the loop executes its complete tool calls and emits their results, then requests continuation. It permits at most three output-limit continuations per loop invocation. Ordinary tool turns and session compaction have their own lifecycle and are not included in that continuation count.
+
+The stop hook runs before next-turn preparation. If continuing, the loop appends the continuation user message once after preparation, so context replacement or compaction cannot discard it. A stop hook, tool termination, exhausted continuation cap, provider error, or zero-output length stop produces an explicit terminal assistant error with zero added usage and the source response's model attribution. A classified context overflow remains recognizable to session compaction. Cancellation ends as aborted without starting another provider request.
+
 Low-level loop callers can set `shouldStopAfterTurn` to stop gracefully after the current turn completes:
 
 ```typescript
@@ -124,7 +130,7 @@ const stream = agentLoop(prompts, context, {
 });
 ```
 
-`shouldStopAfterTurn` runs after `turn_end` is emitted and after the assistant response and any tool executions have completed normally. If it returns `true`, the loop emits `agent_end` and exits before polling steering or follow-up queues, and before starting another LLM call. It does not abort the provider stream, does not cancel running tools, and does not alter the assistant message stop reason.
+`shouldStopAfterTurn` runs after `turn_end` and the current tool executions finish. If it returns `true`, the loop exits before polling queues, preparing the next turn, or starting another LLM call. The original assistant response remains unchanged; pending output-limit continuation additionally produces the terminal error described above.
 
 When you use the `Agent` class, assistant `message_end` processing is treated as a barrier before tool preflight begins. That means `beforeToolCall` sees agent state that already includes the assistant message that requested the tool call.
 

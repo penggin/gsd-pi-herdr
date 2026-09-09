@@ -99,7 +99,7 @@ import { writeTurnGitTransaction } from "./uok/gitops.js";
 import { isClosedStatus } from "./status-guards.js";
 import { detectAbandonMilestone } from "./abandon-detect.js";
 import { getPendingGate } from "./bootstrap/write-gate.js";
-import { isDeterministicPolicyError, isToolUnavailableError } from "./auto-tool-tracking.js";
+import { isDeterministicPolicyError, isToolInvocationError, isToolUnavailableError } from "./auto-tool-tracking.js";
 import { formatConnectedStepStack, formatPostUnitStatusCard } from "./auto-status-message.js";
 import {
   clearProjectResearchInflightMarker,
@@ -449,6 +449,11 @@ function persistGitActionFailure(basePath: string, action: TurnGitActionMode, me
 
 function gitCommitRemediationRetryKey(unitType: string, unitId: string): string {
   return `git-commit:${verificationRetryKey(unitType, unitId)}`;
+}
+
+/** Keep deterministic failure messaging identical across both recovery paths. */
+function toolInvocationPauseMessage(unitType: string, errorMsg: string): string {
+  return `Tool invocation/runtime failed for ${unitType}: ${errorMsg}. Retrying cannot resolve this deterministic failure — pausing auto-mode.`;
 }
 
 /**
@@ -2317,6 +2322,24 @@ export async function postUnitPreVerification(pctx: PostUnitContext, opts?: PreV
       // same turn, the user wait is the meaningful state; pause instead of
       // writing a placeholder over PROJECT/REQUIREMENTS.
       if (!triggerArtifactVerified && isDurableVerificationTask(s.currentUnit.type)) {
+        // The durable authority never receives this invocation record. Preserve
+        // its deterministic cause before clearing it, or a schema-rejected
+        // completion can be retried with unchanged inputs until liveness fails
+        // (#2131). Transient tool-unavailable, policy, and queued-user records
+        // retain the existing deferral to durable recovery below.
+        const invocationError = s.lastToolInvocationError;
+        if (
+          invocationError
+          && isToolInvocationError(invocationError)
+          && !isDeterministicPolicyError(invocationError)
+          && !isToolUnavailableError(invocationError)
+        ) {
+          debugLog("postUnit", { phase: "tool-invocation-error-pause", unitType: s.currentUnit.type, unitId: s.currentUnit.id, error: invocationError });
+          ctx.ui.notify(toolInvocationPauseMessage(s.currentUnit.type, invocationError), "error");
+          s.lastToolInvocationError = null;
+          await pauseAuto(ctx, pi);
+          return "dispatched";
+        }
         const retryKey = verificationRetryKey(s.currentUnit.type, s.currentUnit.id);
         if (s.pendingVerificationRetry?.unitId === s.currentUnit.id) {
           s.pendingVerificationRetry = null;
@@ -2488,7 +2511,7 @@ export async function postUnitPreVerification(pctx: PostUnitContext, opts?: PreV
           const isUserSkip = /queued user message/i.test(s.lastToolInvocationError);
           const errMsg = isUserSkip
             ? `Tool skipped for ${s.currentUnit.type}: ${s.lastToolInvocationError}. Queued user message interrupted the turn — pausing auto-mode.`
-            : `Tool invocation/runtime failed for ${s.currentUnit.type}: ${s.lastToolInvocationError}. Retrying cannot resolve this deterministic failure — pausing auto-mode.`;
+            : toolInvocationPauseMessage(s.currentUnit.type, s.lastToolInvocationError);
           debugLog("postUnit", { phase: "tool-invocation-error-pause", unitType: s.currentUnit.type, unitId: s.currentUnit.id, error: s.lastToolInvocationError });
           ctx.ui.notify(errMsg, "error");
           s.lastToolInvocationError = null;

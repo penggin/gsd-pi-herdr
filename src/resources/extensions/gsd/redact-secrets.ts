@@ -31,10 +31,10 @@ const PATTERNS: RegExp[] = [
  * surrounding content. Pure and safe to call per log line. The placeholder
  * contains no quote/brace/backslash, so redacting a JSON string keeps it valid.
  */
-export function redactSecrets(text: string): string {
+export function redactSecrets(text: string, options?: { preserveLines?: boolean }): string {
   let out = text;
   for (const pattern of PATTERNS) {
-    out = out.replace(pattern, PLACEHOLDER);
+    out = out.replace(pattern, (match) => PLACEHOLDER + (options?.preserveLines ? (match.match(/\r?\n/g) ?? []).join("") : ""));
   }
   return out;
 }

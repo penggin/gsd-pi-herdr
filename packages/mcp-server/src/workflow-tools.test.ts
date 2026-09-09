@@ -32,10 +32,6 @@ import { resolveToolPresentationPlan } from "../../../src/resources/extensions/g
 import { claimTaskAttempt } from "../../../src/resources/extensions/gsd/task-execution-domain-operation.ts";
 import { seedSliceCompletionAuthority } from "../../../src/resources/extensions/gsd/tests/slice-completion-fixture.ts";
 import {
-  _setDatabaseOpenBeforeRawForTest,
-  _setStartupSchemaDetectionForTest,
-} from "../../../src/resources/extensions/gsd/db/engine.ts";
-import {
   _buildBridgeImportCandidates,
   _buildImportCandidates,
   readProjectProgressViaBridge,
@@ -1012,6 +1008,36 @@ describe("workflow MCP tools", () => {
     } finally {
       cleanup(base);
     }
+  });
+
+  it("gsd_exec_search exposes body search and partial reads through MCP without validation writes", async () => {
+    const base = makeTmpBase();
+    try {
+      const root = join(base, ".gsd", "exec"); mkdirSync(root);
+      const id = "old..non-uuid";
+      const source = "진행\r\nECONNRESET connection failed\r\n주변😀\r\n";
+      writeFileSync(join(root, `${id}.stdout`), source);
+      writeFileSync(join(root, `${id}.stderr`), "src/player.ts:42: Type error\n");
+      writeFileSync(join(root, `${id}.meta.json`), JSON.stringify({ id, runtime: "node", purpose: "different purpose", started_at: "2026-09-09T00:00:00Z", exit_code: 1, signal: null, timed_out: false }));
+      const server = makeMockServer(); registerWorkflowTools(server as any);
+      const tool = server.tools.find(t => t.name === "gsd_exec_search")!;
+      const history = await tool.handler({ projectDir: base, query: "ECONNRESET" }) as any;
+      assert.equal(history.structuredContent.matches, 0);
+      const search = await tool.handler({ projectDir: base, mode: "search", query: "econnreset", stream: "stdout", context_lines: 1 }) as any;
+      assert.equal(search.isError, undefined);
+      assert.match(search.content[0].text, /ECONNRESET/);
+      const hit = search.structuredContent.results[0];
+      const read = await tool.handler({ projectDir: base, mode: "read", exec_id: hit.exec_id, stream: hit.stream, start_line: hit.start_line, line_count: hit.end_line - hit.start_line + 1 }) as any;
+      assert.equal(read.structuredContent.results[0].text, hit.text);
+      const stderr = await tool.handler({ projectDir: base, mode: "search", exec_id: id, query: "Type error", stream: "stderr" }) as any;
+      assert.match(stderr.content[0].text, /src\/player.ts:42/);
+      assert.equal(existsSync(join(base, ".gsd", "gsd.db")), false);
+      assert.equal(readFileSync(join(root, `${id}.stdout`), "utf8"), source);
+      const controller = new AbortController(); controller.abort();
+      const cancelled = await tool.handler({ projectDir: base, mode: "read", exec_id: id, stream: "stdout" }, { signal: controller.signal }) as any;
+      assert.equal(cancelled.isError, true);
+      assert.match(cancelled.content[0].text, /ABORT_ERR|cancel/i);
+    } finally { cleanup(base); }
   });
 
   it("gsd_resume reads the context snapshot", async () => {
@@ -3781,14 +3807,13 @@ describe("readProjectProgressViaBridge", () => {
     assert.equal(existsSync(join(base, ".gsd", "gsd.db")), false, "a read must not create gsd.db");
   });
 
-  it("returns null without recreating a DB removed at the open boundary", async (t) => {
+  it("returns null without recreating a database deleted before the isolated read", async (t) => {
     const base = makeTmpBase();
     const dbPath = join(base, ".gsd", "gsd.db");
     t.after(() => cleanup(base));
-    t.after(() => _setDatabaseOpenBeforeRawForTest(null));
     assert.equal(openDatabase(dbPath), true);
     closeDatabase();
-    _setDatabaseOpenBeforeRawForTest((path) => rmSync(path, { force: true }));
+    rmSync(dbPath);
 
     const result = await readProjectProgressViaBridge(base);
 
@@ -3796,20 +3821,23 @@ describe("readProjectProgressViaBridge", () => {
     assert.equal(existsSync(dbPath), false, "a read must not recreate gsd.db");
   });
 
-  it("returns null when the existing project DB is locked", async (t) => {
+  it("fails explicitly when an exclusive lock prevents the isolated database read", async (t) => {
     const base = makeTmpBase();
     const dbPath = join(base, ".gsd", "gsd.db");
     t.after(() => cleanup(base));
-    t.after(() => _setStartupSchemaDetectionForTest(null));
     assert.equal(openDatabase(dbPath), true);
-    closeDatabase();
-    _setStartupSchemaDetectionForTest(() => {
-      throw Object.assign(new Error("database is locked"), { code: "SQLITE_BUSY", errcode: 5 });
-    });
-
-    const result = await readProjectProgressViaBridge(base);
-
-    assert.equal(result, null);
+    const db = (await import("../../../src/resources/extensions/gsd/gsd-db.ts")).getDb();
+    db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    db.exec("PRAGMA journal_mode = DELETE");
+    db.exec("BEGIN EXCLUSIVE");
+    try {
+      await assert.rejects(readProjectProgressViaBridge(base), (error: unknown) => {
+        assert.equal((error as { code?: string }).code, "db_unavailable");
+        return true;
+      });
+    } finally {
+      db.exec("ROLLBACK");
+    }
     assert.equal(existsSync(dbPath), true, "a locked read must preserve the existing DB");
   });
 });

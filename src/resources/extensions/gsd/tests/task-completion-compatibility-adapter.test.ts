@@ -37,7 +37,10 @@ import {
   settleTaskAttempt,
 } from "../task-execution-domain-operation.js";
 import { reopenTask } from "../task-lifecycle-domain-operation.js";
-import { recordFailureAndSelectRecovery } from "../task-recovery-domain-operation.js";
+import {
+  recordFailureAndSelectRecovery,
+  resumeTaskRecovery,
+} from "../task-recovery-domain-operation.js";
 import { resolveTaskCompletionAuthority } from "../task-completion-compatibility-adapter.js";
 import { recordTaskTechnicalVerdict } from "../task-verification-domain-operation.js";
 import { captureVerificationSourceSnapshot } from "../verification-source-integrity.js";
@@ -1583,4 +1586,81 @@ test("late blocker reports cannot bypass canonical Attempt authority after settl
     },
     "a settled canonical Attempt must never fall through to legacy completion",
   );
+});
+
+test("settled remediate recovery resumes through a fresh verified completion", async () => {
+  const { publishVerifiedTaskCompletion, stageTaskCompletion } = await subject();
+  const { basePath, attemptId } = createFixture();
+  const settlement = await stageTaskCompletion(stageInput(basePath));
+  recordFailingHostVerdict(basePath, attemptId);
+  const routed = recordFailureAndSelectRecovery({
+    invocation: invocation("task-completion/route-remediation"),
+    attemptId,
+    resultId: settlement.resultId,
+    owner: "agent",
+    classification: { failureKind: "verification-failed" },
+    summary: "Host verification needs remediation after the implementation completed.",
+    evidence: { command: "node --test", exitCode: 1, verdict: "FAIL" },
+    rationale: "Apply and verify the remediation before continuing.",
+  });
+  assert.equal(routed.action, "remediate");
+
+  assert.throws(
+    () => resolveTaskCompletionAuthority(TASK),
+    (err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      assert.match(message, /no running Attempt/);
+      assert.ok(message.includes(routed.recoveryActionId));
+      assert.match(message, /\(remediate\).*gsd_task_recovery_resume/i);
+      return true;
+    },
+  );
+
+  resumeTaskRecovery({
+    invocation: invocation("task-completion/resume-remediation"),
+    recoveryActionId: routed.recoveryActionId,
+    repairSummary: "Applied the host-verification remediation and confirmed the source is ready.",
+    evidence: { command: "node --test", exitCode: 0, verdict: "PASS" },
+  });
+  assert.throws(
+    () => resolveTaskCompletionAuthority(TASK),
+    (err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      assert.match(message, /already authorizes its successor/i);
+      assert.match(message, /rerun `\/gsd auto`/i);
+      assert.doesNotMatch(message, /call gsd_task_recovery_resume/i);
+      return true;
+    },
+  );
+
+  db().prepare(`
+    INSERT INTO unit_dispatches (
+      trace_id, turn_id, worker_id, milestone_lease_token,
+      milestone_id, slice_id, task_id, unit_type, unit_id,
+      status, attempt_n, started_at
+    ) VALUES (
+      'trace-dispatch-2', 'turn-dispatch-2', 'worker-1', 7,
+      'M001', 'S01', 'T01', 'execute-task', 'M001/S01/T01',
+      'claimed', 2, '2026-07-12T00:10:00.000Z'
+    )
+  `).run();
+  const successor = claimTaskAttempt({
+    invocation: invocation("task-completion/remediation-successor-claim"),
+    task: TASK,
+    workerId: "worker-1",
+    milestoneLeaseToken: 7,
+    coordinationDispatchId: Number(row("SELECT MAX(id) AS id FROM unit_dispatches").id),
+    retryOfAttemptId: attemptId,
+  });
+  const retryInput = stageInput(basePath);
+  retryInput.invocation = invocation("task-completion/remediation-successor-stage");
+  await stageTaskCompletion(retryInput);
+  recordPassingHostVerdict(basePath, successor.attemptId);
+  const published = await publishVerifiedTaskCompletion({
+    ...publishInput(basePath, successor.attemptId),
+    invocation: invocation("task-completion/remediation-successor-publish"),
+  });
+
+  assert.equal(published.status, "committed");
+  assert.equal(taskState().status, "complete");
 });

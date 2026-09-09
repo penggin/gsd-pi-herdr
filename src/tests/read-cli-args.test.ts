@@ -65,3 +65,32 @@ function captureWrite(stream: NodeJS.WriteStream): { output: () => string; resto
 		},
 	};
 }
+
+test("snapshot CLI handles global flags and calls its reader once without pre-opening the DB", async () => {
+	const stdout = captureWrite(process.stdout);
+	const stderr = captureWrite(process.stderr);
+	let calls = 0;
+	try {
+		const exitCode = await runReadCli(
+			["node", "gsd", "--model", "test-model", "read", "snapshot", "--project", fixture, "--json"],
+			{
+				...probelessPreflight,
+				resolveProjectRootDbPath() { throw new Error("snapshot must not pre-open a database"); },
+			},
+			undefined,
+			undefined,
+			async (projectDir: string) => { calls++; assert.equal(projectDir, fixture); return { authority: { revision: 42 } }; },
+		);
+		assert.equal(exitCode, 0, stderr.output());
+		assert.equal(calls, 1);
+		assert.deepEqual(JSON.parse(stdout.output()), {
+			integration_version: 1,
+			kind: "snapshot",
+			projectDir: fixture,
+			data: { authority: { revision: 42 } },
+		});
+	} finally {
+		stdout.restore();
+		stderr.restore();
+	}
+});

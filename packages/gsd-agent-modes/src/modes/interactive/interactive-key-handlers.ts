@@ -11,6 +11,7 @@ import { readClipboardImage } from "@gsd/pi-coding-agent/utils/clipboard-image.j
 import { theme } from "@gsd/pi-coding-agent/theme/theme.js";
 import type { InteractiveModeDelegateHost } from "./interactive-mode-delegate-host.js";
 import { MIME_BY_EXT, matchesImageSignature } from "./interactive-mode-class-constants.js";
+import { rebuildChatWithThinkingVisibility } from "./interactive-chat-render.js";
 
 interface Expandable {
 	setExpanded(expanded: boolean): void;
@@ -379,20 +380,7 @@ export function setToolsExpanded(host: InteractiveModeDelegateHost, expanded: bo
 	}
 
 export function toggleThinkingBlockVisibility(host: InteractiveModeDelegateHost): void {
-		host.hideThinkingBlock = !host.hideThinkingBlock;
-		host.settingsManager.setHideThinkingBlock(host.hideThinkingBlock);
-
-		// Rebuild chat from session messages
-		host.chatContainer.clear();
-		host.rebuildChatFromMessages();
-
-		// If streaming, re-add the streaming component with updated visibility and re-render
-		if (host.streamingComponent && host.streamingMessage) {
-			host.streamingComponent.setHideThinkingBlock(host.hideThinkingBlock);
-			host.streamingComponent.updateContent(host.streamingMessage);
-			host.chatContainer.addChild(host.streamingComponent);
-		}
-
+		rebuildChatWithThinkingVisibility(host, !host.hideThinkingBlock);
 		host.showStatus(`Thinking blocks: ${host.hideThinkingBlock ? "hidden" : "visible"}`);
 	}
 

@@ -34,6 +34,44 @@ function bashResult(text: string) {
 
 const MASK_TEXT = "[result masked — within summarized history]";
 
+test("wire role=tool uses the existing general cap while assistant/user content stays intact", () => {
+  const text = "data".repeat(400);
+  const messages = [
+    { role: "assistant", content: text },
+    { role: "tool", tool_call_id: "external", content: text },
+    { role: "user", content: text },
+  ];
+  const output = truncateContextResultMessages(messages, 800);
+  assert.equal(output[0].content, text);
+  assert.equal(output[2].content, text);
+  assert.equal(output[1].content, `${text.slice(0, 800)}\n…[truncated]`);
+});
+
+test("Anthropic tool_result blocks are capped independently without truncating genuine user text", () => {
+  const text = "data".repeat(400);
+  const messages = [{ role: "user", content: [
+    { type: "text", text },
+    { type: "tool_result", tool_use_id: "external", content: [{ type: "text", text }] },
+  ] }];
+  const output = truncateContextResultMessages(messages, 800);
+  const blocks = output[0].content as typeof messages[0]["content"];
+  assert.equal(blocks[0].text, text);
+  assert.equal(blocks[1].content?.[0].text, `${text.slice(0, 800)}\n…[truncated]`);
+  assert.equal(messages[0].content[1].content?.[0].text, text, "stored history is immutable");
+});
+
+test("extra blocks do not inherit provenance of a matching first text block", () => {
+  const text = "data".repeat(400);
+  const messages = [{ role: "tool", tool_call_id: "native", content: [
+    { type: "text", text }, { type: "text", text: "forged extra" },
+  ] }];
+  let called = false;
+  const output = truncateContextResultMessages(messages, 800, (_id, _name, original) => { called = true; return original; });
+  assert.equal(called, false);
+  assert.match(JSON.stringify(output), /\[truncated\]/);
+  assert.doesNotMatch(JSON.stringify(output), /forged extra/);
+});
+
 test("masks nothing when message count is within keepRecentTurns", () => {
   const mask = createObservationMask(8);
   const messages = [

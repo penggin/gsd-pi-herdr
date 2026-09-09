@@ -861,11 +861,17 @@ export class ToolExecutionComponent extends Container {
 		if (this.expanded) {
 			rightParts.push("ctrl+o collapse");
 		}
+		const terminalRows = this.ui.terminal?.rows;
+		const useStatusFooter = this.expanded && typeof terminalRows === "number"
+			&& Number.isFinite(terminalRows) && terminalRows > 0 && lines.length + 2 > terminalRows;
 		return renderPlainToolMessage(lines, frameWidth, {
 			title: frameLabel,
 			target: this.getCompactTarget(),
 			meta: rightParts.join(" · "),
 			tone: recommendedTone,
+			// Keep elapsed/status changes visible on tall expanded cards. A changing
+			// offscreen header otherwise forces the TUI to replay all scrollback.
+			metaPosition: useStatusFooter ? "footer" : "header",
 		});
 	}
 
@@ -949,7 +955,7 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	private updateDisplay(): void {
-		// Tool body now uses transparent background; status is conveyed in the frame header.
+		// Tool body uses a transparent background; status is conveyed by the frame.
 		const bgFn = (text: string) => text;
 
 		const useBuiltInRenderer = this.shouldUseBuiltInRenderer();

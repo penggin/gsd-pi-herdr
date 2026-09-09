@@ -5,6 +5,7 @@ import type { ExtensionAPI } from "@gsd/pi-coding-agent";
 import { Text } from "@gsd/pi-tui";
 import { SUMMARY_SAVE_CONTENT_MAX_LENGTH } from "@opengsd/contracts";
 import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { getErrorMessage } from "../error-utils.js";
 import { piExecutionInvocation } from "../execution-invocation.js";
 import { incrementLegacyTelemetry } from "../legacy-telemetry.js";
@@ -177,6 +178,58 @@ const UAT_EVIDENCE_REF_DESCRIPTION =
 	"url uses an http(s) URL; browser uses an http(s) URL or .artifacts/browser/ path.";
 
 export function registerDbTools(pi: ExtensionAPI): void {
+	registerWorkflowTool(pi, {
+		name: "gsd_project_snapshot",
+		label: "Read Project Snapshot",
+		description: "Read canonical database authority, current focus, progress, blockers, open questions, verification, and bounded milestones in one consistent snapshot.",
+		promptSnippet: "Read the canonical project snapshot from the database",
+		promptGuidelines: [
+			"Use the snapshot for a combined view of project state; inspect its truncation metadata for omitted detail.",
+			"Optionally pass projectDir; otherwise the session working directory is used.",
+		],
+		parameters: Type.Object({
+			projectDir: Type.Optional(Type.String({ minLength: 1, description: "Project directory to read; relative paths resolve from the session working directory." })),
+		}, { additionalProperties: false }),
+		async execute(_callId: string, params: { projectDir?: string }, _signal: unknown, _onUpdate: unknown, ctx: unknown) {
+			const sessionBasePath = resolveCtxCwd(ctx);
+			const basePath = params.projectDir === undefined ? sessionBasePath : resolve(sessionBasePath, params.projectDir);
+			try {
+				const { readProjectSnapshotFromDb, projectReadOptionsForTarget } = await import("../state/project-snapshot.js");
+				// The reader owns its isolated transaction. Never pre-open a normal
+				// database or replace the session's global adapter for a read.
+				const snapshot = await readProjectSnapshotFromDb(basePath, projectReadOptionsForTarget(basePath, sessionBasePath));
+				if (snapshot === null) throw Object.assign(new Error("GSD database is not available."), { code: "db_unavailable" });
+				return {
+					content: [{ type: "text" as const, text: JSON.stringify(snapshot) }],
+					// Full data appears once in model-visible content. Duplicating it
+					// in details/structuredContent would double the transport payload.
+					details: { operation: "read_project_snapshot", revision: snapshot.authority.revision, truncation: snapshot.truncation, consistency: snapshot.consistency },
+				};
+			} catch (err) {
+				const cause = err as { name?: string; code?: string } | null;
+				const error = cause?.name === "GSDSchemaTooNewError" ? "schema_too_new"
+					: cause?.code === "db_unavailable" || cause?.code === "snapshot_too_large" ? cause.code
+					: "query_error";
+				const message = error === "query_error" ? "GSD project snapshot could not be read."
+					: (err instanceof Error ? err.message : "GSD database is not available.").slice(0, 2048);
+				return {
+					isError: true,
+					content: [{ type: "text" as const, text: `Error reading project snapshot: ${message}` }],
+					details: { operation: "read_project_snapshot", error, message },
+				};
+			}
+		},
+		renderCall(_args: unknown, theme: any) {
+			return new Text(theme.fg("toolTitle", theme.bold("project_snapshot")), 0, 0);
+		},
+		renderResult(result: any, _options: unknown, theme: any) {
+			const details = readDetails(result);
+			return new Text(result.isError || details?.error
+				? theme.fg("error", formatToolErrorText(result, details))
+				: theme.fg("success", "Project snapshot read"), 0, 0);
+		},
+	});
+
 	// ─── gsd_decision_save (formerly gsd_save_decision) ─────────────────────
 
 	const decisionSaveExecute = async (
@@ -2568,12 +2621,12 @@ export function registerDbTools(pi: ExtensionAPI): void {
 		name: "gsd_task_recovery_resume",
 		label: "Resume Repaired Task",
 		description:
-			"Authorize exactly one new Task Attempt after an agent-owned recovery abort. " +
-			"Use only after repairing the recorded cause; the abort and retry budget remain in history.",
+			"Authorize exactly one new Task Attempt after an agent-owned recovery abort or remediation. " +
+			"Use only after repairing the recorded cause; the Recovery Action and retry budget remain in history.",
 		promptSnippet:
-			"Resume one Task after its durable abort cause has been repaired",
+			"Resume one Task after its durable abort or remediation cause has been repaired",
 		promptGuidelines: [
-			"Use the exact recoveryActionId returned by the current abort.",
+			"Use the exact recoveryActionId returned by the current abort or remediation.",
 			"Explain the repair in plain language and attach concrete verification evidence.",
 			"This authorization is consumed by the next lineage-linked Task Attempt and cannot be reused.",
 		],
@@ -2581,7 +2634,7 @@ export function registerDbTools(pi: ExtensionAPI): void {
 			{
 				recoveryActionId: Type.String({
 					minLength: 1,
-					description: "Exact current abort Recovery Action ID",
+					description: "Exact current abort or remediate Recovery Action ID",
 				}),
 				repairSummary: Type.String({
 					minLength: 1,

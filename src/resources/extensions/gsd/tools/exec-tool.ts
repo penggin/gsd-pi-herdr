@@ -14,6 +14,11 @@ import {
 } from "../preferences-types.js";
 import { bashReferencesProjectRootOutsideWorktree } from "../worktree-shell-guard.js";
 import { contextModeDisabledResult, type ToolExecutionResult } from "./context-mode-tool-result.js";
+import { redactSecrets } from "../redact-secrets.js";
+import { redactExecLog, redactExecDetails, sliceExecText } from "../exec-log-text.js";
+import { excerptLabel } from "../exec-evidence.js";
+import { formatExecResultWithInfo, resolveExecResultMaxChars, type ExecResultEnvelope } from "./exec-result-budget.js";
+import { markExecResult, copyExecResultMark } from "../exec-result-provenance.js";
 
 export interface ExecToolParams {
   runtime?: unknown;
@@ -37,7 +42,7 @@ export interface ExecToolDeps {
   signal?: AbortSignal;
 }
 
-type ExecToolPreferences = Pick<GSDPreferences, "context_mode" | "verification_timeout_ms">;
+type ExecToolPreferences = Pick<GSDPreferences, "context_mode" | "context_management" | "verification_timeout_ms">;
 
 const UNRELATED_EXEC_DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -130,6 +135,7 @@ function isEnabled(prefs: ExecToolDeps["preferences"]): boolean {
 }
 
 function paramError(message: string): ToolExecutionResult {
+  message = sliceExecText(redactSecrets(message), 512);
   return {
     content: [{ type: "text", text: `Error: ${message}` }],
     details: { operation: "gsd_exec", error: "invalid_params", detail: message },
@@ -260,9 +266,9 @@ export async function executeGsdExec(
       },
       opts,
     );
-    return formatResult(result);
+    return formatResult(result, deps.preferences);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = sliceExecText(redactSecrets(err instanceof Error ? err.message : String(err)), 1000);
     return {
       content: [{ type: "text", text: `Error: gsd_exec failed — ${message}` }],
       details: { operation: "gsd_exec", error: message },
@@ -315,28 +321,41 @@ export async function executeUatExec(
     deps,
   );
   const details = result.details ?? {};
-  return {
+  const wrapped: ToolExecutionResult = {
     ...result,
     details: {
       ...details,
       operation: "gsd_uat_exec",
-      milestoneId,
-      sliceId,
-      checkId,
+      milestoneId: redactSecrets(milestoneId),
+      sliceId: redactSecrets(sliceId),
+      checkId: redactSecrets(checkId),
       intent,
     },
   };
+  copyExecResultMark(result, wrapped);
+  return wrapped;
 }
 
-function formatResult(result: ExecSandboxResult): ToolExecutionResult {
-  const headerLines = [
-    `gsd_exec[${result.id}] runtime=${result.runtime} exit=${formatExit(result)} duration=${result.duration_ms}ms`,
-    `  stdout: ${result.stdout_bytes}B${result.stdout_truncated ? " (truncated)" : ""} → ${result.stdout_path}`,
-    `  stderr: ${result.stderr_bytes}B${result.stderr_truncated ? " (truncated)" : ""} → ${result.stderr_path}`,
-  ];
-  const summary = `${headerLines.join("\n")}\n--- digest ---\n${result.digest}`.trimEnd();
-  return {
-    content: [{ type: "text", text: summary }],
+function formatResult(result: ExecSandboxResult, preferences: ExecToolPreferences | null): ToolExecutionResult {
+  const first = result.excerpts?.[0];
+  const stream = first?.stream ?? (result.stderr_bytes > 0 ? "stderr" : "stdout");
+  const line = first?.start_line ?? 1;
+  const envelope: ExecResultEnvelope = {
+    kind: "exec",
+    summary: `gsd_exec exit=${formatExit(result)} code=${result.exit_code ?? "null"} signal=${result.signal ?? "none"} timed_out=${result.timed_out} aborted=${result.aborted === true} force_resolved=${result.force_resolved} runtime=${result.runtime} duration=${result.duration_ms}ms`,
+    compact_summary: `exit=${result.exit_code ?? "null"} sig=${result.signal ?? "-"} T${+result.timed_out}A${+(result.aborted === true)}F${+result.force_resolved}`,
+    retrieval: `gsd_exec_search mode=read exec_id=${result.id} stream=${stream} start_line=${line}`,
+    compact_retrieval: `gsd_exec_search read ${result.id} ${stream}:L${line}`,
+    storage_truncated: result.stdout_truncated || result.stderr_truncated,
+    scan_limited: false,
+    output_truncated: result.output_truncated ?? false,
+    sections: result.excerpts?.length
+      ? result.excerpts.map(e => ({ label: `stored ${excerptLabel(e)}`, text: e.text }))
+      : result.digest ? [{ label: "stored output excerpt", text: redactExecLog(result.digest) }] : [],
+  };
+  const rendered = formatExecResultWithInfo(envelope, resolveExecResultMaxChars("exec", preferences?.context_management));
+  const formatted: ToolExecutionResult = {
+    content: [{ type: "text", text: rendered.text }],
     details: {
       operation: "gsd_exec",
       id: result.id,
@@ -354,9 +373,17 @@ function formatResult(result: ExecSandboxResult): ToolExecutionResult {
       stdout_path: result.stdout_path,
       stderr_path: result.stderr_path,
       meta_path: result.meta_path,
+      storage_truncated: envelope.storage_truncated,
+      scan_limited: false,
+      output_truncated: rendered.output_truncated,
+      ...(rendered.metadata_omitted ? { metadata_omitted: true } : {}),
+      ...(result.excerpts ? { excerpts: result.excerpts } : {}),
     },
-    isError: result.aborted === true || result.timed_out || result.signal !== null || result.exit_code !== 0,
+    isError: result.aborted === true || result.force_resolved || result.timed_out || result.signal !== null || result.exit_code !== 0,
   };
+  formatted.details = redactExecDetails(formatted.details);
+  markExecResult(formatted, { ...envelope, output_truncated: rendered.output_truncated });
+  return formatted;
 }
 
 function formatExit(result: ExecSandboxResult): string {

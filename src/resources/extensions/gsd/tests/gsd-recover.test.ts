@@ -808,6 +808,85 @@ describe('gsd-recover', async () => {
     }
   });
 
+  test('recover imports generated flat PLAN and SUMMARY artifacts without parent conflicts', async () => {
+    const base = createFixtureBase();
+    try {
+      writeFile(base, 'phases/09-team/09-ROADMAP.md', [
+        '# M009-rfuh2h: Team milestone',
+        '',
+        '- [ ] **S01: Recover generated artifacts** `risk:low` `depends:[]`',
+        '',
+      ].join('\n'));
+      writeFile(base, 'phases/09-team/09-01-PLAN.md', [
+        '# S01: Recover generated artifacts',
+        '',
+        '**Milestone:** M009-rfuh2h',
+        '**Slice:** S01',
+        '',
+        '<tasks>',
+        '- [ ] **T01**: Recover generated task',
+        '</tasks>',
+        '',
+      ].join('\n'));
+      writeFile(base, 'phases/09-team/S01-T01-SUMMARY.md', [
+        '---',
+        'id: T01',
+        'parent: S01',
+        'milestone: M009-rfuh2h',
+        '---',
+        '',
+        '# T01: Recover generated task',
+        '',
+      ].join('\n'));
+      openDatabase(join(base, '.gsd', 'gsd.db'));
+      const before = canonicalRecoverSnapshot();
+      const sourceBefore = recoverSourceSnapshot(base);
+      const approvedPreview = recoverPreview(base);
+      assert.equal(approvedPreview.preview.counts.unresolved, 0);
+      assert.deepEqual(canonicalRecoverSnapshot(), before, 'preview does not import artifact candidates');
+      assert.deepEqual(recoverSourceSnapshot(base), sourceBefore);
+
+      const { ctx, notes } = makeCtx();
+      await handleRecover(ctx, base, '');
+      assert.deepEqual(canonicalRecoverSnapshot(), before, 'generated artifacts still require explicit Preview approval');
+      assert.deepEqual(recoverSourceSnapshot(base), sourceBefore);
+      await handleRecover(ctx, base, `--preview=${approvedPreview.preview_hash}`);
+
+      assert.equal(notes.at(-1)?.kind, 'success');
+      assert.equal(getMilestone('M009-rfuh2h')?.title, 'Team milestone');
+      assert.equal(getSlice('M009-rfuh2h', 'S01')?.title, 'Recover generated artifacts');
+      assert.equal(getTask('M009-rfuh2h', 'S01', 'T01')?.status, 'complete');
+    } finally {
+      closeDatabase();
+      cleanup(base);
+    }
+  });
+
+  test('recover refuses conflicting generated task identities without canonical residue', async () => {
+    const base = createFixtureBase();
+    try {
+      writeFile(base, 'phases/09-team/09-ROADMAP.md', '# M009-rfuh2h: Team milestone\n\n- [ ] **S01: First slice** `risk:low` `depends:[]`\n');
+      writeFile(base, 'phases/09-team/S01-T01-PLAN.md', '# T01: Planned task\n');
+      writeFile(base, 'phases/09-team/S01-T01-SUMMARY.md', '---\nid: T02\ntask: T01\nparent: S01\n---\n\n# T01: Conflicting summary\n');
+      openDatabase(join(base, '.gsd', 'gsd.db'));
+      const preview = recoverPreview(base);
+      assert.ok(preview.preview.counts.unresolved > 0);
+      const before = canonicalRecoverSnapshot();
+      const sourceBefore = recoverSourceSnapshot(base);
+      const { ctx, notes } = makeCtx();
+
+      await handleRecover(ctx, base, `--preview=${preview.preview_hash}`);
+
+      assert.equal(notes.at(-1)?.kind, 'error');
+      assert.match(notes.at(-1)?.message ?? '', /unresolved|requires.*user/i);
+      assert.deepEqual(canonicalRecoverSnapshot(), before);
+      assert.deepEqual(recoverSourceSnapshot(base), sourceBefore);
+    } finally {
+      closeDatabase();
+      cleanup(base);
+    }
+  });
+
   test('explicit slash recover commits one retained-backup Import Application without clearing authority', async () => {
     const base = createFixtureBase();
     try {

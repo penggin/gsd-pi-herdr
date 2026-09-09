@@ -116,14 +116,14 @@ describe("evidence-collector: toolCallId-based matching (A-3)", () => {
 
   it("treats any workflow MCP gsd_exec server namespace as execution evidence", () => {
     recordToolCall("tc-default", "mcp__gsd-workflow__gsd_exec", { command: "pnpm test" });
-    recordToolCall("tc-custom", "mcp__custom-workflow__gsd_exec_search", { query: "rg TODO" });
+    recordToolCall("tc-custom", "mcp__custom-workflow__gsd_uat_exec", { script: "pnpm lint" });
 
     const entries = getEvidence() as readonly BashEvidence[];
     assert.equal(entries.length, 2);
     assert.equal(entries[0].kind, "bash");
     assert.equal(entries[0].command, "pnpm test");
     assert.equal(entries[1].kind, "bash");
-    assert.equal(entries[1].command, "rg TODO");
+    assert.equal(entries[1].command, "pnpm lint");
   });
 
   it("skips byte-identical evidence file rewrites", async (t) => {

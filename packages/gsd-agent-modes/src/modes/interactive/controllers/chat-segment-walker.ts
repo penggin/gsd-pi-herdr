@@ -301,6 +301,7 @@ export function rebuildSegmentsOnMessageEnd(
 	host: ChatStreamHost,
 	rs: StreamingRenderState,
 	timestampFormat: TimestampFormat,
+	options: { onToolCreated?: (component: ToolExecutionComponent) => void } = {},
 ): void {
 	if (rs.renderedSegments.length === 0) return;
 
@@ -345,6 +346,7 @@ export function rebuildSegmentsOnMessageEnd(
 					host.getRegisteredToolDefinition(finalBlock.name),
 					host.ui,
 				);
+				options.onToolCreated?.(component);
 				component.setExpanded(host.toolOutputExpanded);
 				host.pendingTools.set(finalBlock.id, component);
 				toolComponentsById.set(finalBlock.id, component);
@@ -356,6 +358,7 @@ export function rebuildSegmentsOnMessageEnd(
 					undefined,
 					host.ui,
 				);
+				options.onToolCreated?.(component);
 				component.setExpanded(host.toolOutputExpanded);
 				host.pendingTools.set(finalBlock.id, component);
 				toolComponentsById.set(finalBlock.id, component);

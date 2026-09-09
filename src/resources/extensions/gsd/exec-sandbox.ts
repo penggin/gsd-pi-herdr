@@ -15,6 +15,8 @@ import { resolve } from "node:path";
 import { getShellConfig, killProcessTree, SIGKILL_GRACE_MS, HARD_DEADLINE_MS } from "@gsd/pi-coding-agent";
 import { DEFAULT_COMMAND_TIMEOUT_MS } from "./constants.js";
 import { redactSecrets } from "./redact-secrets.js";
+import { decodeExecUtf8, redactExecLog, redactExecDetails } from "./exec-log-text.js";
+import { selectExecEvidence, type ExecExcerpt } from "./exec-evidence.js";
 
 export interface ExecSandboxRequest {
   /** Interpreter to use. */
@@ -40,7 +42,7 @@ export interface ExecSandboxOptions {
   stdout_cap_bytes: number;
   /** Cap on persisted stderr bytes. */
   stderr_cap_bytes: number;
-  /** Number of trailing stdout chars returned as the digest. */
+  /** Character budget for selected redacted evidence (not the total tool result). */
   digest_chars: number;
   /** Env var allowlist (case-sensitive). PATH/HOME always forwarded. */
   env_allowlist: readonly string[];
@@ -88,6 +90,9 @@ export interface ExecSandboxResult {
   stderr_path: string;
   meta_path: string;
   digest: string;
+  /** Coordinates refer to saved redacted logs, one-based lines and UTF-16 columns. */
+  excerpts?: ExecExcerpt[];
+  output_truncated?: boolean;
 }
 
 const ALWAYS_FORWARD_ENV = ["PATH", "HOME"] as const;
@@ -160,12 +165,6 @@ function sanitizeBashScriptForWindows(script: string): string {
   return script.replace(/(\d*>>?) *\bNUL\b(?=\s|;|\||&|\)|$)/gi, "$1 /dev/null");
 }
 
-function tail(buf: Buffer, chars: number): string {
-  if (chars <= 0) return "";
-  const text = buf.toString("utf-8");
-  return text.length <= chars ? text : text.slice(text.length - chars);
-}
-
 /**
  * Run a script in a subprocess, capture stdout/stderr to files under
  * `.gsd/exec/<id>.{stdout,stderr,meta.json}`, and return an `ExecSandboxResult`
@@ -205,9 +204,11 @@ export function runExecSandbox(
       });
     } catch (err) {
       const duration = Date.now() - started;
-      const message = err instanceof Error ? err.message : String(err);
+      const message = redactSecrets(err instanceof Error ? err.message : String(err));
+      const stderr = redactExecLog(`spawn error: ${message}\n`);
+      const evidence = selectExecEvidence("", stderr, true, opts.digest_chars);
       writeFileSync(stdoutPath, "");
-      writeFileSync(stderrPath, `spawn error: ${message}\n`);
+      writeFileSync(stderrPath, stderr);
       const result: ExecSandboxResult = {
         id,
         runtime: request.runtime,
@@ -223,7 +224,7 @@ export function runExecSandbox(
         stdout_path: stdoutPath,
         stderr_path: stderrPath,
         meta_path: metaPath,
-        digest: `[spawn error: ${message}]`,
+        ...evidence,
       };
       writeMeta(metaPath, result, request, now);
       resolveP(result);
@@ -318,23 +319,14 @@ export function runExecSandbox(
       const stderrBuf = Buffer.concat(stderrChunks);
       const stdoutSuffix = stdoutTruncated ? "\n[truncated: stdout cap reached]\n" : "";
       const stderrSuffix = stderrTruncated ? "\n[truncated: stderr cap reached]\n" : "";
-      // Redact secret-shaped substrings before persisting to .gsd/exec/ (skipped by
-      // the secret scanner). The returned digest is derived from the raw buffer
-      // below and is redacted downstream when the session is written to activity/.
-      writeFileSync(stdoutPath, redactSecrets(Buffer.concat([stdoutBuf, Buffer.from(stdoutSuffix, "utf-8")]).toString("utf-8")));
-      writeFileSync(stderrPath, redactSecrets(Buffer.concat([stderrBuf, Buffer.from(stderrSuffix, "utf-8")]).toString("utf-8")));
-
-      const digestBody = tail(stdoutBuf, opts.digest_chars);
-      const digest =
-        digestBody.length > 0
-          ? digestBody
-          : aborted
-            ? "[no stdout — aborted]"
-            : timedOut
-              ? "[no stdout — timed out]"
-              : stderrBuf.length > 0
-                ? `[no stdout — tail of stderr]\n${tail(stderrBuf, opts.digest_chars)}`
-                : "[no output]";
+      // Both disk and returned evidence use these exact redacted strings. A
+      // capped byte prefix is not the execution's tail; flags record that loss.
+      const stdout = redactExecLog(decodeExecUtf8(stdoutBuf, !stdoutTruncated)) + stdoutSuffix;
+      const stderr = redactExecLog(decodeExecUtf8(stderrBuf, !stderrTruncated)) + stderrSuffix;
+      writeFileSync(stdoutPath, stdout);
+      writeFileSync(stderrPath, stderr);
+      const evidence = selectExecEvidence(stdout, stderr,
+        exitCode !== 0 || signal !== null || timedOut || aborted || forceResolved, opts.digest_chars);
 
       const result: ExecSandboxResult = {
         id,
@@ -352,7 +344,7 @@ export function runExecSandbox(
         stdout_path: stdoutPath,
         stderr_path: stderrPath,
         meta_path: metaPath,
-        digest,
+        ...evidence,
       };
       writeMeta(metaPath, result, request, now);
       resolveP(result);
@@ -406,8 +398,8 @@ function writeMeta(
   const meta = {
     id: result.id,
     runtime: result.runtime,
-    purpose: request.purpose ?? null,
-    ...(request.metadata ? { metadata: request.metadata } : {}),
+    purpose: request.purpose ? redactSecrets(request.purpose) : request.purpose ?? null,
+    ...(request.metadata ? { metadata: redactExecDetails(request.metadata) } : {}),
     script_chars: request.script.length,
     started_at: now.toISOString(),
     finished_at: new Date(now.getTime() + result.duration_ms).toISOString(),
@@ -423,6 +415,7 @@ function writeMeta(
     stderr_truncated: result.stderr_truncated,
     stdout_path: result.stdout_path,
     stderr_path: result.stderr_path,
+    log_text_format: "redacted-lines-v1",
   };
   writeFileSync(path, `${JSON.stringify(meta, null, 2)}\n`);
 }

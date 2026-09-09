@@ -9,6 +9,11 @@ import { Type } from "@sinclair/typebox";
 import type { ExtensionAPI } from "@gsd/pi-coding-agent";
 
 import { resolveCtxCwd } from "./dynamic-tools.js";
+import { registerNativeExecResult } from "../exec-result-provenance.js";
+
+function sessionId(ctx: { sessionManager?: { getSessionId?(): string } }): string {
+  try { return ctx.sessionManager?.getSessionId?.() ?? ""; } catch { return ""; }
+}
 
 
 async function loadContextModePreferences(baseDir: string) {
@@ -67,13 +72,16 @@ export function registerExecTools(pi: ExtensionAPI): void {
       ),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      const originatingSession = sessionId(_ctx);
       const { executeUatExec } = await import("../tools/exec-tool.js");
       const baseDir = resolveCtxCwd(_ctx);
-      return executeUatExec(params as Parameters<typeof executeUatExec>[0], {
+      const result = await executeUatExec(params as Parameters<typeof executeUatExec>[0], {
         baseDir,
         preferences: await loadContextModePreferences(baseDir),
         signal: _signal,
       });
+      registerNativeExecResult({ sessionId: originatingSession, toolCallId: _toolCallId, toolName: "gsd_uat_exec" }, result);
+      return result;
     },
   });
 
@@ -91,8 +99,9 @@ export function registerExecTools(pi: ExtensionAPI): void {
     promptGuidelines: [
       "Prefer gsd_exec for analyses that would otherwise read >3 files or produce large tool output.",
       "Write scripts that log the finding (counts, matches, summaries) rather than raw dumps.",
-      "The digest is the last ~300 chars of stdout — size your log output accordingly.",
-      "Need persisted output? Read the stdout_path returned in details (file on local disk).",
+      "The digest selects bounded redacted evidence from stored stdout/stderr; words in logs do not determine success.",
+      "Storage is a capped prefix, not necessarily the whole execution tail. Use gsd_exec_search mode=read with exec_id, stream and start_line to retrieve saved lines.",
+      "Compact result flags T/A/F mean timed_out/aborted/force_resolved; storage_truncated, scan_limited and output_truncated are distinct limits.",
     ],
     parameters: Type.Object({
       runtime: Type.Optional(
@@ -115,44 +124,61 @@ export function registerExecTools(pi: ExtensionAPI): void {
       ),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      const originatingSession = sessionId(_ctx);
       const { executeGsdExec } = await import("../tools/exec-tool.js");
       const baseDir = resolveCtxCwd(_ctx);
-      return executeGsdExec(params as Parameters<typeof executeGsdExec>[0], {
+      const result = await executeGsdExec(params as Parameters<typeof executeGsdExec>[0], {
         baseDir,
         preferences: await loadContextModePreferences(baseDir),
         signal: _signal,
       });
+      registerNativeExecResult({ sessionId: originatingSession, toolCallId: _toolCallId, toolName: "gsd_exec" }, result);
+      return result;
     },
   });
 
   pi.registerTool({
     name: "gsd_exec_search",
-    label: "Search gsd_exec History",
+    label: "Execution History / Logs",
     description:
-      "List prior gsd_exec runs (most recent first) from .gsd/exec/*.meta.json. Useful for " +
-      "rediscovering the stdout_path of an earlier run without re-executing it. Read-only.",
-    promptSnippet: "Search prior gsd_exec runs by substring, runtime, or failing-only filter",
+      "Read-only execution history and stored stdout/stderr retrieval. Omit mode (or history) to filter IDs/purpose as before. " +
+      "search finds a case-insensitive single-line literal in at most 20 recent runs/4 MiB; read selects an existing ID and line range. Never re-executes commands or certifies current validation.",
+    promptSnippet: "Find prior executions or search/read bounded saved stdout/stderr by execution ID",
     promptGuidelines: [
       "Use this before re-running an expensive analysis — the prior run's stdout file may still answer.",
-      "The preview shows the trailing ~300 chars of stdout; read stdout_path for persisted output.",
+      "history query matches ID/purpose only; search query matches stored log text literally, not regex.",
+      "Use mode=read, exec_id, stream=stdout|stderr, start_line and line_count for original redacted lines; use start_column for partial long lines.",
+      "storage_truncated means original output was not all saved; scan_limited means this query did not scan everything; output_truncated means only part of the found/read text is returned.",
+      "T/A/F are timed_out/aborted/force_resolved. Compact read locators name this tool, execution ID, stream and line; they are not shell commands.",
     ],
     parameters: Type.Object({
-      query: Type.Optional(Type.String({ description: "Substring matched against id and purpose (case-insensitive)." })),
+      mode: Type.Optional(Type.String({ enum: ["history", "search", "read"], description: "Default history preserves ID/purpose filtering; search/read inspect stored log bodies." })),
+      query: Type.Optional(Type.String({ description: "History: ID/purpose substring. Search: nonempty single-line literal, at most 256 chars. Case-insensitive." })),
+      exec_id: Type.Optional(Type.String({ maxLength: 200, description: "Existing execution ID, not a path. Required for read; optional for search." })),
+      stream: Type.Optional(Type.String({ enum: ["stdout", "stderr", "both"], description: "Search defaults both. Read requires stdout or stderr." })),
+      context_lines: Type.Optional(Type.Integer({ minimum: 0, maximum: 8, description: "Search surrounding lines, default 2." })),
+      start_line: Type.Optional(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER, description: "Read starting line, one-based; default 1." })),
+      line_count: Type.Optional(Type.Integer({ minimum: 1, maximum: 200, description: "Read line count, default 50." })),
+      start_column: Type.Optional(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER, description: "Read starting UTF-16 column, one-based; for returned partial-line cursors." })),
       runtime: Type.Optional(
         Type.String({
           description: "Restrict to one runtime: bash, node, or python.",
         }),
       ),
       failing_only: Type.Optional(Type.Boolean({ description: "Only non-zero exit codes and timeouts." })),
-      limit: Type.Optional(Type.Number({ description: "Max results (default 20, cap 200)", minimum: 1, maximum: 200 })),
+      limit: Type.Optional(Type.Integer({ description: "History default 20/max 200; search default 5/max 20.", minimum: 1, maximum: 200 })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      const originatingSession = sessionId(_ctx);
       const { executeExecSearch } = await import("../tools/exec-search-tool.js");
       const baseDir = resolveCtxCwd(_ctx);
-      return executeExecSearch(params as Parameters<typeof executeExecSearch>[0], {
+      const result = await executeExecSearch(params as Parameters<typeof executeExecSearch>[0], {
         baseDir,
         preferences: await loadContextModePreferences(baseDir),
+        signal: _signal,
       });
+      registerNativeExecResult({ sessionId: originatingSession, toolCallId: _toolCallId, toolName: "gsd_exec_search" }, result);
+      return result;
     },
   });
 

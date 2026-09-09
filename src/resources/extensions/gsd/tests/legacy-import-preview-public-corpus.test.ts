@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
 import type { LegacyImportPreviewEnvelope } from "../legacy-import-contract.ts";
+import { LEGACY_IMPORT_BASE_DATABASE_SCHEMA_VERSION } from "../legacy-import-contract.ts";
 import {
   canonicalLegacyImportJson,
   createLegacyImportPreview,
@@ -31,6 +32,7 @@ import {
   validateLegacyImportCorpusCase,
   type LegacyImportCorpusManifest,
 } from "./helpers/legacy-import-corpus.ts";
+import { historicalV48Expectation } from "./helpers/legacy-import-schema-49-expectations.ts";
 
 const CORPUS_ROOT = new URL("./__fixtures__/legacy-import-corpus/v1/", import.meta.url);
 const CORPUS_PATH = fileURLToPath(CORPUS_ROOT);
@@ -178,6 +180,12 @@ test("public legacy Preview returns deterministic read-only artifacts for every 
 
   for (const entry of MANIFEST.cases) {
     const corpusCase = loadLegacyImportCorpusCase(CORPUS_ROOT, entry.name);
+    // Keep validating the sealed v48 oracle against its unchanged historical
+    // schema. Only newly generated Preview documents use the current version.
+    validateLegacyImportCorpusCase(corpusCase);
+    const currentSchema = structuredClone(corpusCase.schema) as { properties: Record<string, unknown> };
+    assert.deepEqual(currentSchema.properties.base_database_schema_version, { const: 48 });
+    currentSchema.properties.base_database_schema_version = { const: LEGACY_IMPORT_BASE_DATABASE_SCHEMA_VERSION };
     const caseRoot = join(directory, entry.name);
     const source = join(caseRoot, "source");
     const databasePath = join(caseRoot, "canonical.db");
@@ -215,7 +223,8 @@ test("public legacy Preview returns deterministic read-only artifacts for every 
       assert.deepEqual(revalidateLegacyImportPreview(input, first), first, `${entry.name}: revalidate`);
       assert.equal(first.preview_hash, hashLegacyImportValue(first.preview), `${entry.name}: artifact hash`);
       assertDeepFrozen(first);
-      validateLegacyImportCorpusCase({ ...corpusCase, oracle: first.preview });
+      assert.equal(first.preview.base_database_schema_version, LEGACY_IMPORT_BASE_DATABASE_SCHEMA_VERSION);
+      validateLegacyImportCorpusCase({ ...corpusCase, schema: currentSchema, oracle: first.preview });
       assert.equal(first.preview.sources.length, corpusCase.files.length, `${entry.name}: exactly-once sources`);
       assert.equal(new Set(first.preview.sources.map((item) => item.path)).size, corpusCase.files.length, `${entry.name}: unique sources`);
       assert.equal(fingerprintLegacyImportCorpusTree(source), sourceBefore, `${entry.name}: source read-only`);
@@ -230,11 +239,96 @@ test("public legacy Preview returns deterministic read-only artifacts for every 
 
       const deviation = DEVIATIONS[entry.name as keyof typeof DEVIATIONS];
       if (deviation === undefined) {
-        assert.deepEqual(semanticProjection(first.preview), semanticProjection(corpusCase.oracle), entry.name);
+        let expected = corpusCase.oracle;
+        if (entry.name === "root-external-boundaries") {
+          const source = expected.sources.find((candidate) => candidate.path === "$GSD_STATE_DIR/projects/project-external/gsd.db")!;
+          const historical = historicalV48Expectation(source, corpusCase.files.find((file) => file.path === source.path)!.bytes);
+          expected = {
+            ...expected,
+            diagnoses: [...expected.diagnoses, historical.diagnosis],
+            resolutions: [...expected.resolutions, historical.resolution],
+          };
+        }
+        assert.deepEqual(semanticProjection(first.preview), semanticProjection(expected), entry.name);
       } else {
-        assert.deepEqual(Object.values(first.preview.counts), deviation.counts, `${entry.name}: ${deviation.reason}`);
+        const expectedCounts = entry.name === "db-target-matrix"
+          ? [0, 0, 0, 0, 1, 2] // Retained v49 is current: one fewer unsupported source/resolution.
+          : entry.name === "lifecycle-truth-matrix"
+            ? [7, 0, 0, 5, 2, 10] // Public dependency inspection requires the current schema.
+            : deviation.counts;
+        assert.deepEqual(Object.values(first.preview.counts), expectedCounts, `${entry.name}: ${deviation.reason}`);
+        let retainedVersionSemantics = first.preview;
+        if (["action-matrix", "db-target-matrix", "lifecycle-truth-matrix"].includes(entry.name)) {
+          const historicalPath = entry.name === "db-target-matrix" ? "current-v48/.gsd/gsd.db" : ".gsd/gsd.db";
+          const source = first.preview.sources.find((candidate) => candidate.path === historicalPath)!;
+          const historical = historicalV48Expectation(source, corpusCase.files.find((file) => file.path === source.path)!.bytes);
+          // Assert the complete new v48 diagnostic before comparing the rest
+          // with the existing v48-era digest. No retained digest is regenerated.
+          assert.deepEqual(first.preview.diagnoses.find((diagnosis) => diagnosis.diagnosis_id === historical.diagnosis.diagnosis_id), historical.diagnosis);
+          assert.deepEqual(first.preview.resolutions.find((resolution) => resolution.diagnosis_id === historical.diagnosis.diagnosis_id), historical.resolution);
+          retainedVersionSemantics = {
+            ...first.preview,
+            diagnoses: first.preview.diagnoses.filter((diagnosis) => diagnosis.diagnosis_id !== historical.diagnosis.diagnosis_id),
+            resolutions: first.preview.resolutions.filter((resolution) => resolution.diagnosis_id !== historical.diagnosis.diagnosis_id),
+          };
+        }
+        if (entry.name === "lifecycle-truth-matrix") {
+          const retainedDb = new DatabaseSync(join(source, ".gsd", "gsd.db"), { readOnly: true });
+          try {
+            assert.equal(retainedDb.prepare("SELECT max(version) AS version FROM schema_version").get()?.version, 48);
+          } finally {
+            retainedDb.close();
+          }
+          assert.equal(LEGACY_IMPORT_BASE_DATABASE_SCHEMA_VERSION, 49);
+          // The public producer inspects dependency rows only at its current
+          // schema; v48 remains retained evidence. Lower-level parser corpus
+          // tests still cover the conflict when supplied exact DB observations.
+          const dependencyKeys = ["M001/S02/dependency-junction", "M001/S02/depends-column"];
+          assert.deepEqual(first.preview.changes.filter((change) => dependencyKeys.includes(change.target.key)), []);
+          assert.deepEqual(first.preview.diagnoses.filter((diagnosis) => diagnosis.code === "slices-depends-vs-slice-dependencies-conflict"), []);
+          assert.deepEqual(first.preview.resolutions.filter((resolution) => resolution.target !== undefined && dependencyKeys.includes(resolution.target.key)), []);
+          const currentSource = first.preview.sources.find((candidate) => candidate.path === ".gsd/gsd.db")!;
+          const oldChanges = corpusCase.oracle.changes.filter((change) => dependencyKeys.includes(change.target.key));
+          assert.deepEqual(oldChanges.map((change) => change.target.key).sort(), dependencyKeys);
+          assert.ok(oldChanges.every((change) => change.action === "preserve" && change.reason_code === "dependency-conflict-raw-evidence"));
+          const oldConflict = corpusCase.oracle.diagnoses.find((diagnosis) => diagnosis.code === "slices-depends-vs-slice-dependencies-conflict")!;
+          const oldResolution = corpusCase.oracle.resolutions.find((resolution) => resolution.diagnosis_id === oldConflict.diagnosis_id)!;
+          assert.deepEqual(oldResolution, { diagnosis_id: oldConflict.diagnosis_id, disposition: "requires-user" });
+          // Reconstruct only the supplied-evidence entries for the original
+          // digest; this adds no historical dependency-read support to runtime.
+          retainedVersionSemantics = {
+            ...retainedVersionSemantics,
+            counts: { ...retainedVersionSemantics.counts, preserve: 7, unresolved: 11 },
+            changes: [...retainedVersionSemantics.changes, ...oldChanges.map((change) => ({
+              ...change,
+              raw: { ...change.raw, source_id: currentSource.source_id },
+              provenance: { ...change.provenance, source_id: currentSource.source_id },
+            }))],
+            diagnoses: [...retainedVersionSemantics.diagnoses, { ...oldConflict, source_id: currentSource.source_id }],
+            resolutions: [...retainedVersionSemantics.resolutions, oldResolution],
+          };
+        }
+        if (entry.name === "db-target-matrix") {
+          const current = first.preview.sources.find((source) => source.path === "future-v49/.gsd/gsd.db")!;
+          assert.equal(LEGACY_IMPORT_BASE_DATABASE_SCHEMA_VERSION, 49, "review the retained-v49 delta when the schema advances");
+          assert.equal(current.outcome, "mapped");
+          assert.deepEqual(first.preview.diagnoses.filter((diagnosis) => diagnosis.source_id === current.source_id), []);
+          assert.deepEqual(first.preview.resolutions.filter((resolution) => resolution.target?.key === current.path), []);
+          const oldSource = corpusCase.oracle.sources.find((source) => source.path === current.path)!;
+          const oldFuture = corpusCase.oracle.diagnoses.find((diagnosis) => diagnosis.source_id === oldSource.source_id)!;
+          assert.equal(oldFuture.code, "future-schema-version");
+          // Having asserted v49's current classification, reconstruct only its
+          // historical unsupported fields to retain the original semantic hash.
+          retainedVersionSemantics = {
+            ...retainedVersionSemantics,
+            counts: { ...retainedVersionSemantics.counts, unparsed: 2, unresolved: 3 },
+            sources: retainedVersionSemantics.sources.map((source) => source.source_id === current.source_id ? { ...source, outcome: "unparsed" as const } : source),
+            diagnoses: [...retainedVersionSemantics.diagnoses, { ...oldFuture, source_id: current.source_id }],
+            resolutions: [...retainedVersionSemantics.resolutions, { diagnosis_id: oldFuture.diagnosis_id, disposition: "unsupported" }],
+          };
+        }
         assert.equal(
-          hashLegacyImportValue(semanticProjection(first.preview)),
+          hashLegacyImportValue(semanticProjection(retainedVersionSemantics)),
           deviation.semantic_hash,
           `${entry.name}: exact ${deviation.reason} semantics`,
         );
@@ -274,8 +368,6 @@ test("public legacy Preview returns deterministic read-only artifacts for every 
     "create:task:M001/S02/T02",
     "preserve:legacy-artifact:.gsd/milestones/M001/slices/S01/tasks/T01/T01-PLAN.md:narrative",
     "preserve:legacy-artifact:.gsd/milestones/M001/slices/S02/S02-SUMMARY.md:full_summary_md",
-    "preserve:legacy-evidence:M001/S02/dependency-junction",
-    "preserve:legacy-evidence:M001/S02/depends-column",
     "preserve:legacy-evidence:M001/S02/structured-status",
     "preserve:legacy-evidence:M001/structured-status",
     "preserve:legacy-evidence:M001/summary-status",
@@ -289,26 +381,26 @@ test("public legacy Preview returns deterministic read-only artifacts for every 
     "conflicting-legacy-import-completeness",
     "conflicting-legacy-import-completeness",
     "conflicting-legacy-import-completeness",
+    "historical-schema-version",
     "incomplete-success-signal",
     "markdown-task-full-summary-md-loss",
     "markdown-task-narrative-loss",
     "projection-conflicts-with-adopted-lifecycle",
     "projection-conflicts-with-adopted-lifecycle",
     "slice-summary-upgrades-unchecked-roadmap",
-    "slices-depends-vs-slice-dependencies-conflict",
     "summary-overrides-unchecked-task",
     "task-summary-parent-conflict",
   ]);
   assert.deepEqual(
     sortCanonical(lifecycle.resolutions.map(({ diagnosis_id: _diagnosisId, ...resolution }) => resolution)),
     sortCanonical([
+      { disposition: "mapped", target: { kind: "database-target", key: ".gsd/gsd.db" } },
       { disposition: "mapped", target: { kind: "milestone-status", key: "M002" } },
       { disposition: "mapped", target: { kind: "milestone-status", key: "M002" } },
       { disposition: "mapped", target: { kind: "slice-status", key: "M004/S01" } },
       { disposition: "mapped", target: { kind: "task-status", key: "M004/S01/T01" } },
       { disposition: "preserved", target: { kind: "legacy-artifact", key: ".gsd/milestones/M001/slices/S01/tasks/T01/T01-PLAN.md" } },
       { disposition: "preserved", target: { kind: "legacy-artifact", key: ".gsd/milestones/M001/slices/S02/S02-SUMMARY.md" } },
-      { disposition: "requires-user" },
       { disposition: "requires-user" },
       { disposition: "requires-user" },
       { disposition: "requires-user" },

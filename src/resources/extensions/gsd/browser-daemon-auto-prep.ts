@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 
 import {
@@ -12,6 +11,7 @@ import {
   resolveGsdBrowserDaemonStopInvocation,
 } from "../shared/gsd-browser-cli.js";
 import { uatTypeIncludesBrowser, type UatType } from "./uat-policy.js";
+import { runBrowserDaemonCommand } from "./browser-daemon-command.js";
 
 const DEFAULT_DAEMON_START_TIMEOUT_MS = 30_000;
 const DEFAULT_DAEMON_STOP_TIMEOUT_MS = 15_000;
@@ -85,21 +85,7 @@ export function ensureBrowserDaemonStarted(
     };
   }
 
-  try {
-    execFileSync(invocation.command, invocation.args, {
-      cwd: invocation.cwd,
-      env: { ...process.env, ...env, ...(invocation.env ?? {}) },
-      stdio: ["ignore", "pipe", "pipe"],
-      timeout: options.timeoutMs ?? DEFAULT_DAEMON_START_TIMEOUT_MS,
-      encoding: "utf-8",
-    });
-    return { ok: true };
-  } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
+  return runBrowserDaemonCommand(invocation, env, options.timeoutMs ?? DEFAULT_DAEMON_START_TIMEOUT_MS);
 }
 
 /**
@@ -144,21 +130,7 @@ export function stopBrowserDaemon(
     };
   }
 
-  try {
-    execFileSync(invocation.command, invocation.args, {
-      cwd: invocation.cwd,
-      env: { ...process.env, ...env, ...(invocation.env ?? {}) },
-      stdio: ["ignore", "pipe", "pipe"],
-      timeout: options.timeoutMs ?? DEFAULT_DAEMON_STOP_TIMEOUT_MS,
-      encoding: "utf-8",
-    });
-    return { ok: true };
-  } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
+  return runBrowserDaemonCommand(invocation, env, options.timeoutMs ?? DEFAULT_DAEMON_STOP_TIMEOUT_MS);
 }
 
 /**

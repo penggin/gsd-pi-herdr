@@ -1,4 +1,4 @@
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -10,7 +10,7 @@ import { postUnitPreVerification } from "../auto-post-unit.ts";
 import { registerHooks } from "../bootstrap/register-hooks.ts";
 import { resetToolCallLoopGuard } from "../bootstrap/tool-call-loop-guard.ts";
 import { closeDatabase, openDatabase } from "../gsd-db.ts";
-import { readUnitHarnessAbort } from "../unit-runtime.ts";
+import { readUnitHarnessAbort, recordUnitHarnessAbort } from "../unit-runtime.ts";
 
 type Handler = (event: any, ctx?: any) => Promise<any> | any;
 
@@ -74,6 +74,67 @@ function makeRuntimeBase(): string {
   mkdirSync(join(base, ".gsd"), { recursive: true });
   return base;
 }
+
+function activateUatFixture(t: TestContext): { base: string; startedAt: number } {
+  const base = makeRuntimeBase();
+  const startedAt = Date.now();
+  autoSession.reset();
+  resetToolCallLoopGuard();
+  autoSession.active = true;
+  autoSession.basePath = base;
+  autoSession.currentUnit = { type: "run-uat", id: "M001/S01", startedAt };
+  t.after(() => {
+    autoSession.reset();
+    resetToolCallLoopGuard();
+    rmSync(base, { recursive: true, force: true });
+  });
+  return { base, startedAt };
+}
+
+for (const hook of ["emitToolResult", "emitToolExecutionEnd"] as const) {
+  for (const toolName of ["gsd_exec", "gsd_uat_exec"]) {
+    test(`${hook} keeps ${toolName} schema errors model-fixable rather than recording harness aborts`, async (t) => {
+      const { base, startedAt } = activateUatFixture(t);
+      const emit = makeHookHarness()[hook];
+      for (const message of [
+        `Validation failed for tool "${toolName}": missing milestoneId`,
+        "Input validation error: missing checkId",
+        `Invalid arguments for tool ${toolName}`,
+        "MCP error -32602: invalid params",
+      ]) {
+        await emit({ toolName, isError: true, result: { content: [{ type: "text", text: message }], details: {} } });
+        assert.equal(readUnitHarnessAbort(base, "run-uat", "M001/S01", startedAt), null);
+      }
+    });
+
+    test(`${hook} clears only a same-tool same-run tool-error after ${toolName} succeeds`, async (t) => {
+      const { base, startedAt } = activateUatFixture(t);
+      const emit = makeHookHarness()[hook];
+      recordUnitHarnessAbort(base, "run-uat", "M001/S01", startedAt, { kind: "tool-error", toolName, reason: "tool unavailable" });
+      const success = { isError: false, result: { content: [{ type: "text", text: "evidence captured" }], details: { exit_code: 0, aborted: false } } };
+      await emit({ toolName, result: success.result });
+      assert.equal(readUnitHarnessAbort(base, "run-uat", "M001/S01", startedAt)?.toolName, toolName, "missing error status is not verified success");
+      const otherTool = toolName === "gsd_exec" ? "gsd_uat_exec" : "gsd_exec";
+      await emit({ toolName: otherTool, ...success });
+      assert.equal(readUnitHarnessAbort(base, "run-uat", "M001/S01", startedAt)?.toolName, toolName);
+      await emit({ toolName, ...success });
+      assert.equal(readUnitHarnessAbort(base, "run-uat", "M001/S01", startedAt), null);
+    });
+  }
+}
+
+test("successful exec cannot clear a previous run marker or a real turn-abort", async (t) => {
+  const { base, startedAt } = activateUatFixture(t);
+  const emit = makeHookHarness().emitToolExecutionEnd;
+  const success = { toolName: "gsd_uat_exec", isError: false, result: { content: [{ type: "text", text: "ok" }] } };
+  recordUnitHarnessAbort(base, "run-uat", "M001/S01", startedAt - 1, { kind: "tool-error", toolName: "gsd_uat_exec", reason: "previous run" });
+  await emit(success);
+  assert.equal(readUnitHarnessAbort(base, "run-uat", "M001/S01", startedAt - 1)?.reason, "previous run");
+  recordUnitHarnessAbort(base, "run-uat", "M001/S01", startedAt, { kind: "turn-abort", reason: "cancelled" });
+  await emit({ toolName: "gsd_uat_exec", isError: true, result: { content: [{ type: "text", text: "No such tool available: gsd_uat_exec" }] } });
+  await emit(success);
+  assert.equal(readUnitHarnessAbort(base, "run-uat", "M001/S01", startedAt)?.kind, "turn-abort");
+});
 
 test("register-hooks keeps loop-guard block reason interactive outside auto-mode", async (t) => {
   autoSession.reset();

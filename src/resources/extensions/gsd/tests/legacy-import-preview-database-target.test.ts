@@ -42,7 +42,9 @@ import {
 } from "../legacy-import-preview-source.ts";
 import { canonicalLegacyImportJson, hashLegacyImportValue } from "../legacy-import-preview.ts";
 import { SCHEMA_VERSION } from "../db/engine.ts";
+import { LEGACY_IMPORT_BASE_DATABASE_SCHEMA_VERSION } from "../legacy-import-contract.ts";
 import { loadLegacyImportCorpusCase } from "./helpers/legacy-import-corpus.ts";
+import { historicalV48Expectation } from "./helpers/legacy-import-schema-49-expectations.ts";
 
 const CORPUS_ROOT = new URL("./__fixtures__/legacy-import-corpus/v1/", import.meta.url);
 const DATABASE_MATRIX_SCENARIOS = [
@@ -972,7 +974,9 @@ test("legacy preview database target classifies supported schema boundaries and 
     { name: "historical-v45", version: 45, code: "historical-schema-version", outcome: "mapped" },
     { name: "historical-v46", version: 46, code: "historical-schema-version", outcome: "mapped" },
     { name: "historical-v47", version: 47, code: "historical-schema-version", outcome: "mapped" },
-    { name: "future-v49", version: 49, code: "future-schema-version", outcome: "unparsed" },
+    { name: "historical-v48", version: 48, code: "historical-schema-version", outcome: "mapped" },
+    { name: `current-v${LEGACY_IMPORT_BASE_DATABASE_SCHEMA_VERSION}`, version: LEGACY_IMPORT_BASE_DATABASE_SCHEMA_VERSION, code: undefined, outcome: "mapped" },
+    { name: `future-v${LEGACY_IMPORT_BASE_DATABASE_SCHEMA_VERSION + 1}`, version: LEGACY_IMPORT_BASE_DATABASE_SCHEMA_VERSION + 1, code: "future-schema-version", outcome: "unparsed" },
   ] as const;
   for (const scenario of scenarios) {
     const gsd = join(base, scenario.name);
@@ -984,7 +988,7 @@ test("legacy preview database target classifies supported schema boundaries and 
     const evidence = collectLegacyImportDatabaseTargetEvidence(capture, inspectLegacyImportDatabaseTarget);
     const interpretation = interpretLegacyImportDatabaseTargets(capture, evidence);
     assert.equal(interpretation.sources[0]?.outcome, scenario.outcome, scenario.name);
-    assert.deepEqual(interpretation.diagnoses.map((diagnosis) => diagnosis.code), [scenario.code], scenario.name);
+    assert.deepEqual(interpretation.diagnoses.map((diagnosis) => diagnosis.code), scenario.code === undefined ? [] : [scenario.code], scenario.name);
   }
 
   const unversioned = join(base, "unversioned");
@@ -1191,7 +1195,22 @@ test("independent retained database scenarios aggregate to the exact sealed matr
     actualResolutions.push(...first.resolutions);
   }
 
-  const oracle = corpusBefore.oracle;
+  // Names and bytes in the sealed corpus remain v48-era evidence: its
+  // "future-v49" is now current, and "current-v48" is now historical.
+  assert.equal(SCHEMA_VERSION, 49, "review this explicit corpus delta when the schema advances");
+  const retainedOracle = corpusBefore.oracle;
+  const formerlyFuture = retainedOracle.sources.find((source) => source.path === "future-v49/.gsd/gsd.db")!;
+  const formerCurrent = retainedOracle.sources.find((source) => source.path === "current-v48/.gsd/gsd.db")!;
+  assert.equal(formerlyFuture.outcome, "unparsed");
+  const oldFutureDiagnosis = retainedOracle.diagnoses.find((diagnosis) => diagnosis.source_id === formerlyFuture.source_id)!;
+  assert.equal(oldFutureDiagnosis.code, "future-schema-version");
+  const historical = historicalV48Expectation(formerCurrent, corpusBefore.files.find((file) => file.path === formerCurrent.path)!.bytes);
+  const oracle = {
+    ...retainedOracle,
+    sources: retainedOracle.sources.map((source) => source.source_id === formerlyFuture.source_id ? { ...source, outcome: "mapped" as const } : source),
+    diagnoses: [...retainedOracle.diagnoses.filter((diagnosis) => diagnosis.diagnosis_id !== oldFutureDiagnosis.diagnosis_id), historical.diagnosis],
+    resolutions: [...retainedOracle.resolutions.filter((resolution) => resolution.diagnosis_id !== oldFutureDiagnosis.diagnosis_id), historical.resolution],
+  };
   const actualPaths = sourcePaths(actualSources);
   const oraclePaths = sourcePaths(oracle.sources);
   assert.deepEqual(normalizedSources(actualSources), normalizedSources(oracle.sources));

@@ -188,6 +188,104 @@ describe('hasBrowserRequiredText', () => {
   });
 });
 
+describe('hasBrowserRequiredText — database snapshot wording', () => {
+  for (const text of [
+    'snapshot create',
+    'snapshot restore-check',
+    'snapshot_operation',
+    'db snapshot',
+    'backup snapshot',
+    'purge / snapshot / export / import / restore-check crash-injection chain',
+    'snapshot 与 export 的崩溃残留操作…',
+    'Create a snapshot of each modified database page.',
+    'Create a database snapshot, then render a CLI summary.',
+    'Create a database page snapshot.',
+    'Create a database\nsnapshot of the records.',
+    'Create a snapshot of the\n  database records.',
+    'snapshot\n  restore-check',
+    'UITestHelpers.snapshot_operation backs up the database.',
+    'Use mybrowser_check and screenshots_archive for the database.',
+  ]) {
+    test(`does not require browser evidence: ${JSON.stringify(text)}`, () => {
+      assert.equal(hasBrowserRequiredText(text), false);
+    });
+  }
+
+  for (const text of [
+    'snapshot the rendered page state in the browser.',
+    'Take a page snapshot after the dialog opens.',
+    'Compare the DOM snapshot against the render.',
+    'Verify the settings flow renders, take a snapshot',
+    'Check the accessibility snapshot after the dialog opens.',
+    'Save a visual snapshot of the layout.',
+    'Capture a viewport snapshot at each breakpoint.',
+    'snapshot the homepage after login.',
+    'Take a rendered page\nsnapshot of the dashboard.',
+    'Browser: take a snapshot after login.',
+    'take a screenshot of the page',
+    'check the site in the browser',
+    'Take a DOM snapshot of the database admin page.',
+    'Take a UI snapshot after exporting the database.',
+    'Take a page snapshot after the database reset.',
+    'Take a snapshot of the UI after exporting the database.',
+    'Snapshot the rendered page after exporting the database.',
+    'Check the accessibility\nsnapshot of the database admin page.',
+    'Create a database snapshot; take a snapshot of the layout.',
+    'Create a database snapshot. Take a screenshot of the page.',
+    'Create a database snapshot! Browser: take a snapshot.',
+    'Create a database snapshot? Take a page snapshot.',
+    'Database export: take a viewport snapshot.',
+    'Snapshot exportable settings in the UI.',
+    'Take a snapshot of databaseHelpers output.',
+  ]) {
+    test(`preserves browser evidence requirement: ${JSON.stringify(text)}`, () => {
+      assert.equal(hasBrowserRequiredText(text), true);
+    });
+  }
+
+  test('database context does not cross Markdown paragraph, list, table-row, or heading boundaries', () => {
+    for (const text of [
+      'Create a database snapshot.\n\nTake a snapshot of the dashboard.',
+      '- Create a database snapshot\n- Take a snapshot of the dashboard',
+      '1. Create a database snapshot\n2. Take a snapshot of the dashboard',
+      '| Database | Create a snapshot |\n| Dashboard | Take a snapshot |',
+      '## Database export\nTake a snapshot of the dashboard.',
+    ]) {
+      assert.equal(hasBrowserRequiredText(text), true, text);
+    }
+  });
+
+  test('snapshot exclusions retain non-requirement section and line gates', () => {
+    for (const text of [
+      '## Not Proven\nTake a DOM snapshot of the database UI.',
+      '## Notes for Tester\n### Browser\nTake a screenshot of the database UI.',
+      'Create a database snapshot.\nBrowser snapshot deferred to a future slice.',
+    ]) {
+      assert.equal(hasBrowserRequiredText(text), false, text);
+    }
+  });
+
+  test('soft-wrapped negation remains excluded without masking later required clauses', () => {
+    for (const text of [
+      'No automated\nbrowser check is required.',
+      'Browser snapshot is\ndeferred to later.',
+      'Create a database snapshot. No automated\nbrowser check is required.',
+    ]) {
+      assert.equal(hasBrowserRequiredText(text), false, text);
+      assert.equal(hasBrowserRequiredText(`${text} Take a screenshot of the page.`), true, text);
+      assert.equal(hasBrowserRequiredText(`${text}\n- Take a DOM snapshot.`), true, text);
+    }
+    assert.equal(hasBrowserRequiredText('No browser check is required; open localhost:3000/dashboard.'), true);
+  });
+
+  test('repeated snapshot operations remain bounded on a long clause', { timeout: 2_000 }, () => {
+    const startedAt = performance.now();
+    assert.equal(hasBrowserRequiredText('snapshot restore-check '.repeat(10_000)), false);
+    assert.equal(hasBrowserRequiredText(`${'snapshot restore-check '.repeat(10_000)}; take a DOM snapshot`), true);
+    assert.ok(performance.now() - startedAt < 2_000, 'bounded snapshot checks must finish the repeated-clause probe promptly');
+  });
+});
+
 describe('hasBrowserRequiredText — negated browser mentions', () => {
   // Acceptance run 7: a slice that writes two text files declared
   // "UAT mode: artifact-driven" and explained why. complete-slice rejected it with

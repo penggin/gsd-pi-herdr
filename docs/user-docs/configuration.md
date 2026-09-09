@@ -1191,8 +1191,16 @@ context_management:
   observation_masking: true          # replace old tool results with placeholders (default: true)
   observation_mask_turns: 8          # keep results from last N user turns (1-50, default: 8)
   compaction_threshold_percent: 0.60 # soft warning at 60% context usage (0.5-0.95, default: 0.60)
-  tool_result_max_chars: 800         # cap individual tool result content (200-10000, default: 800)
+  tool_result_max_chars: 800         # explicit hard ceiling, including native exec/query receipts (200-10000)
 ```
+
+If `tool_result_max_chars` is omitted, ordinary results use 800 characters;
+trusted native execution receipts may use up to 2,000 and stored-log queries up
+to 4,000. An explicit value always wins, without increasing the internal maxima.
+`context_mode.exec_digest_chars` remains a separate selected-evidence budget
+(default 300, range 0–4000, zero omits excerpts). No search limits require new
+preferences. See [saved execution evidence](./auto-mode.md#reading-saved-execution-evidence)
+for the existing `gsd_exec_search` history/search/read interface.
 
 ### `service_tier`
 
