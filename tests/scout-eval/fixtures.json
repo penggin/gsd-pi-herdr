@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "gsd.scout-fixtures/v1",
+  "version": "1",
+  "dataKind": "synthetic",
+  "tasks": [
+    {
+      "id": "A-small",
+      "request": "Scout a small change: normalizeLabel should trim surrounding whitespace while preserving letter case. Locate the implementation and its verification test; hand off where an implementer should start. Do not modify the source.",
+      "allowedChanges": ["handoff.md"],
+      "environment": "Node >=22.18; no dependencies or network; synthetic reconnaissance only",
+      "files": {
+        "src/label.js": "export function normalizeLabel(value) {\n  return String(value);\n}\n",
+        "test/label.test.js": "import assert from 'node:assert/strict';\nimport { normalizeLabel } from '../src/label.js';\nassert.equal(normalizeLabel('AbC'), 'AbC');\n",
+        "package.json": "{\"private\":true,\"type\":\"module\",\"scripts\":{\"test\":\"node --test test/label.test.js\"}}\n"
+      }
+    },
+    {
+      "id": "B-cross-contract",
+      "request": "Scout how retries should avoid showing one delivered notification twice. Trace the event contract, producer, consumer, and existing verification coverage. Report confirmed behavior and any contract question an implementer must answer; do not implement a fix.",
+      "allowedChanges": ["handoff.md"],
+      "environment": "Node >=22.18; no dependencies or network; synthetic reconnaissance only",
+      "files": {
+        "src/event.d.ts": "export interface Event {\n  deliveryId: string;\n  message: string;\n}\n",
+        "src/retry.js": "export async function retry(event, send) {\n  try { return await send(event); }\n  catch { return send(event); }\n}\n",
+        "src/inbox.js": "export function inbox(render) {\n  return event => render(event.message);\n}\n",
+        "test/retry.test.js": "import assert from 'node:assert/strict';\nimport { retry } from '../src/retry.js';\nlet calls = 0;\nawait retry({ deliveryId: 'one', message: 'hello' }, async () => {\n  if (++calls === 1) throw new Error('transient');\n});\nassert.equal(calls, 2);\n",
+        "package.json": "{\"private\":true,\"type\":\"module\",\"scripts\":{\"test\":\"node --test test/retry.test.js\"}}\n"
+      }
+    },
+    {
+      "id": "C-missing-contract",
+      "request": "Scout whether the account adapter can safely retry a timed-out charge using its transaction ID. Use only this checkout. Identify what can be established from code and what additional contract or material is needed before implementation; do not fabricate a remote contract or modify source.",
+      "allowedChanges": ["handoff.md"],
+      "environment": "Node >=22.18; vendor contract intentionally absent; no network/auth access",
+      "files": {
+        "src/charge.js": "// Transport is supplied by the account provider at runtime.\nexport function charge(transport, transactionId, amount) {\n  return transport.post('/charge', { transactionId, amount });\n}\n",
+        "test/charge.test.js": "import assert from 'node:assert/strict';\nimport { charge } from '../src/charge.js';\nconst posted = [];\ncharge({ post: (...args) => posted.push(args) }, 't-1', 5);\nassert.equal(posted.length, 1);\n",
+        "README.md": "# Account adapter\nThe provider's retry/idempotency contract is maintained outside this repository and is not included in this fixture.\n",
+        "package.json": "{\"private\":true,\"type\":\"module\",\"scripts\":{\"test\":\"node --test test/charge.test.js\"}}\n"
+      }
+    }
+  ]
+}

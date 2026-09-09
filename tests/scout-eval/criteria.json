@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "gsd.scout-criteria/v1",
+  "version": "1",
+  "verificationFunction": "scripts/lib/scout-evaluation-workspace.mjs#judgeSubmission",
+  "rubric": [
+    "References must point to real source/test line ranges, not filenames found only by search.",
+    "Claims must be supported; inference and missing information must not be presented as confirmed.",
+    "No source changes or invented completion authority; review the entire handoff for contradictions.",
+    "Do not require the candidate prompt's new headings/status words from the baseline.",
+    "The sidecar review is an evaluator-owned fixed checklist, never the worker's accepted flag."
+  ],
+  "tasks": {
+    "A-small": {
+      "evidencePaths": ["src/label.js", "test/label.test.js"],
+      "checks": ["implementation_and_verifier_located", "case_preservation_understood", "handoff_ready_without_forced_extra_search"],
+      "acceptableSufficiency": ["sufficient_for_requested_scope"]
+    },
+    "B-cross-contract": {
+      "evidencePaths": ["src/event.d.ts", "src/retry.js", "src/inbox.js", "test/retry.test.js"],
+      "checks": ["delivery_identity_traced_across_modules", "retry_reuses_event", "consumer_dedup_absent", "test_does_not_prove_duplicate_render_suppression"],
+      "acceptableSufficiency": ["sufficient_for_requested_scope", "gaps_remaining"]
+    },
+    "C-missing-contract": {
+      "evidencePaths": ["src/charge.js", "test/charge.test.js", "README.md"],
+      "checks": ["only_payload_forwarding_confirmed", "remote_idempotency_not_claimed", "missing_contract_affects_retry_safety", "specific_provider_contract_followup"],
+      "acceptableSufficiency": ["gaps_remaining", "blocked"]
+    }
+  }
+}
