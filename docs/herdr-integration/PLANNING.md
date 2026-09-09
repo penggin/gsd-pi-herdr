@@ -2,7 +2,7 @@
 
 > **Status:** M0–M7 and final downstream-isolation revalidation complete
 > **Last updated:** 2026-09-09
-> **Current milestone:** Approved commit/push and Penglab refresh of accumulated verified changes; candidate package gates and activation in progress. Existing GSD sessions remain untouched.
+> **Current milestone:** Committed code 64f7cc3bc pushed and verified on Penglab; GSD/source links activated. Existing old sessions need a safe normal restart to load the update.
 > **Canonical rule:** Every Herdr-integration development session starts by reading this file and ends by updating it.
 
 ## 1. Mission
@@ -4350,6 +4350,31 @@ this session does not merge, push, tag, or publish.
   checksum the clean source package, push only the named origin feature branch,
   verify a side-by-side Linux candidate, then switch GSD/source links while
   retaining rollback targets and preserving live GSD/Herdr sessions and configs.
+
+### 2026-09-09 — Clean committed candidate activated on Penglab
+
+- Pushed downstream feature commits `bcf3c54d5` (runtime/evidence), `a47fefe30`
+  (scout prompt), `64f7cc3bc` (offline evaluator). Final package source is
+  `64f7cc3bc595d54ce7629f662e9e71381018cf6c`, dirty=false, version 1.16.2.
+  Core/web/package gates, 31/31 Herdr integration and final 174/174 backend
+  regression pass; prior intermittent Cmux failure remains documented above.
+- Installed side-by-side prefix `gsd-pi-herdr-1.16.2-64f7cc3b-c578bc09`;
+  package SHA-256 `c578bc09d654c115a236d221611ce15aa1d61f092efc4a60c687278d724c7af5`,
+  resource fingerprint `d91674a8a47720ca`. The four GSD executable links and
+  sources/current switched only after candidate verification and backup.
+- Linux installed public execution/search/read/UAT tools pass a disposable
+  fixture; the 1,063-character execution receipt survives both payload policies.
+  Isolated sync and real MCP handshake/schema pass (57 tools); scout definition
+  and source evaluator lock validate. Actual browser images pass from installed
+  and isolated synced resources with the existing sandbox and clean daemon stop.
+  Linux Herdr required capabilities still pass; no live model calls were made.
+- Seven settings files are unchanged, and existing GSD/Herdr processes remain
+  alive. No Mac installation, OpenCodex upgrade/reconfiguration, project DB
+  mutation, main merge, upstream mutation or removal of rollback installations.
+- Exact next task: exit/resume the old GSD session normally when work permits;
+  do not start a competing writer on its session. Full evidence and rollback:
+  `PENGLAB-DEPLOYMENT-20260909.md`. Deployment documentation follows the installed
+  source commit without altering immutable package/source hashes.
 
 ## 11. Working-session protocol
 
